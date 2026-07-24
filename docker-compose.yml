@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  finans-haber:
+    build: .
+    container_name: finans-haber-container
+    restart: always  # Sunucu yeniden başlarsa veya hata verirse otomatik tekrar başlat
+    ports:
+      - "8000:8000"
+    volumes:
+      # Veritabanı, loglar ve önbelleklerin kaybolmaması için kalıcı klasör bağlantısı
+      - ./data:/app/data
+      # Şifreler ve API anahtarları için çevre dosyası bağlantısı
+      - ./.env:/app/.env

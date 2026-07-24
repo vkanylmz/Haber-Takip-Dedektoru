@@ -1,0 +1,35 @@
+httpx>=0.27
+feedparser>=6.0
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# LLM sağlayıcıları - özetleme + önem skorlama (src/summarizer.py).
+# Varsayılan sağlayıcı Gemini'dir (config.yaml > summarizer.llm_provider);
+# Anthropic paketi de tek satırlık "anthropic"a geri dönüş için tutulur.
+google-genai>=1.0
+anthropic>=0.40
+
+PyYAML>=6.0
+python-dotenv>=1.0
+APScheduler>=3.10
+python-dateutil>=2.9
+
+# NewsAPI.ai (Event Registry) resmi Python SDK'sı — Reuters/Bloomberg
+# içeriğine lisanslı erişim için (bkz. src/fetchers/licensed_aggregator.py
+# ve README > "Lisanslı Kaynak: Reuters/Bloomberg (NewsAPI.ai)")
+eventregistry>=9.1
+
+# Veritabanı (haberler, özetler, önem skorları, bildirim durumu) - src/db.py
+SQLAlchemy>=2.0
+
+# Telegram bildirimleri - src/notifier.py
+python-telegram-bot>=21.0
+
+# Web dashboard - src/web/app.py
+fastapi>=0.110
+uvicorn[standard]>=0.29
+jinja2>=3.1
+
+# Opsiyonel: JS ile render edilen siteler için (config.yaml'da render_js: true
+# yapılırsa gereklidir). Varsayılan olarak kurulu değildir.
+# playwright>=1.45

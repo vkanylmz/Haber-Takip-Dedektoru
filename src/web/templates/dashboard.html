@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="{{ refresh_seconds }}">
+  <title>Finansal Haber Dashboard</title>
+  <style>
+    :root {
+      /* Bloomberg-ish Dark Cyber Theme */
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+
+      --critical: #ef4444;
+      --critical-glow: rgba(239, 68, 68, 0.4);
+      --important: #f59e0b;
+      --medium: #eab308;
+      --low: #64748b;
+
+      --pos-bg: rgba(34, 197, 94, 0.15);
+      --pos-txt: #4ade80;
+      --neg-bg: rgba(239, 68, 68, 0.15);
+      --neg-txt: #f87171;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      margin: 0;
+      padding: 0 0 3rem 0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1.25rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    header .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    form.filter {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    select,
+    button {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      transition: all 0.2s;
+    }
+
+    select {
+      background: #18181b;
+      /* Avoid transparent backgrounds which break native option rendering */
+      cursor: pointer;
+    }
+
+    select option {
+      background: #18181b;
+      color: #f8fafc;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    button:hover {
+      background: #3b82f6;
+      box-shadow: 0 0 20px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    main {
+      max-width: 1000px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+      opacity: 0.5;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .card.highlighted {
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      background: linear-gradient(145deg, rgba(24, 24, 27, 0.8) 0%, rgba(239, 68, 68, 0.03) 100%);
+    }
+
+    .card.highlighted::before {
+      background: linear-gradient(90deg, transparent, var(--critical), transparent);
+      opacity: 1;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem 0;
+      line-height: 1.4;
+      color: #e2e8f0;
+    }
+
+    .card-meta {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .meta-divider {
+      color: #334155;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem 0.75rem;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.5px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .badge-critical {
+      background: var(--critical);
+      color: #fff;
+      box-shadow: 0 0 15px var(--critical-glow);
+    }
+
+    .badge-important {
+      background: var(--important);
+      color: #fff;
+    }
+
+    .badge-medium {
+      background: var(--medium);
+      color: #000;
+    }
+
+    .badge-low {
+      background: var(--low);
+      color: #fff;
+    }
+
+    .badge-unknown {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .sentiment {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sentiment-positive {
+      background: var(--pos-bg);
+      color: var(--pos-txt);
+      border: 1px solid rgba(74, 222, 128, 0.2);
+    }
+
+    .sentiment-negative {
+      background: var(--neg-bg);
+      color: var(--neg-txt);
+      border: 1px solid rgba(248, 113, 113, 0.2);
+    }
+
+    .sentiment-neutral {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .reason {
+      font-size: 0.88rem;
+      color: #cbd5e1;
+      margin-bottom: 1rem;
+      padding-left: 1rem;
+      border-left: 2px solid #334155;
+    }
+
+    .summary {
+      margin: 0 0 1rem 0;
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-size: 0.95rem;
+    }
+
+    .market-impact {
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
+      background: rgba(56, 189, 248, 0.05);
+      border: 1px solid rgba(56, 189, 248, 0.15);
+      border-radius: 8px;
+      font-size: 0.92rem;
+      color: #7dd3fc;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .market-impact::before {
+      content: '💡';
+      font-size: 1.1rem;
+    }
+
+    .key-points {
+      margin: 0 0 1rem 1.2rem;
+      padding: 0;
+      font-size: 0.9rem;
+      color: #94a3b8;
+    }
+
+    .key-points li {
+      margin-bottom: 0.4rem;
+    }
+
+    .links {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .links a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.82rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      background: rgba(96, 165, 250, 0.1);
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .links a:hover {
+      background: rgba(96, 165, 250, 0.2);
+      color: #93c5fd;
+    }
+
+    .notified-flag {
+      font-size: 0.75rem;
+      color: #fbbf24;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 4rem 1rem;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+    }
+
+    @keyframes pulseFlash {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
+
+    .live-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      animation: pulseFlash 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
+      <div class="meta">
+        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif
+      </div>
+    </div>
+    <form class="filter" method="get" action="/">
+      <select name="source" onchange="this.form.submit()">
+        <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
+        {% for s in sources %}
+        <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Filtrele</button>
+    </form>
+  </header>
+
+  <main>
+    {% if not records %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
+      Veri akışı bekleniyor. Otonom ajan piyasaları tarıyor...
+    </div>
+    {% endif %}
+
+    {% for r in records %}
+    <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
+      <div class="card-top">
+        <div>
+          <h2 class="card-title">{{ r.title }}</h2>
+          <div class="card-meta">
+            <span>{{ r.published_at }}</span>
+            <span class="meta-divider">|</span>
+            <span>Kaynak: {{ r.sources }}</span>
+            {% if r.sentiment_label %}
+            <span class="meta-divider">|</span>
+            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+            {% endif %}
+            {% if r.notified %}
+            <span class="meta-divider">|</span>
+            <span class="notified-flag">📨 Telegram Aktarıldı</span>
+            {% endif %}
+          </div>
+        </div>
+        <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+      </div>
+
+      {% if r.importance_reason %}
+      <div class="reason">{{ r.importance_reason }}</div>
+      {% endif %}
+
+      <div class="summary">{{ r.summary }}</div>
+
+      {% if r.market_impact %}
+      <div class="market-impact">
+        <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
+      </div>
+      {% endif %}
+
+      {% if r.key_points %}
+      <ul class="key-points">
+        {% for point in r.key_points %}
+        <li>{{ point }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <div class="links">
+        {% for link in r.links %}
+        <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </main>
+</body>
+
+</html>

@@ -1,0 +1,240 @@
+# Finansal Haber Toplayıcı - Yapılandırma Dosyası
+# Yeni bir kaynak eklemek/çıkarmak için `sources` listesini düzenlemeniz yeterlidir.
+
+app:
+  # Rapor dosyalarının ve loglarin yazılacağı klasör
+  output_dir: data
+  # Kaynak başına en fazla kaç haber işlenecek
+  max_articles_per_source: 15
+  # HTTP istekleri için zaman aşımı (saniye)
+  request_timeout: 15
+  # Aynı alan adına (domain) yapılan istekler arası minimum bekleme (saniye)
+  # -> "rate-limit koy" gereksinimi için
+  rate_limit_seconds: 2.0
+  # Tüm HTTP isteklerinde gönderilecek User-Agent. Kendinizi dürüstçe tanıtın.
+  user_agent: "FinansHaberToplayiciBot/1.0 (+https://example.com/bot-info; kisisel/egitim amacli haber toplama araci)"
+  # Aynı haberi farklı kaynaklarda gruplamak için başlık benzerlik eşiği (0-1)
+  dedup_similarity_threshold: 0.55
+  # Gruplama için haberler arasında izin verilen maksimum zaman farkı (saat)
+  dedup_window_hours: 12
+
+worker:
+  # Otomatik tarama aralığı (dakika). worker.py ve main.py bunu kullanır.
+  # (Not: bu proje daha önce bu ayarı "scheduler:" adıyla tutuyordu; worker.py
+  # eklenmesiyle isim güncellendi.)
+  interval_minutes: 1
+
+summarizer:
+  # Özetleme + önem skorlama için kullanılacak LLM sağlayıcısı: "gemini" veya
+  # "anthropic". Varsayılan "gemini" (GEMINI_API_KEY gerekir, bkz. README).
+  # Anthropic'e geri dönmek için bu satırı "anthropic" yapmanız yeterli
+  # (ANTHROPIC_API_KEY gerekir) - başka hiçbir kod değişikliği gerekmez.
+  llm_provider: gemini
+  # Gemini seçiliyken kullanılacak model - hızlı/uygun maliyetli varsayılan.
+  # Not: "gemini-2.5-flash" (ve "gemini-2.5-flash-lite") Google tarafından
+  # yeni kullanıcılara kapatıldı ("no longer available to new users" hatası).
+  # "gemini-3.6-flash" çalışıyor ama gerçek bir testte ücretsiz katımda
+  # GÜNDE SADECE 20 İSTEK ile sınırlı olduğu ortaya çıktı (flagship modeller
+  # için tipik olarak çok düşük ücretsiz kota) - ~90 haberlik bir tarama için
+  # yetersiz. "gemini-3.5-flash-lite" ("en hızlı, en uygun maliyetli 3.5
+  # modeli") hem çalışıyor hem de çok daha yüksek bir günlük kotaya sahip
+  # (lite modeller yüksek hacimli ücretsiz kullanım için tasarlanır) - gerçek
+  # bir çalıştırmayla doğrulandı (2026-07).
+  gemini_model: gemini-3.5-flash-lite
+  # Anthropic seçiliyken kullanılacak model. Not: daha yeni "claude-sonnet-5"
+  # de mevcuttur, isterseniz buradan değiştirebilirsiniz.
+  anthropic_model: claude-sonnet-4-6
+  # Gemini için bunun bir kısmı (bkz. summarizer.py > _call_gemini,
+  # thinking_budget=400) modelin iç "düşünme" adımına ayrılır; kalanı görünür
+  # JSON yanıtına gider. 900, testte gözlenen JSON kesilmesi (MAX_TOKENS)
+  # sorununu önlemek için 1200'e çıkarıldı.
+  max_output_tokens: 1200
+  language: tr
+  # Kısa özetleme görevleri için düşük efor -> daha hızlı ve daha ucuz
+  effort: low
+
+  # --- Rate limit koruması (429 / RESOURCE_EXHAUSTED hatalarını önlemek için) ---
+  # Gemini'nin ücretsiz katmanı düşük bir dakika-başına-istek (RPM) limitine
+  # sahiptir (varsayılan olarak 5 kabul edilir). Onlarca haberi art arda hızlı
+  # göndermek bu limiti anında aşar. Bu ayarlar açıkken istekler arasına
+  # otomatik bekleme eklenir ve 429 alınırsa sağlayıcının önerdiği süre kadar
+  # beklenip otomatik tekrar denenir.
+  rate_limit_enabled: true
+  # Dakikada en fazla kaç istek gönderilsin. Ücretsiz Gemini için 5 (veya
+  # altı) güvenlidir. Ücretli bir plan/Anthropic kullanıyorsanız yükseltin.
+  requests_per_minute: 5
+  # 429 hatası alınırsa en fazla kaç kez otomatik tekrar denensin.
+  max_retries: 3
+
+importance:
+  # 1 (rutin) - 5 (piyasayı doğrudan etkileyebilecek büyük gelişme) arası
+  # önem skoru. Bu değere EŞİT veya BÜYÜK skor alan haberler Telegram'a
+  # bildirilir (telegram.enabled=true ise). Eşiğin altındakiler yalnızca
+  # normal çıktıda (CLI/Markdown/web dashboard) görünür, bildirim gitmez.
+  threshold: 4
+
+telegram:
+  # false yaparsanız TELEGRAM_BOT_TOKEN/CHAT_ID tanımlı olsa bile hiçbir
+  # bildirim gönderilmez (örn. test/geliştirme sırasında).
+  enabled: true
+
+database:
+  # Haberlerin, özetlerin, önem skorlarının ve bildirim durumunun kalıcı
+  # olarak tutulduğu SQLite dosyası. Worker ve web sunucusu aynı dosyayı
+  # paylaşır (bkz. src/db.py).
+  path: "data/finans_haber.db"
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+  # Dashboard sayfasının kaç saniyede bir otomatik yenileneceği
+  refresh_seconds: 30
+  # Dashboard'da gösterilecek en fazla haber sayısı
+  max_items: 100
+
+# Her kaynak için:
+#   name    : ekranda/raporda görünecek isim
+#   id      : dahili kısa kimlik (benzersiz olmalı)
+#   type    : "rss" | "scrape"
+#   enabled : true/false — kaynağı kod değiştirmeden açıp kapatabilirsiniz
+sources:
+  - name: "Bloomberg HT"
+    id: bloomberght
+    type: rss
+    enabled: true
+    url: "https://www.bloomberght.com/rss"
+
+  - name: "CNBC-e"
+    id: cnbce
+    type: rss
+    enabled: true
+    url: "https://www.cnbce.com/rss"
+
+  - name: "Foreks"
+    id: foreks
+    type: rss
+    enabled: true
+    url: "https://www.foreks.com/rss"
+
+  - name: "Yahoo Finance"
+    id: yahoo_finance
+    type: rss
+    enabled: true
+    # Yahoo Finance'in resmi "top stories" RSS feed'i. robots.txt genel bir
+    # User-Agent için bu yolu yasaklamıyor. Test edildi: 200 OK, geçerli RSS.
+    url: "https://finance.yahoo.com/news/rssindex"
+
+  - name: "New York Times (Business)"
+    id: nytimes_business
+    type: rss
+    enabled: true
+    # NYT'nin resmi Business RSS feed'i (rss.nytimes.com ayrı bir alt alan
+    # adıdır ve kendi robots.txt'i yoktur -> genel siteye ait "izinsiz
+    # scraping yasaktır" uyarısı, bilinçli olarak yayınlanan bu RSS
+    # syndication kanalını kapsamaz). Test edildi: 200 OK, "NYT > Business".
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"
+
+  - name: "Euronews (Business)"
+    id: euronews_business
+    type: rss
+    enabled: true
+    # Euronews'ün resmi tema bazlı RSS'i, business/economy içerikleri filtreli.
+    # Test edildi: 200 OK, kanal başlığı "Business | Euronews RSS".
+    url: "https://www.euronews.com/rss?level=theme&name=business"
+
+  - name: "Ekonomim.com (Ekonomi)"
+    id: ekonomim
+    type: rss
+    enabled: true
+    # robots.txt (www.ekonomim.com/robots.txt) User-agent: * için "Allow: /"
+    # diyor (yalnızca /ara ve /video-embed hariç tutulmuş) - genel erişime
+    # açık. Resmi RSS servisleri /rss altında kategori bazlı sunuluyor;
+    # "genel" /rss feed'i (gündem/magazin dahil her şeyi içeriyor) yerine,
+    # projenin finans odağına daha uygun olan "Ekonomi" kategori feed'i
+    # seçildi (Finans/Şirketler kategori feed'leri de mevcut, istenirse
+    # ayrı kaynak olarak eklenebilir). Test edildi (2026-07): 200 OK,
+    # feedparser bozo=False, 25 güncel/geçerli haber.
+    url: "https://www.ekonomim.com/rss/ekonomi.xml"
+
+  # Reuters ve Bloomberg'in genel erişime açık, izinsiz kullanılabilecek resmi
+  # bir RSS feed'i yok (bkz. aşağıdaki "Bloomberg (Finans/Piyasalar)" notu ve
+  # README). Bu kaynağı doğrudan scrape ETMEK YERİNE, bu iki kaynağı resmi
+  # olarak lisanslayıp bir API üzerinden sunan üçüncü bir servis olan
+  # NewsAPI.ai (Event Registry) kullanılır. type: licensed_aggregator ->
+  # src/fetchers/licensed_aggregator.py. EVENTREGISTRY_API_KEY tanımlı
+  # değilse bu kaynak sessizce (loglayarak) atlanır, program çökmez.
+  # investing.com + 9 büyük finans/haber sitesi de aynı yolla (NewsAPI.ai/
+  # EventRegistry lisanslı erişimi) dahil edildi. Her biri için
+  # er.getNewsSourceUri(<domain>) GERÇEK API key'imizle tek tek sorgulandı
+  # (2026-07); 10/10'u geçerli bir URI döndürdü (var olmayan uydurma bir
+  # domain ile sağlama yapıldı, o da doğru şekilde None döndü - yani bu
+  # sonuçlar gerçek/doğrulanmış): investing.com, cnbc.com, forbes.com,
+  # marketwatch.com, ft.com, wsj.com, businessinsider.com, barrons.com,
+  # fortune.com, economist.com. Hiçbiri doğrudan scrape edilmiyor - hepsi
+  # Reuters/Bloomberg gibi tek bir lisanslı API sorgusu üzerinden erişiliyor.
+  # ÖNEMLİ: source_domains listesine kaynak eklemek `_fetch_from_api`'deki
+  # `sourceUri=QueryItems.OR([...])` filtresini genişletir - TEK bir
+  # execQuery çağrısı içinde işlenir, bu yüzden kaynak sayısı artsa da
+  # AYLIK GERÇEK API ÇAĞRISI SAYISI DEĞİŞMEZ (bkz. min_interval_minutes/
+  # monthly_call_quota kota koruması aynen geçerli, aşağıda değiştirilmedi).
+  - name: "Reuters/Bloomberg/Investing.com/CNBC/Forbes/MarketWatch/FT/WSJ/Business Insider/Barron's/Fortune/Economist (NewsAPI.ai - lisanslı)"
+    id: licensed_reuters_bloomberg
+    type: licensed_aggregator
+    enabled: true
+    provider: newsapi_ai
+    # Bu kaynaklardan gelen makaleler istenir (sourceUri filtresi, TEK sorguda).
+    source_domains:
+      ["reuters.com", "bloomberg.com", "investing.com", "cnbc.com",
+       "forbes.com", "marketwatch.com", "ft.com", "wsj.com",
+       "businessinsider.com", "barrons.com", "fortune.com", "economist.com"]
+    lang: eng
+    # Ücretsiz NewsAPI.ai planı ayda 2.000 istek/token sunuyor. Kotayı
+    # korumak için bu kaynak ana zamanlayıcıdan (ör. 30 dk) BAĞIMSIZ olarak
+    # en az bu kadar dakikada bir gerçekten sorgulanır; aradaki
+    # çalıştırmalarda data/state/ altındaki önbellekten döner. 120 dk ->
+    # günde en fazla 12 gerçek çağrı -> ayda ~360 çağrı, ücretsiz kotanın
+    # rahatça altında.
+    min_interval_minutes: 120
+    # Ek bir güvenlik sınırı: bu ay en fazla kaç gerçek API çağrısı
+    # yapılabileceğini sınırlar. Aşılırsa kaynak (hata vermeden) önbelleğe
+    # döner. Ücretsiz planın aylık 2000 istek limitinin oldukça altında,
+    # temkinli bir varsayılan.
+    monthly_call_quota: 200
+
+  # --- Aşağıdaki kaynaklar scraping/kısıtlı RSS ile çalışır ve VARSAYILAN OLARAK KAPALIDIR ---
+
+  # MarketWatch'ın (Dow Jones) resmi RSS feed'i teknik olarak veri döndürüyor
+  # (test edildi: 200 OK), AMA robots.txt'i "User-agent: *" için siteyi
+  # TAMAMEN yasaklıyor (Disallow: /) ve yalnızca Google/Bing/ChatGPT-User gibi
+  # isim isim belirtilmiş botlara "Allow: /" veriyor - bizim bot bu listede
+  # yok. Ayrıca robots.txt'in başında açık bir hukuki uyarı var: "Collection
+  # of content ... through automated means is prohibited unless you have
+  # express written permission from Dow Jones & Company". Bu, tıpkı Reuters
+  # gibi, resmi izin olmadan otomatik toplamaya kapalı bir kaynak demektir.
+  # Kod robots.txt'i her çalıştırmada kontrol eder ve bu nedenle otomatik
+  # olarak atlar; "enabled: true" yapsanız bile veri dönmeyecektir. Yalnızca
+  # Dow Jones'tan yazılı izin alırsanız açın.
+  - name: "MarketWatch"
+    id: marketwatch
+    type: rss
+    enabled: false
+    url: "https://www.marketwatch.com/rss/topstories"
+
+  # Bloomberg.com robots.txt genel bir User-Agent için çoğu sayfaya izin
+  # veriyor, ancak site tamamen JavaScript ile render ediliyor (React SPA) ve
+  # çoğu içerik paywall arkasında. Düz HTTP GET ile başlık dışında pek veri
+  # alınamaz. render_js: true yapıp requirements.txt'teki playwright'ı
+  # kurarsanız (bkz. README) tarayıcı tabanlı render denenir; aksi halde bu
+  # kaynak sessizce (loglayarak) atlanır. NOT: Bloomberg içeriğine asıl
+  # önerilen erişim yolu yukarıdaki "licensed_reuters_bloomberg" kaynağıdır
+  # (NewsAPI.ai üzerinden lisanslı); bu scrape girişi yalnızca deneysel bir
+  # alternatiftir.
+  - name: "Bloomberg (Finans/Piyasalar)"
+    id: bloomberg
+    type: scrape
+    enabled: false
+    base_url: "https://www.bloomberg.com/markets"
+    render_js: false
+    item_selector: "article"
+    title_selector: "a"
+    link_selector: "a"
