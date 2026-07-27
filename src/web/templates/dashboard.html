@@ -4,7 +4,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="{{ refresh_seconds }}">
+  <!-- Tam sayfa meta-refresh KASITLI OLARAK kaldırıldı: sektör ısı haritası
+       zaten kendi AJAX'ıyla (bkz. refreshSectorHeatmap) sessizce güncelleniyor
+       - bir de sayfanın tamamını periyodik olarak yeniden yüklemek, o sırada
+       scroll pozisyonunu sıfırlıyor ve görsel bir "zıplama" yaratıyordu. Haber
+       listesi artık otomatik yenilenmiyor (yalnızca manuel sayfa yenileme
+       veya filtre değiştirme ile güncellenir) - bu kasıtlı bir değiş tokuş. -->
   <title>Finansal Haber Dashboard</title>
   <style>
     :root {
@@ -84,6 +89,7 @@
     }
 
     select,
+    input[type="search"],
     button {
       font-family: inherit;
       font-size: 0.9rem;
@@ -98,6 +104,17 @@
       background: #18181b;
       /* Avoid transparent backgrounds which break native option rendering */
       cursor: pointer;
+    }
+
+    input[type="search"] {
+      background: #18181b;
+      min-width: 220px;
+    }
+
+    input[type="search"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
     }
 
     select option {
@@ -377,22 +394,439 @@
       box-shadow: 0 0 8px #22c55e;
       animation: pulseFlash 2s infinite ease-in-out;
     }
+
+    .fear-greed-container {
+      background: rgba(24, 24, 27, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      backdrop-filter: blur(16px);
+      transition: transform 0.25s;
+    }
+
+    .fear-greed-container:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    }
+
+    .fear-greed-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: #f8fafc;
+    }
+
+    .fear-greed-bar {
+      flex: 1;
+      height: 12px;
+      background: #18181b;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    .fear-greed-gradient {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 50%, #84cc16 75%, #22c55e 100%);
+      opacity: 0.8;
+    }
+
+    .fear-greed-marker {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 4px;
+      background: #fff;
+      border-radius: 2px;
+      box-shadow: 0 0 10px #fff;
+      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .fear-greed-label {
+      font-size: 1.1rem;
+      font-weight: 700;
+      min-width: 130px;
+      text-align: right;
+    }
+
+    .fg-extreme-fear {
+      color: #ef4444;
+      text-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+    }
+
+    .fg-fear {
+      color: #f97316;
+    }
+
+    .fg-neutral {
+      color: #eab308;
+    }
+
+    .fg-greed {
+      color: #84cc16;
+    }
+
+    .fg-extreme-greed {
+      color: #22c55e;
+      text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+    }
+
+    /* --- Piyasa şeridi (canlı döviz/emtia/endeks verisi) ---
+       Klasik "ticker tape" gibi kullanıcı etkileşimi olmadan kendiliğinden
+       kayar: overflow:hidden ile taşan içerik gizlenir, #ticker-items JS
+       tarafından İKİ KERE ardı ardına basılır (bkz. refreshMarketTicker) ve
+       @keyframes ile tam %50 sola kaydırılır - içerik iki kopya olduğundan
+       %50'de tam olarak baştaki görünüme döner, böylece sonsuz döngü hiç
+       sıçrama/kesinti olmadan (dikişsiz) akar. */
+    .market-ticker-wrap {
+      background: rgba(9, 9, 11, 0.9);
+      border-bottom: 1px solid var(--card-border);
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .ticker-items {
+      display: inline-flex;
+      gap: 1.5rem;
+      padding: 0.4rem 1rem;
+      animation: ticker-scroll 35s linear infinite;
+      will-change: transform;
+    }
+
+    @keyframes ticker-scroll {
+      from {
+        transform: translateX(0);
+      }
+
+      to {
+        transform: translateX(-50%);
+      }
+    }
+
+    .ticker-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .ticker-label {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .ticker-price {
+      color: var(--text-main);
+      font-weight: 700;
+    }
+
+    .ticker-up {
+      color: #4ade80;
+    }
+
+    .ticker-down {
+      color: #f87171;
+    }
+
+    .ticker-closed {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      background: rgba(148, 163, 184, 0.12);
+      border-radius: 4px;
+      padding: 0.05rem 0.35rem;
+    }
+
+    .ticker-empty {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      padding: 0.4rem 1rem;
+    }
+
+    /* --- Sektör ısı haritası --- */
+    .sector-heatmap-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.4rem 1rem;
+      overflow-x: auto;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(9, 9, 11, 0.7);
+      scrollbar-width: thin;
+    }
+
+    .heatmap-title {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .heatmap-items {
+      display: inline-flex;
+      gap: 0.4rem;
+    }
+
+    .heatmap-box {
+      min-width: 64px;
+      padding: 0.3rem 0.55rem;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.2;
+      font-size: 0.7rem;
+      color: #f8fafc;
+    }
+
+    .heatmap-sector {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .heatmap-count {
+      font-size: 0.68rem;
+      opacity: 0.85;
+    }
+
+    .sector-tag {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.72rem;
+      margin-right: 0.25rem;
+    }
+
+    /* --- Trend Özeti paneli (haftalık/aylık, bkz. src/trend_report.py) ---
+       Hafif olsun diye Chart.js gibi bir kütüphane YERİNE düz CSS/HTML
+       çubuklarla basit bir bar chart çizilir - dashboard'un geri kalanı da
+       (ör. sektör ısı haritası) hiçbir harici script kullanmıyor, bu panel
+       de aynı kendi-kendine-yeten (self-contained) yaklaşımı sürdürür. */
+    .trend-panel {
+      background: rgba(24, 24, 27, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .trend-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .trend-panel-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #f8fafc;
+    }
+
+    .trend-period-toggle button {
+      font-size: 0.75rem;
+      padding: 0.3rem 0.7rem;
+      box-shadow: none;
+    }
+
+    .trend-period-toggle button.inactive {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--card-border);
+    }
+
+    .trend-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 700px) {
+      .trend-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .trend-sector-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 2.5rem;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.78rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .trend-bar-track {
+      background: rgba(148, 163, 184, 0.12);
+      border-radius: 4px;
+      height: 10px;
+      overflow: hidden;
+    }
+
+    .trend-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #60a5fa, #a78bfa);
+      border-radius: 4px;
+    }
+
+    .trend-volume-badge {
+      display: inline-block;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      margin-left: 0.5rem;
+    }
+
+    .trend-sentiment-row {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+      font-size: 0.78rem;
+    }
+
+    .trend-top-news li {
+      font-size: 0.8rem;
+      margin-bottom: 0.35rem;
+      color: var(--text-main);
+    }
+
+    .trend-top-news {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .trend-empty {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* --- Çapraz kaynak karşılaştırma (bir haber grubunda >1 kaynak varsa) --- */
+    .compare-details {
+      margin-top: 1rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .compare-details summary {
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: #93c5fd;
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .compare-details summary:hover {
+      color: #bfdbfe;
+    }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .compare-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+    }
+
+    .compare-source {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #a78bfa;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 0.3rem;
+    }
+
+    .compare-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 0.3rem;
+      line-height: 1.35;
+    }
+
+    .compare-snippet {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
   </style>
 </head>
 
 <body>
+  <div class="market-ticker-wrap">
+    <div class="ticker-items" id="ticker-items">
+      <span class="ticker-empty">Piyasa verisi yükleniyor…</span>
+    </div>
+  </div>
+  <div class="sector-heatmap-wrap">
+    <span class="heatmap-title">Sektör Isı Haritası (24s)</span>
+    <div class="heatmap-items" id="heatmap-items">
+      <span class="ticker-empty">Yükleniyor…</span>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
       <div class="meta">
-        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif
+        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif ·
+        <a href="/sirket-profili" style="color: var(--text-muted);">🏢 Şirket Profili</a> ·
+        <a href="/kaynak-sagligi" style="color: var(--text-muted);">🩺 Kaynak Sağlığı</a>
       </div>
     </div>
     <form class="filter" method="get" action="/">
+      <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
       <select name="source" onchange="this.form.submit()">
         <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
         {% for s in sources %}
         <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <select name="sector" onchange="this.form.submit()">
+        <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
+        {% for sec in sectors %}
+        <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
+        {% endfor %}
+      </select>
+      <select name="region" onchange="this.form.submit()">
+        <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
+        {% for reg in regions %}
+        <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
+        {% endfor %}
+      </select>
+      <select name="sentiment" onchange="this.form.submit()">
+        <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
+        {% for sent in sentiments %}
+        <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
+        {% endfor %}
+      </select>
+      <select name="min_importance" onchange="this.form.submit()">
+        <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
+        {% for opt in importance_options %}
+        <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
         {% endfor %}
       </select>
       <button type="submit">Filtrele</button>
@@ -400,63 +834,240 @@
   </header>
 
   <main>
-    {% if not records %}
-    <div class="empty">
-      <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
-      Veri akışı bekleniyor. Otonom ajan piyasaları tarıyor...
-    </div>
-    {% endif %}
+    <div class="fear-greed-container">
+      <div class="fear-greed-title">Piyasa Duygusu</div>
+      <div class="fear-greed-bar">
+        <div class="fear-greed-gradient"></div>
+        <div class="fear-greed-marker" style="left: {{ fear_greed_index }}%;"></div>
+      </div>
+      <div
+        class="fear-greed-label {% if fear_greed_index < 25 %}fg-extreme-fear{% elif fear_greed_index < 45 %}fg-fear{% elif fear_greed_index < 55 %}fg-neutral{% elif fear_greed_index < 75 %}fg-greed{% else %}fg-extreme-greed{% endif %}">
+        {% if fear_greed_index < 25 %}Aşırı Korku {% elif fear_greed_index < 45 %}Korku {% elif fear_greed_index < 55
+          %}Nötr {% elif fear_greed_index < 75 %}Açgözlülük {% else %}Aşırı Açgözlülük{% endif %} ({{ fear_greed_index
+          }}) </div>
+      </div>
 
-    {% for r in records %}
-    <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
-      <div class="card-top">
-        <div>
-          <h2 class="card-title">{{ r.title }}</h2>
-          <div class="card-meta">
-            <span>{{ r.published_at }}</span>
-            <span class="meta-divider">|</span>
-            <span>Kaynak: {{ r.sources }}</span>
-            {% if r.sentiment_label %}
-            <span class="meta-divider">|</span>
-            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
-            {% endif %}
-            {% if r.notified %}
-            <span class="meta-divider">|</span>
-            <span class="notified-flag">📨 Telegram Aktarıldı</span>
-            {% endif %}
-          </div>
+      <div class="trend-panel">
+        <div class="trend-panel-header">
+          <span class="trend-panel-title">📈 Trend Özeti</span>
+          <span class="trend-period-toggle">
+            <button type="button" id="trend-btn-weekly" onclick="loadTrendSummary('weekly')">Haftalık</button>
+            <button type="button" id="trend-btn-monthly" class="inactive" onclick="loadTrendSummary('monthly')">Aylık</button>
+          </span>
         </div>
-        <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+        <div id="trend-panel-body">
+          <span class="trend-empty">Yükleniyor…</span>
+        </div>
       </div>
 
-      {% if r.importance_reason %}
-      <div class="reason">{{ r.importance_reason }}</div>
-      {% endif %}
-
-      <div class="summary">{{ r.summary }}</div>
-
-      {% if r.market_impact %}
-      <div class="market-impact">
-        <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
+      {% if not records %}
+      <div class="empty">
+        <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
+        Veri akışı bekleniyor. Otonom ajan piyasaları tarıyor...
       </div>
       {% endif %}
 
-      {% if r.key_points %}
-      <ul class="key-points">
-        {% for point in r.key_points %}
-        <li>{{ point }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
+      {% for r in records %}
+      <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
+        <div class="card-top">
+          <div>
+            <h2 class="card-title">{{ r.title }}</h2>
+            <div class="card-meta">
+              <span>{{ r.published_at }}</span>
+              <span class="meta-divider">|</span>
+              <span>Kaynak: {{ r.sources }}</span>
+              {% if r.sentiment_label %}
+              <span class="meta-divider">|</span>
+              <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+              {% endif %}
+              {% if r.sector_labels %}
+              <span class="meta-divider">|</span>
+              {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+              {% endif %}
+              {% if r.notified %}
+              <span class="meta-divider">|</span>
+              <span class="notified-flag">📨 Telegram Aktarıldı</span>
+              {% endif %}
+            </div>
+          </div>
+          <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+        </div>
 
-      <div class="links">
-        {% for link in r.links %}
-        <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
-        {% endfor %}
+        {% if r.importance_reason %}
+        <div class="reason">{{ r.importance_reason }}</div>
+        {% endif %}
+
+        <div class="summary">{{ r.summary }}</div>
+
+        {% if r.market_impact %}
+        <div class="market-impact">
+          <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
+        </div>
+        {% endif %}
+
+        {% if r.key_points %}
+        <ul class="key-points">
+          {% for point in r.key_points %}
+          <li>{{ point }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="links">
+          {% for link in r.links %}
+          <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+          {% endfor %}
+        </div>
+
+        {% if r.source_comparison %}
+        <details class="compare-details">
+          <summary>🔀 Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
+          <div class="compare-grid">
+            {% for c in r.source_comparison %}
+            <div class="compare-item">
+              <div class="compare-source">{{ c.source }}</div>
+              {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
+              {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
+              {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
       </div>
-    </div>
-    {% endfor %}
+      {% endfor %}
   </main>
+
+  <script>
+    async function refreshMarketTicker() {
+      const container = document.getElementById('ticker-items');
+      try {
+        const res = await fetch('/api/market-data');
+        const data = await res.json();
+        if (!data.length) {
+          container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+          return;
+        }
+        const itemsHtml = data.map(function (item) {
+          const up = item.change_pct >= 0;
+          const arrow = up ? '▲' : '▼';
+          const cls = up ? 'ticker-up' : 'ticker-down';
+          const priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+          const closedTag = item.is_open ? '' : '<span class="ticker-closed" title="Piyasa şu an kapalı, gösterilen son kapanış fiyatı">🔒 kapalı</span>';
+          const delayedTag = item.is_delayed ? '<span class="ticker-closed" title="Bu kaynak (Yahoo Finance) bu sembolü ücretsiz erişimde gecikmeli veriyor - borsanın gerçek zamanlı veri lisansı gerektirmesi nedeniyle">⏱ ~' + item.delay_minutes + 'dk gecikmeli</span>' : '';
+          return '<span class="ticker-item"><span class="ticker-label">' + item.label +
+            '</span><span class="ticker-price">' + priceStr + '</span><span class="' + cls + '">' +
+            arrow + ' ' + Math.abs(item.change_pct).toFixed(2) + '%</span>' + closedTag + delayedTag + '</span>';
+        }).join('');
+        // İçerik iki kez ardı ardına basılır: @keyframes ticker-scroll tam
+        // %50 sola kaydırıyor, iki kopya olduğundan bu nokta görsel olarak
+        // başlangıçla birebir aynı - böylece sonsuz döngü dikişsiz akar.
+        container.innerHTML = itemsHtml + itemsHtml;
+      } catch (e) {
+        container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+      }
+    }
+
+    async function refreshSectorHeatmap() {
+      const container = document.getElementById('heatmap-items');
+      try {
+        const res = await fetch('/api/sector-heatmap');
+        const data = await res.json();
+        if (!data.length) {
+          container.innerHTML = '<span class="ticker-empty">Henüz veri yok</span>';
+          return;
+        }
+        container.innerHTML = data.map(function (item) {
+          const title = item.label + ': ' + item.count + ' haber, ort. önem ' + item.avg_importance +
+            ' (📈' + item.positive + ' / 📉' + item.negative + ')';
+          return '<div class="heatmap-box" style="background:' + item.color + '" title="' + title + '">' +
+            '<span class="heatmap-sector">' + item.label + '</span>' +
+            '<span class="heatmap-count">' + item.count + ' haber</span></div>';
+        }).join('');
+      } catch (e) {
+        container.innerHTML = '<span class="ticker-empty">Isı haritası alınamadı</span>';
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    async function loadTrendSummary(period) {
+      const body = document.getElementById('trend-panel-body');
+      document.getElementById('trend-btn-weekly').classList.toggle('inactive', period !== 'weekly');
+      document.getElementById('trend-btn-monthly').classList.toggle('inactive', period !== 'monthly');
+      body.innerHTML = '<span class="trend-empty">Yükleniyor…</span>';
+      try {
+        const res = await fetch('/api/trend-summary?period=' + encodeURIComponent(period));
+        const data = await res.json();
+
+        if (!data.total_count) {
+          body.innerHTML = '<span class="trend-empty">Bu dönem için henüz veri yok.</span>';
+          return;
+        }
+
+        let volumeHtml = '';
+        if (data.volume_change_pct === null) {
+          volumeHtml = '<span class="trend-volume-badge" style="background:rgba(148,163,184,0.15); color:#94a3b8;">önceki dönemle karşılaştırılamıyor</span>';
+        } else {
+          const up = data.volume_change_pct >= 0;
+          const color = up ? '#22c55e' : '#ef4444';
+          const bg = up ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+          const arrow = up ? '▲' : '▼';
+          volumeHtml = '<span class="trend-volume-badge" style="background:' + bg + '; color:' + color + ';">' +
+            arrow + ' ' + (up ? '+' : '') + data.volume_change_pct + '%</span>';
+        }
+
+        const maxSectorCount = data.top_sectors.length ? Math.max.apply(null, data.top_sectors.map(function (s) { return s.count; })) : 1;
+        const sectorsHtml = data.top_sectors.length
+          ? data.top_sectors.map(function (s) {
+              const pct = Math.round(100 * s.count / maxSectorCount);
+              return '<div class="trend-sector-row">' +
+                '<span>' + escapeHtml(s.label) + '</span>' +
+                '<div class="trend-bar-track"><div class="trend-bar-fill" style="width:' + pct + '%"></div></div>' +
+                '<span>' + s.count + '</span></div>';
+            }).join('')
+          : '<span class="trend-empty">Sektör verisi yok.</span>';
+
+        const sp = data.sentiment_pct;
+        const sentimentHtml = '<div class="trend-sentiment-row">' +
+          '<span>📈 %' + sp.pozitif + '</span><span>📉 %' + sp.negatif + '</span><span>➖ %' + sp.notr + '</span></div>';
+
+        const topNewsHtml = data.top_news.length
+          ? '<ul class="trend-top-news">' + data.top_news.map(function (n) {
+              const score = n.importance_score != null ? n.importance_score : '?';
+              return '<li>⭐ [' + score + '/5] ' + escapeHtml(n.title) + ' <span style="color:var(--text-muted)">(' + escapeHtml(n.sources) + ')</span></li>';
+            }).join('') + '</ul>'
+          : '<span class="trend-empty">Öne çıkan haber yok.</span>';
+
+        body.innerHTML =
+          '<div class="trend-grid">' +
+          '<div><div style="font-size:0.85rem; margin-bottom:0.5rem;">🏭 En Çok Haber Alan Sektörler</div>' + sectorsHtml + '</div>' +
+          '<div>' +
+          '<div style="font-size:0.85rem;">📰 Toplam haber: <b>' + data.total_count + '</b>' + volumeHtml + '</div>' +
+          sentimentHtml +
+          '<div style="font-size:0.85rem; margin-top:0.75rem; margin-bottom:0.4rem;">⭐ En Önemli Haberler</div>' + topNewsHtml +
+          '</div>' +
+          '</div>';
+      } catch (e) {
+        body.innerHTML = '<span class="trend-empty">Trend verisi alınamadı.</span>';
+      }
+    }
+
+    refreshMarketTicker();
+    refreshSectorHeatmap();
+    loadTrendSummary('weekly');
+    // Piyasa şeridi: sunucu tarafı önbellek süresiyle (bkz.
+    // src/web/market_data.py > _CACHE_TTL_SECONDS) BİLEREK aynı tutuluyor.
+    // 10 sn, gerçek bir ölçümle belirlendi. Sektör ısı haritası haber
+    // verisine dayandığından (dakikalar içinde nadiren değişir) 5 dk'da bir
+    // yeterli.
+    setInterval(refreshMarketTicker, 10000);
+    setInterval(refreshSectorHeatmap, 300000);
+  </script>
 </body>
 
 </html>

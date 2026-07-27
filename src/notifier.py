@@ -109,12 +109,15 @@ async def _send_to_all(bot_token: str, chat_ids: list[str], message: str) -> int
 
 
 def send_telegram_notification(record: "NewsRecord") -> bool:
-    """Verilen kayıt için, subscribers tablosundaki TÜM abonelere Telegram
-    mesajı gönderir.
+    """Verilen kayıt için, KENDİ önem eşiğini (importance_threshold, bkz.
+    Telegram /esik komutu) karşılayan abonelere Telegram mesajı gönderir -
+    artık TÜM abonelere değil: haberin importance_score'u, bir abonenin
+    eşiğine eşit veya ondan büyükse o aboneye gider (bkz.
+    src/db.py > get_subscriber_chat_ids_for_score).
 
     En az bir aboneye başarıyla gönderildiyse True, hiçbir sebeple (token
-    eksik, abone yok, paket kurulu değil, ağ hatası vb.) gönderilemediyse
-    False döner. Hiçbir durumda exception fırlatmaz.
+    eksik, eşiği karşılayan abone yok, paket kurulu değil, ağ hatası vb.)
+    gönderilemediyse False döner. Hiçbir durumda exception fırlatmaz.
     """
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not bot_token:
@@ -133,14 +136,15 @@ def send_telegram_notification(record: "NewsRecord") -> bool:
         )
         return False
 
-    from src.db import get_all_subscriber_chat_ids
+    from src.db import get_subscriber_chat_ids_for_score
 
-    chat_ids = get_all_subscriber_chat_ids()
+    score = record.importance_score if record.importance_score is not None else 0
+    chat_ids = get_subscriber_chat_ids_for_score(score)
     if not chat_ids:
-        logger.warning(
-            "Hiç Telegram abonesi yok (subscribers tablosu boş), bildirim "
-            "atlanıyor (haber: %s). Botla konuşup /start yazan kullanıcılar "
-            "otomatik abone olur.",
+        logger.info(
+            "Bu skoru (%s) karşılayan (kendi eşiğine göre) hiç abone yok, bildirim "
+            "atlanıyor (haber: %s).",
+            score,
             record.title,
         )
         return False

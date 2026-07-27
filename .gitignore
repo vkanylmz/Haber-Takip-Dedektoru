@@ -6,5 +6,6 @@ venv/
 data/logs/
 data/reports/
 data/state/
+data/backups/
 data/*.db
 data/*.sqlite

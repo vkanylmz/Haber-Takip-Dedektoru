@@ -179,6 +179,310 @@ ve özet yerine ham metni gösterip devam eder; önem skoru `None` kalır (yani 
 asla Telegram eşiğini geçemez). Böylece kurulumun geri kalanını API anahtarı olmadan
 da test edebilirsiniz.
 
+## Docker ile Çalıştırma (alternatif)
+
+`python main.py` yerine, projeyi Docker container'ı içinde de çalıştırabilirsiniz
+— bu, iş/ev bilgisayarı arasında taşımayı veya bir sunucuya deploy etmeyi
+kolaylaştırır. Proje bir `Dockerfile` + `docker-compose.yml` ile paketlenmiştir.
+
+**Ön koşul:** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+(Windows/Mac) veya Docker Engine + Compose (Linux) kurulu olmalı.
+
+1. `.env` dosyanızı proje kök dizininde elle hazırlayın (`.env.example`'ı
+   kopyalayıp API anahtarlarınızı/Telegram bot token'ınızı doldurun).
+   **Önemli:** container **etkileşimli değildir** — normal `python main.py`
+   çalıştırmasının aksine, eksik anahtarları sizden terminalde SORMAZ (bkz.
+   `src/config_setup.py > ensure_all_credentials`, `sys.stdin.isatty()`
+   kontrolü); `.env` içinde tanımlı olmayan bir anahtar, ilgili özelliği
+   (ör. özetleme veya Telegram) sessizce devre dışı bırakır.
+2. Container'ı başlatın:
+
+   ```bash
+   docker-compose up --build
+   ```
+
+   (Arka planda çalıştırmak isterseniz: `docker-compose up --build -d`)
+3. Dashboard'a `http://localhost:8000` adresinden erişin.
+4. Durdurmak için: `docker-compose down` (Ctrl+C, ön planda çalıştırıyorsanız).
+
+**Kalıcılık:** `docker-compose.yml`, `./data` klasörünü ve `./.env` dosyasını
+container'ın DIŞINDA (host'ta) tutacak şekilde volume olarak bağlar — veritabanı,
+loglar, raporlar ve yedekler (`data/backups/`) container yeniden oluşturulduğunda
+(ör. `docker-compose up --build` ile imaj güncellendiğinde) KAYBOLMAZ. `.env` ve
+`data/` bilerek imajın İÇİNE kopyalanmaz (bkz. `.dockerignore`) — aksi halde
+gerçek API anahtarlarınız/abone verileriniz imajın içine gömülürdü.
+
+**Not:** Worker, Telegram bot dinleyicisi ve web dashboard'un hepsi TEK bir
+container'da, `python main.py` (bkz. `Dockerfile > CMD`) ile birlikte çalışır —
+yerel çalıştırmadaki mimari birebir aynıdır, sadece paketleme farklıdır.
+
+## Fly.io'ya Deploy
+
+Projeyi kendi bilgisayarınızda Docker kurulu OLMADAN da bir sunucuya deploy
+edebilirsiniz: Fly.io, `Dockerfile`'ınızı KENDİ build sunucusunda inşa eder —
+yerelde yalnızca küçük bir CLI aracı (`flyctl`) yeterlidir.
+
+> **ÖNEMLİ - "ücretsiz katman" ve deneme süresi hakkında dürüst bir not
+> (2026-07'de resmi Fly.io dokümanlarından araştırıldı, bkz. kaynaklar altta):**
+> Fly.io, Ekim 2024'ten itibaren YENİ hesaplar için kalıcı bir ücretsiz plan
+> sunmuyor. Yeni bir hesap, **"2 VM-saati VEYA 7 gün, hangisi önce dolarsa"**
+> şeklinde çok sınırlı bir deneme kotası alır. Bu kota (makineler + 20GB'a
+> kadar disk + 10 makineye kadar) tükendiğinde **uygulamanız DURDURULUR** -
+> devam etmek için ödeme yöntemi (kredi kartı) eklemeniz gerekir; kartı
+> eklediğiniz ANDAN İTİBAREN kullanım faturalandırılmaya başlar (bkz. altta
+> "Deneme Süresi Dolunca Ne Olur?").
+>
+> **BU PROJE İÇİN KRİTİK BİR DETAY:** `fly.toml` içindeki
+> `auto_stop_machines = "off"` + `min_machines_running = 1` ayarları
+> (worker'ın/Telegram bot'un sürekli çalışması için ZORUNLU - bkz. dosya
+> başındaki not) makinenin 7 gün DEĞİL, kesintisiz çalıştığı anlamına gelir.
+> Yani **"2 VM-saati" kotanız, deploy'dan sonra yaklaşık 2 SAAT İÇİNDE
+> tükenecektir** - 7 günlük pencere bu senaryoda pratikte geçerli olmaz.
+> Kısa süreli bir "canlıya alma" denemesi için bu yeterli olabilir; daha
+> uzun süre açık tutmak isterseniz kart eklemeniz (ve gerçek, düşük de olsa
+> ücretlendirilmeniz) gerekecektir. Ücretlendirmeden tamamen kaçınmak
+> isterseniz aşağıdaki **"Çıkış Planı"** bölümündeki adımlarla süre dolmadan
+> her şeyi silebilirsiniz.
+>
+> İyi haber: bu projenin ölçeği (tek küçük makine, 1GB disk) için, kart
+> eklendikten sonraki maliyet de ÇOK DÜŞÜK - aşağıdaki "Maliyet Tahmini"
+> bölümüne bakın (~4-5 USD/ay, saatlik kesirlerle orantılı). Eğer Ekim 2024
+> öncesinden kalma eski bir Fly.io hesabınız varsa, o hesapta hâlâ geçerli
+> olan eski ücretsiz kotalar (3 adet shared-cpu-1x 256mb VM + 3GB disk) bu
+> projeyi TAMAMEN ücretsiz karşılayabilir.
+
+### 1) Fly CLI (flyctl) kurulumu
+
+**Windows (PowerShell):**
+```powershell
+pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"
+```
+(Kurulumdan sonra YENİ bir terminal açın ki `fly` komutu PATH'e eklenmiş olsun.)
+
+**Mac/Linux:**
+```bash
+curl -L https://fly.io/install.sh | sh
+```
+
+Kurulumu doğrulayın:
+```bash
+fly version
+```
+
+### 2) Hesap açma / giriş
+
+```bash
+fly auth signup    # yeni hesap (e-posta yeterli - deneme süresince kart eklemeniz ŞART DEĞİL, bkz. yukarıdaki uyarı)
+# veya zaten hesabınız varsa:
+fly auth login
+```
+
+Kart eklemeden signup olabilirsiniz; deneme kotanız (2 VM-saati/7 gün) bitene
+kadar kart istenmez. Kartı EKLEDİĞİNİZ andan itibaren gerçek ücretlendirme
+başlar (bkz. yukarıdaki uyarı ve aşağıdaki "Deneme Süresi Dolunca Ne Olur?").
+
+### 3) Uygulamayı başlatma (`fly launch`)
+
+Proje kök dizininde (bu `fly.toml`'ın bulunduğu klasörde):
+
+```bash
+fly launch --no-deploy
+```
+
+- `--no-deploy`: hemen deploy etmeden önce `fly.toml`'ı gözden geçirmenize
+  izin verir (bu proje için `fly.toml` ZATEN hazır - bkz. proje kökü).
+- Fly, mevcut `fly.toml`'ı bulup "bu ayarları kullanmak ister misiniz?" diye
+  soracaktır - **Evet** deyin (uygulama adı `finans-haber-toplayici` GLOBAL
+  olarak alınmışsa farklı bir isim önerilecek/sorulacaktır - kabul edin veya
+  `fly.toml` içindeki `app = "..."` satırını elle değiştirin).
+- Bölge sorusunda `fly.toml`'daki `fra` (Frankfurt) varsayılanını
+  kullanabilir veya `fly platform regions` ile listeleyip başka birini
+  seçebilirsiniz.
+- **"Would you like to set up a Postgres/Redis database?"** sorularına
+  **Hayır** deyin - bu proje SQLite kullanıyor, ek bir veritabanı servisi
+  gerekmiyor.
+
+### 4) Kalıcı disk (volume) oluşturma
+
+`fly.toml` içindeki `[[mounts]]` bölümü, veritabanının/logların/yedeklerin
+(`data/` klasörünün TAMAMI) her deploy'da SIFIRLANMAMASI için bir kalıcı disk
+tanımlar. Bu volume'u İLK deploy'dan ÖNCE elle oluşturun:
+
+```bash
+fly volumes create finans_haber_data --region fra --size 1
+```
+
+(`--region`, `fly.toml > primary_region` ile AYNI olmalı; `--size 1` = 1GB,
+bu projenin veri boyutu için fazlasıyla yeterli - istenirse sonradan
+`fly volumes extend` ile büyütülebilir.)
+
+### 5) Gizli bilgileri (secrets) ayarlama
+
+**ASLA** gerçek API anahtarlarınızı/bot token'ınızı `fly.toml`'a veya koda
+yazmayın/commit etmeyin - Fly'ın şifreli "secrets" mekanizmasını kullanın
+(bu değerler yalnızca çalışan makineye ortam değişkeni olarak enjekte edilir,
+Fly panelinde bile düz metin görüntülenmez):
+
+```bash
+fly secrets set GEMINI_API_KEY="gerçek-anahtarınız"
+fly secrets set TELEGRAM_BOT_TOKEN="gerçek-bot-tokenınız"
+fly secrets set TELEGRAM_CHAT_ID="gerçek-chat-id'niz"
+
+# Yalnızca kullanıyorsanız gerekli (boş bırakılırsa ilgili özellik sessizce
+# devre dışı kalır, uygulama çökmez - bkz. .env.example):
+fly secrets set ANTHROPIC_API_KEY="gerçek-anahtarınız"
+fly secrets set EVENTREGISTRY_API_KEY="gerçek-anahtarınız"
+```
+
+Tek komutla hepsini birden de ayarlayabilirsiniz:
+```bash
+fly secrets set GEMINI_API_KEY="..." TELEGRAM_BOT_TOKEN="..." TELEGRAM_CHAT_ID="..."
+```
+
+Ayarlanan secret'ları (değerlerini DEĞİL, sadece isimlerini) doğrulamak için:
+```bash
+fly secrets list
+```
+
+### 6) Deploy
+
+```bash
+fly deploy
+```
+
+Bu komut, kod tabanınızı Fly'ın uzak build sunucusuna yükler, `Dockerfile`'ı
+orada inşa eder ve makineyi başlatır - yerel Docker kurulumu GEREKMEZ. İlk
+deploy birkaç dakika sürebilir (bağımlılıkların kurulumu dahil).
+
+### 7) Deploy sonrası kontrol
+
+```bash
+fly status           # makine çalışıyor mu, sağlıklı mı (health check durumu)
+fly logs             # canlı log akışı (worker taramaları, Telegram bot, hatalar)
+fly open             # dashboard'u varsayılan tarayıcıda açar (https://<app-adı>.fly.dev)
+```
+
+`fly status` çıktısında health check'in (bkz. `fly.toml > http_service.checks`,
+`/health` endpoint'ini kontrol eder) **"passing"** göstermesi beklenir. İlk
+birkaç dakika `pending`/`warning` görünmesi normaldir (uygulama başlarken).
+
+Sorun giderme: `fly logs` içinde bir hata görürseniz (ör. eksik bir secret
+yüzünden bir özelliğin devre dışı kaldığına dair bir uyarı - bu ZARARSIZDIR
+ve uygulamayı çökertmez, bkz. yukarıdaki "gizli bilgiler" notu), `fly ssh console`
+ile makineye bağlanıp `cat data/logs/*.log` gibi komutlarla daha ayrıntılı
+inceleyebilirsiniz.
+
+### Maliyet Tahmini (yeni/pay-as-you-go hesap için, 2026-07 itibarıyla)
+
+| Kalem | Yaklaşık maliyet |
+|---|---|
+| 1x shared-cpu-1x, 512mb, 7/24 açık | ~4 USD/ay |
+| 1GB kalıcı disk | ~0.15 USD/ay |
+| Giden trafik (bu ölçekte - 10 kullanıcı, düşük hacim) | Aylık ücretsiz kotanın (bölgeye göre) büyük olasılıkla altında kalır |
+| **Toplam (yaklaşık)** | **~4-5 USD/ay** |
+
+Bellek boyutunu `fly.toml > [[vm]] > memory` alanından `256mb`'ye düşürerek
+maliyeti biraz daha azaltabilirsiniz (~2 USD/ay) - ama bu proje TEK bir
+süreçte FastAPI + SQLAlchemy + APScheduler + python-telegram-bot + LLM
+SDK'larını birlikte çalıştırdığından (bkz. main.py), 256mb'de bellek
+yetersizliği (OOM) riski biraz daha yüksektir; `fly status`/`fly logs` ile
+izleyip gerekirse `fly scale memory 512` ile büyütebilirsiniz.
+
+**10 kullanıcılık bu ölçek için yeterli mi?** Evet, rahatlıkla - bu ölçekte
+darboğaz Fly.io kaynakları değil, LLM sağlayıcısının (Gemini/Claude) kendi
+ücretsiz/ücretli kotasıdır (bkz. yukarıdaki "Rate Limit Koruması" bölümü).
+1 makine + 1GB disk, 10 kullanıcılık abone/haber verisi için fazlasıyla
+yeterlidir.
+
+### Deneme Süresi Dolunca Ne Olur?
+
+`fly.toml` bilerek makineyi 7/24 açık tuttuğundan (bkz. dosya başındaki not),
+**2 VM-saatlik deneme kotanız deploy'dan yaklaşık 2 saat sonra tükenir** -
+7 günlük üst sınır bu senaryoda pratikte devreye girmez. Kota tükendiğinde:
+
+- Makineniz **DURDURULUR** (dashboard erişilemez hale gelir, worker/Telegram
+  bot da durur).
+- Devam etmek isterseniz: [fly.io/dashboard](https://fly.io/dashboard) ->
+  hesabınız -> Billing bölümünden bir kart eklemeniz istenir. Kartı
+  eklediğiniz ANDAN İTİBAREN kullanım gerçek olarak faturalandırılmaya
+  başlar (bkz. yukarıdaki "Maliyet Tahmini" - bu ölçekte saatte kuruşlarla
+  ifade edilebilecek kadar düşük, ama ARTIK ücretsiz değildir).
+- Kart eklemek İSTEMİYORSANIZ, hiçbir şey yapmanıza gerek yok - makine zaten
+  durmuş durumda kalır, otomatik bir ücretlendirme OLMAZ (bkz. Fly.io resmi
+  dokümantasyonu: kart eklenmeden faturalandırma başlamıyor). Yine de temiz
+  bir kapanış için aşağıdaki "Çıkış Planı"nı uygulamanız önerilir.
+
+### Çıkış Planı: Ücretlendirmeden Tamamen Kaçınma
+
+Deneme süresi dolmadan (veya kart eklemeden ÖNCE) her şeyi silip
+sıfırlamak isterseniz, şu sırayla ilerleyin - **ÖNEMLİ: volume'lar makineden
+AYRI faturalandırılır** (Fly'ın resmi belgelerine göre, bir volume DURMUŞ
+bir makineye bağlıyken bile ücretlendirilmeye devam eder), bu yüzden sadece
+uygulamayı değil, volume'u da AYRICA silmeniz gerekir:
+
+```bash
+# 1) Önce volume ID'sini bulun
+fly volumes list -a finans-haber-toplayici
+
+# 2) Volume'u silin (YUKARIDAKİ komuttan aldığınız gerçek ID'yi kullanın -
+#    bu GERİ ALINAMAZ, veritabanınız/yedekleriniz kalıcı olarak silinir)
+fly volumes destroy <volume-id> -a finans-haber-toplayici
+
+# 3) Uygulamanın kendisini (tüm makineleriyle birlikte) tamamen kaldırın
+fly apps destroy finans-haber-toplayici
+```
+
+Her ikisini de sildikten sonra `fly apps list` ve
+[fly.io/dashboard](https://fly.io/dashboard) üzerinden hiçbir kaynağınızın
+kalmadığını doğrulayın. Kart eklediyseniz ve organizasyonu TAMAMEN
+kapatmak isterseniz, Billing sayfasından kartı da kaldırabilir veya
+hesabınızı silebilirsiniz (bkz. [fly.io/docs/about/billing](https://fly.io/docs/about/billing/)).
+
+**Özet - eve geçip Oracle Cloud'a (veya başka bir kalıcı çözüme) geçmeden
+önce:** yukarıdaki 3 komutu çalıştırmanız, Fly.io tarafında hiçbir kaynağın
+(ve dolayısıyla hiçbir ücretin) kalmamasını garantiler.
+
+*Kaynaklar (2026-07 itibarıyla güncel bilgi için araştırıldı):
+[Fly.io Resmi Fiyatlandırma](https://fly.io/docs/about/pricing/),
+[Fly.io Yapılandırma Referansı](https://fly.io/docs/reference/configuration/).*
+
+## GitHub'a Yükleme (versiyon kontrolü)
+
+Fly.io deploy'u GitHub'a bağlı DEĞİLDİR (`fly deploy` doğrudan yerel kod
+tabanınızdan yükler) - ama versiyon kontrolü/yedekleme için projeyi ayrıca
+GitHub'a da yüklemeniz önerilir. Proje zaten bir git deposu ve bir GitHub
+remote'u (`origin`) tanımlı - yalnızca commit'leyip push etmeniz yeterli:
+
+```bash
+git add -A
+git commit -m "Proje güncellemeleri"
+git push origin main
+```
+
+**Eğer proje henüz bir git deposu DEĞİLSE** (ör. sıfırdan bir kopyayla
+başlıyorsanız), önce şu adımları izleyin:
+
+```bash
+git init
+git add -A
+git commit -m "İlk commit"
+```
+
+Sonra [github.com/new](https://github.com/new) adresinden BOŞ bir repo
+oluşturun (README/`.gitignore` EKLEMEDEN - proje zaten kendi `.gitignore`'ına
+sahip), ardından:
+
+```bash
+git remote add origin https://github.com/<kullanici-adiniz>/<repo-adi>.git
+git branch -M main
+git push -u origin main
+```
+
+**ÖNEMLİ:** `.env` dosyanız `.gitignore` içinde zaten hariç tutuluyor - GERÇEK
+API anahtarlarınızın/bot token'ınızın YANLIŞLIKLA GitHub'a gitmediğinden emin
+olmak için `git status`/`git add` sonrası çıktıyı push etmeden önce bir kez
+gözden geçirin (bkz. proje genelindeki güvenlik notları).
+
 ## Yapılandırma (`config.yaml`)
 
 - `app`: zaman aşımı, rate-limit, User-Agent, tekilleştirme (dedup) eşiği gibi genel ayarlar

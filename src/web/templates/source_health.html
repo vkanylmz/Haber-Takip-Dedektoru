@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaynak Sağlığı — Finansal Haber Dashboard</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 0 0 3rem 0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .back-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .back-link:hover {
+      color: var(--text-main);
+    }
+
+    main {
+      max-width: 1000px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .health-table-wrap {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow-x: auto;
+      backdrop-filter: blur(16px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .rate-good { color: #4ade80; font-weight: 700; }
+    .rate-warn { color: #eab308; font-weight: 700; }
+    .rate-bad { color: #f87171; font-weight: 700; }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 4rem 1rem;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+    }
+
+    .error-msg {
+      color: #f87171;
+      font-size: 0.78rem;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>🩺 Kaynak Sağlığı</h1>
+      <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Son 24 saat</div>
+    </div>
+    <a class="back-link" href="/">← Dashboard'a dön</a>
+  </header>
+
+  <main>
+    {% if not rows %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
+      Son 24 saatte hiç fetcher çalıştırma kaydı yok. En az bir tarama turu
+      çalıştıktan sonra burada görünecek.
+    </div>
+    {% else %}
+    <div class="health-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Kaynak</th>
+            <th>Başarı Oranı (24s)</th>
+            <th>Toplam Çalıştırma</th>
+            <th>Ort. Haber Sayısı</th>
+            <th>Son Başarılı</th>
+            <th>Son Başarısız</th>
+            <th>Son Hata</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.source }}</td>
+            <td class="{% if row.success_rate >= 90 %}rate-good{% elif row.success_rate >= 50 %}rate-warn{% else %}rate-bad{% endif %}">
+              %{{ row.success_rate }}
+            </td>
+            <td>{{ row.total_runs }}</td>
+            <td>{{ row.avg_item_count }}</td>
+            <td>{{ row.last_success_display }}</td>
+            <td>{{ row.last_failure_display }}</td>
+            <td class="error-msg" title="{{ row.last_error_message or '' }}">{{ row.last_error_message or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </main>
+</body>
+
+</html>

@@ -1,0 +1,78 @@
+# Fly.io uygulama yapılandırması (bkz. README > "Fly.io'ya Deploy").
+#
+# ÖNEMLİ MİMARİ NOT: Bu proje worker'ı (periyodik RSS taraması), Telegram bot
+# dinleyicisini VE web dashboard'u AYNI TEK süreçte çalıştırır (bkz. main.py).
+# Bu yüzden Fly.io'nun "istek yoksa makineyi durdur" (auto-stop) davranışı
+# KESİNLİKLE KAPALI tutulmalıdır - aksi halde dashboard'a uzun süre kimse
+# girmezse Fly makineyi durdurabilir ve bununla birlikte RSS taraması +
+# Telegram bot dinleyicisi de durur (bkz. aşağıdaki http_service ayarları).
+#
+# `app` adı GLOBAL olarak benzersiz olmalı - `fly launch` çalıştırdığınızda
+# bu isim zaten alınmışsa değiştirmeniz istenecektir (bkz. README).
+app = "finans-haber-toplayici"
+
+# Fly'ın Türkiye'ye en yakın bölgesi Frankfurt (fra) - İstanbul/Ankara'dan
+# tipik olarak en düşük gecikmeyi verir (Fly'ın kendi resmi bir İstanbul
+# bölgesi yok). Farklı bir bölge tercih ederseniz `fly platform regions`
+# ile listeleyip burayı değiştirebilirsiniz.
+primary_region = "fra"
+
+[build]
+  # Kök dizindeki Dockerfile kullanılır - Fly.io'nun kendi uzak build
+  # sunucusunda inşa edilir, yerelde Docker kurulu OLMASI GEREKMEZ.
+  dockerfile = "Dockerfile"
+
+[env]
+  # Uygulamanın kendi config.yaml'ı zaten port/host'u sabit tanımlıyor
+  # (web.port: 8000, web.host: 0.0.0.0) - burada ek bir PORT env değişkenine
+  # gerek yok, http_service.internal_port ile eşleştirmek yeterli.
+  PYTHONUNBUFFERED = "1"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+
+  # KESİNLİKLE "off" kalmalı (bkz. dosya başındaki mimari not) - bu KİŞİSEL/
+  # DÜŞÜK TRAFİKLİ bir dashboard olsa da, arka planda SÜREKLİ çalışması
+  # gereken bir RSS worker'ı ve Telegram bot dinleyicisi barındırıyor.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  # En az 1 makine HER ZAMAN ayakta kalsın (0 olursa makine tamamen durur).
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    # Dashboard'un tamamını (DB sorgusu + Jinja render) değil, hafif bir
+    # /health endpoint'ini kontrol eder (bkz. src/web/app.py > health()).
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+# Küçük, tek kullanıcılı/az sayıda abone ölçeğinde 256mb teorik olarak
+# yeterli olabilir, ama FastAPI + SQLAlchemy + APScheduler + python-telegram-
+# bot + httpx + google-genai/anthropic SDK'ları AYNI süreçte çalıştığından
+# (bkz. main.py) 512mb daha güvenli bir varsayılan - OOM (bellek yetersizliği)
+# nedeniyle makinenin sessizce yeniden başlamasını (ve bu sırada birkaç
+# dakikalık kesintiyi) önlemek için. Maliyeti düşürmek isterseniz 256mb'ye
+# çekip gerçek kullanımda izleyebilirsiniz (bkz. `fly status`, `fly logs`).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Veritabanının (data/finans_haber.db), loglarının, raporlarının ve haftalık
+# yedeklerinin (bkz. src/backup.py) HER DEPLOY'DA SIFIRLANMAMASI için kalıcı
+# disk. `destination`, config.yaml > database.path ("data/finans_haber.db")
+# ile TUTARLI olmalı - WORKDIR /app olduğundan bu, konteyner içinde
+# /app/data yoluna karşılık gelir.
+#
+# Volume'un kendisi `fly volumes create` ile ÖNCEDEN oluşturulmalı (bkz.
+# README > "Fly.io'ya Deploy" - adım adım komut orada). `initial_size` burada
+# yalnızca volume HENÜZ YOKSA ve `fly deploy` onu otomatik oluşturmak
+# zorunda kalırsa kullanılan bir varsayılandır.
+[[mounts]]
+  source = "finans_haber_data"
+  destination = "/app/data"
+  initial_size = "1gb"

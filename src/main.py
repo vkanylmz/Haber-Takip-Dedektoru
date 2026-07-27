@@ -16,7 +16,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from src.config import get_summarizer_api_key, load_config
-from src.db import compute_group_key, find_record_by_group_key, get_session, init_db, mark_notified, upsert_group
+from src.db import (
+    compute_group_key,
+    find_record_by_group_key,
+    get_session,
+    init_db,
+    mark_notified,
+    record_source_health,
+    upsert_group,
+)
 from src.deduplicator import group_similar_news, sort_groups_by_recency
 from src.fetchers.licensed_aggregator import fetch_licensed_aggregator
 from src.fetchers.rss_fetcher import fetch_rss
@@ -38,21 +46,45 @@ def fetch_source(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[Ne
     Bilinmeyen kaynak türleri veya beklenmedik hatalar burada yakalanır ve
     boş liste döner; böylece tek bir kaynaktaki sorun tüm çalıştırmayı
     etkilemez (gereksinim #7).
+
+    Her çalıştırma denemesi (başarılı/başarısız, kaç haber, ne zaman) ayrıca
+    `src/db.py > record_source_health`'e kaydedilir - kaynak sağlık paneli
+    bunu kullanır (bkz. src/web/app.py > /kaynak-sagligi). Bu kayıt asla
+    exception fırlatmaz, dolayısıyla asıl çekim akışını etkilemez.
+
+    ÖNEMLİ: alttaki fetcher'lar (rss_fetcher/scrape_fetcher/licensed_aggregator)
+    KENDİ hatalarını (ağ hatası, robots.txt engeli, parse hatası) zaten
+    yakalayıp loglayıp boş liste döndürüyor - yani BURADAKİ try/except'e asıl
+    pratikte neredeyse hiç düşülmez. Bu yüzden "başarı", exception fırlatılıp
+    fırlatılmadığından DEĞİL, gerçekten haber dönüp dönmediğinden
+    (len(items) > 0) belirlenir - aksi halde sağlık paneli her zaman "%100
+    başarı" gösterirdi, altta bir ağ/robots.txt sorunu olsa bile.
     """
     source_type = source_cfg.get("type", "rss")
     name = source_cfg.get("name", source_cfg.get("id", "bilinmeyen-kaynak"))
     try:
         if source_type == "rss":
-            return fetch_rss(source_cfg, app_cfg)
+            items = fetch_rss(source_cfg, app_cfg)
         elif source_type == "scrape":
-            return fetch_scrape(source_cfg, app_cfg)
+            items = fetch_scrape(source_cfg, app_cfg)
         elif source_type == "licensed_aggregator":
-            return fetch_licensed_aggregator(source_cfg, app_cfg)
+            items = fetch_licensed_aggregator(source_cfg, app_cfg)
         else:
             logger.error("%s: bilinmeyen kaynak türü '%s'", name, source_type)
+            record_source_health(name, success=False, error_message=f"Bilinmeyen kaynak türü: {source_type}")
             return []
-    except Exception:  # noqa: BLE001 - beklenmeyen her hatayı izole et
+        if items:
+            record_source_health(name, success=True, item_count=len(items))
+        else:
+            record_source_health(
+                name,
+                success=False,
+                error_message="Bu çalıştırmada hiç haber alınamadı (ağ hatası, robots.txt engeli, boş feed veya parse hatası olabilir - bkz. loglar).",
+            )
+        return items
+    except Exception as exc:  # noqa: BLE001 - beklenmeyen her hatayı izole et
         logger.exception("%s kaynağı çekilirken beklenmeyen bir hata oluştu", name)
+        record_source_health(name, success=False, error_message=str(exc))
         return []
 
 
@@ -156,6 +188,7 @@ def _reuse_or_mark_for_summarization(
                 group.importance_score = existing.importance_score
                 group.importance_reason = existing.importance_reason or ""
                 group.regions = existing.regions_list()
+                group.sectors = existing.sectors_list()
                 group.sentiment = existing.sentiment
             else:
                 to_summarize.append(group)
@@ -172,7 +205,6 @@ def _persist_and_notify_single(group: NewsGroup, group_key: str, config: dict[st
     çağrıları (Telegram gönderimi, anahtar kelime kontrolü - ki o da kendi
     session'larını açar) yapılır. Böylece hiçbir DB yazma kilidi, bir ağ
     çağrısı süresince açık kalmaz (bkz. summarize_groups'taki NOT)."""
-    threshold = config.get("importance", {}).get("threshold", 4)
     telegram_enabled = config.get("telegram", {}).get("enabled", True)
 
     with get_session() as session:
@@ -189,7 +221,10 @@ def _persist_and_notify_single(group: NewsGroup, group_key: str, config: dict[st
     except Exception:  # noqa: BLE001 - anahtar kelime bildirimi asla ana akışı durdurmasın
         logger.exception("Anahtar kelime eşleşme kontrolü sırasında beklenmeyen hata: %s", record.title)
 
-    if record.importance_score is None or record.importance_score < threshold:
+    # Artık tek bir global eşik yok: her abonenin KENDİ eşiği (bkz. Telegram
+    # /esik komutu, src/db.py > Subscriber.importance_threshold) esas alınır -
+    # kimin gönderim alacağına send_telegram_notification içinde karar verilir.
+    if record.importance_score is None:
         return
     if record.notified:
         return

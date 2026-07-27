@@ -13,6 +13,7 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,31 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from src.company_profile import get_company_profile
 from src.config import load_config
-from src.db import NewsRecord, get_distinct_sources, get_recent_records, get_session, init_db
+from src.db import (
+    NewsRecord,
+    get_distinct_sectors,
+    get_distinct_sources,
+    get_records_since,
+    get_recent_records,
+    get_session,
+    get_source_health_summary,
+    init_db,
+)
+from src.summarizer import REGION_LABELS, SECTOR_LABELS, SENTIMENT_LABELS, VALID_REGIONS, VALID_SENTIMENTS
+from src.trend_report import get_dashboard_trend_summary
+from src.web.market_data import get_market_snapshot
+
+# Önem skoru filtresi dropdown'ında sunulan eşik seçenekleri (min. skor).
+_IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# Sektör bazında ısı haritasında, yeterli sayıda haberi olmayan bir sektörü
+# "az hareketli" (gri) saymak için eşik - bkz. _build_sector_heatmap.
+_HEATMAP_MIN_COUNT_FOR_COLOR = 2
 
 
 @asynccontextmanager
@@ -57,11 +78,15 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         badge_text = str(score)
 
     sentiment = (record.sentiment or "").strip().lower()
-    sentiment_class, sentiment_label = {
-        "pozitif": ("sentiment-positive", "📈 Pozitif"),
-        "negatif": ("sentiment-negative", "📉 Negatif"),
-        "notr": ("sentiment-neutral", "➖ Nötr"),
-    }.get(sentiment, ("sentiment-unknown", None))
+    sentiment_class = {
+        "pozitif": "sentiment-positive",
+        "negatif": "sentiment-negative",
+        "notr": "sentiment-neutral",
+    }.get(sentiment, "sentiment-unknown")
+    sentiment_label = SENTIMENT_LABELS.get(sentiment)
+
+    sector_labels = [SECTOR_LABELS.get(s, s) for s in record.sectors_list()]
+    source_comparison = record.source_comparison_list()
 
     return {
         "title": record.title,
@@ -78,19 +103,143 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "is_highlighted": score is not None and score >= threshold,
         "sentiment_class": sentiment_class,
         "sentiment_label": sentiment_label,
+        "sector_labels": sector_labels,
+        "source_comparison": source_comparison,
     }
 
 
+def _build_sector_heatmap() -> list[dict[str, Any]]:
+    """Son 24 saatteki haberleri sektöre göre gruplayıp basit bir "etki
+    yoğunluğu" hesaplar: haber sayısı * ortalama önem skoru. Renk tonu,
+    pozitif/negatif sentiment dağılımının net yönüne göre belirlenir (yeşil =
+    net pozitif, kırmızı = net negatif, gri = az hareket). Karmaşık bir
+    korelasyon modeli DEĞİLDİR - kasıtlı olarak basit/anlaşılır tutulmuştur."""
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    records = get_records_since(since)
+
+    stats: dict[str, dict[str, float]] = {}
+    for r in records:
+        # Henüz sektör sınıflandırması yapılmamış kayıtlar (ör. bu özellik
+        # eklenmeden önce özetlenmiş eski haberler, bkz. src/db.py migrasyon
+        # notu) sessizce atlanır - "diger" gibi gerçek bir etikete
+        # dönüştürülmez (regions için de aynı yaklaşım kullanılıyor, bkz.
+        # get_records_since_by_region).
+        for sector in r.sectors_list():
+            s = stats.setdefault(sector, {"count": 0, "score_sum": 0, "pos": 0, "neg": 0, "notr": 0})
+            s["count"] += 1
+            if r.importance_score is not None:
+                s["score_sum"] += r.importance_score
+            if r.sentiment == "pozitif":
+                s["pos"] += 1
+            elif r.sentiment == "negatif":
+                s["neg"] += 1
+            elif r.sentiment == "notr":
+                s["notr"] += 1
+
+    if not stats:
+        return []
+
+    activity_by_sector = {}
+    for sector, s in stats.items():
+        avg_score = (s["score_sum"] / s["count"]) if s["count"] else 0.0
+        activity_by_sector[sector] = s["count"] * avg_score
+
+    max_activity = max(activity_by_sector.values()) or 1.0
+
+    result: list[dict[str, Any]] = []
+    for sector, s in stats.items():
+        count = int(s["count"])
+        avg_score = round((s["score_sum"] / count), 1) if count else 0.0
+        activity_norm = activity_by_sector[sector] / max_activity
+        sentiment_lean = (s["pos"] - s["neg"]) / count if count else 0.0
+
+        low_activity = count < _HEATMAP_MIN_COUNT_FOR_COLOR or abs(sentiment_lean) < 0.15
+        if low_activity:
+            color = f"rgba(100, 116, 139, {0.25 + 0.25 * activity_norm:.2f})"
+        elif sentiment_lean >= 0:
+            alpha = 0.25 + 0.6 * activity_norm * min(1.0, 0.4 + sentiment_lean)
+            color = f"rgba(34, 197, 94, {alpha:.2f})"
+        else:
+            alpha = 0.25 + 0.6 * activity_norm * min(1.0, 0.4 - sentiment_lean)
+            color = f"rgba(239, 68, 68, {alpha:.2f})"
+
+        result.append(
+            {
+                "sector": sector,
+                "label": SECTOR_LABELS.get(sector, sector),
+                "count": count,
+                "avg_importance": avg_score,
+                "positive": int(s["pos"]),
+                "negative": int(s["neg"]),
+                "neutral": int(s["notr"]),
+                "color": color,
+            }
+        )
+
+    result.sort(key=lambda item: activity_by_sector[item["sector"]], reverse=True)
+    return result
+
+
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, source: str | None = None) -> HTMLResponse:
+def dashboard(
+    request: Request,
+    source: str | None = None,
+    sector: str | None = None,
+    region: str | None = None,
+    sentiment: str | None = None,
+    # str olarak alınıyor (int | None DEĞİL): "Tüm Önem Skorları" seçeneği
+    # boş bir değerle (min_importance=) form gönderir - FastAPI/Pydantic bunu
+    # doğrudan `int | None` alana koyarsa boş string'i int'e çeviremediği için
+    # 422 hatası döner. Bu yüzden burada str olarak alınıp aşağıda elle
+    # (boşsa None'a düşecek şekilde) int'e çevriliyor.
+    min_importance: str | None = None,
+    q: str | None = None,
+) -> HTMLResponse:
     config = load_config()
     threshold = config.get("importance", {}).get("threshold", 4)
-    refresh_seconds = config.get("web", {}).get("refresh_seconds", 180)
     max_items = config.get("web", {}).get("max_items", 100)
 
+    min_importance_value: int | None = None
+    if min_importance:
+        try:
+            min_importance_value = int(min_importance)
+        except ValueError:
+            min_importance_value = None
+
     with get_session() as session:
-        records = get_recent_records(session, limit=max_items, source_filter=source or None)
+        records = get_recent_records(
+            session,
+            limit=max_items,
+            source_filter=source or None,
+            sector_filter=sector or None,
+            region_filter=region or None,
+            sentiment_filter=sentiment or None,
+            min_importance=min_importance_value,
+            search_query=q or None,
+        )
         sources = get_distinct_sources(session)
+        sectors = [{"slug": s, "label": SECTOR_LABELS.get(s, s)} for s in get_distinct_sectors(session)]
+
+    regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
+    sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
+
+    # Fear/Greed Calculation
+    fg_score = 0
+    fg_valid_count = 0
+    for r in records[:50]:
+        if r.sentiment == "pozitif":
+            fg_score += 1
+            fg_valid_count += 1
+        elif r.sentiment == "negatif":
+            fg_score -= 1
+            fg_valid_count += 1
+        elif r.sentiment == "notr":
+            fg_valid_count += 1
+    
+    fear_greed_index = 50 # Default neutral
+    if fg_valid_count > 0:
+        normalized = (fg_score / fg_valid_count) # -1.0 to 1.0
+        fear_greed_index = int((normalized + 1.0) / 2.0 * 100)
 
     views = [_record_to_view(r, threshold) for r in records]
 
@@ -101,11 +250,91 @@ def dashboard(request: Request, source: str | None = None) -> HTMLResponse:
             "records": views,
             "sources": sources,
             "selected_source": source or "",
+            "sectors": sectors,
+            "selected_sector": sector or "",
+            "regions": regions,
+            "selected_region": region or "",
+            "sentiments": sentiments,
+            "selected_sentiment": sentiment or "",
+            "importance_options": _IMPORTANCE_FILTER_OPTIONS,
+            "selected_min_importance": min_importance_value,
+            "selected_query": q or "",
             "threshold": threshold,
-            "refresh_seconds": refresh_seconds,
             "total_count": len(views),
+            "fear_greed_index": fear_greed_index,
         },
     )
+
+
+@app.get("/sirket-profili", response_class=HTMLResponse)
+def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse:
+    """Şirket/hisse bazlı otomatik profil sayfası (bkz. src/company_profile.py):
+    kullanıcı bir şirket adı girer, son 30 günün ilgili haberleri + LLM
+    tarafından üretilmiş kısa bir genel görünüm özeti gösterilir."""
+    config = load_config()
+    threshold = config.get("importance", {}).get("threshold", 4)
+
+    profile: dict[str, Any] | None = None
+    if q:
+        profile = get_company_profile(q, config)
+
+    views = [_record_to_view(r, threshold) for r in profile["records"]] if profile else []
+
+    return templates.TemplateResponse(
+        request,
+        "company_profile.html",
+        {
+            "query": q or "",
+            "profile": profile,
+            "records": views,
+        },
+    )
+
+
+@app.get("/kaynak-sagligi", response_class=HTMLResponse)
+def source_health_page(request: Request) -> HTMLResponse:
+    """Kaynak sağlık paneli: her fetcher'ın son 24 saatteki başarı oranı,
+    ortalama haber sayısı, son başarılı/başarısız çalışma zamanı (bkz.
+    src/db.py > get_source_health_summary, record_source_health)."""
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    raw_rows = get_source_health_summary(since)
+
+    def _fmt(dt: datetime | None) -> str:
+        return dt.strftime("%Y-%m-%d %H:%M UTC") if dt else "—"
+
+    rows = [
+        {
+            **row,
+            "last_success_display": _fmt(row["last_success_at"]),
+            "last_failure_display": _fmt(row["last_failure_at"]),
+        }
+        for row in raw_rows
+    ]
+    return templates.TemplateResponse(request, "source_health.html", {"rows": rows})
+
+
+@app.get("/api/market-data")
+async def market_data() -> list[dict[str, Any]]:
+    """Dashboard'daki canlı piyasa şeridinin periyodik (AJAX) olarak çektiği
+    veri (bkz. src/web/market_data.py ve templates/dashboard.html)."""
+    return await get_market_snapshot()
+
+
+@app.get("/api/sector-heatmap")
+def sector_heatmap() -> list[dict[str, Any]]:
+    """Dashboard'daki sektör ısı haritasının periyodik (AJAX) olarak çektiği
+    veri (bkz. _build_sector_heatmap)."""
+    return _build_sector_heatmap()
+
+
+@app.get("/api/trend-summary")
+def trend_summary(period: str = "weekly") -> dict[str, Any]:
+    """Dashboard'daki trend panelinin periyodik/isteğe bağlı (AJAX) olarak
+    çektiği veri (bkz. src/trend_report.py > get_dashboard_trend_summary).
+    Telegram'a gönderilen haftalık/aylık raporla AYNI hesaplama mantığını
+    kullanır - bu yüzden ikisi arasında hiçbir tutarsızlık olmaz."""
+    period_norm = "monthly" if period == "monthly" else "weekly"
+    return get_dashboard_trend_summary(period_norm)
 
 
 @app.get("/health")

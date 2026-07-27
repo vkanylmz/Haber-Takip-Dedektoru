@@ -13,6 +13,8 @@ from __future__ import annotations
 import html
 from typing import TYPE_CHECKING
 
+from src.summarizer import SECTOR_LABELS
+
 if TYPE_CHECKING:
     from src.db import NewsRecord
 
@@ -51,11 +53,34 @@ def format_news_block(record: "NewsRecord", extra_reason: str | None = None) -> 
     else:
         link_lines = "(link yok)"
 
+    sector_labels = [SECTOR_LABELS.get(s, s) for s in record.sectors_list()]
+    sector_line = f"🏭 {html.escape(', '.join(sector_labels))}\n" if sector_labels else ""
+
     block = (
         f"<b>{emoji_prefix}{title}</b>\n"
         f"<i>Kaynak(lar): {sources}</i> — Önem: {score}/5\n"
+        f"{sector_line}"
         f"{summary}\n"
     )
+    if getattr(record, 'market_impact', None):
+        block += f"\n💡 <b>Piyasa Öngörüsü:</b> {html.escape(record.market_impact)}\n"
+
+    # ÇAPRAZ KAYNAK KARŞILAŞTIRMA (web dashboard'daki "Kaynak Karşılaştırması"
+    # panelinin Telegram karşılığı, bkz. src/db.py > NewsRecord.source_comparison_list):
+    # birden fazla kaynak varsa, her kaynağın konuyu KENDİ başlığıyla nasıl
+    # ele aldığı kısaca listelenir.
+    comparison = record.source_comparison_list()
+    if comparison:
+        compare_lines = "\n🔀 <i>Diğer kaynaklar bu haberi şöyle gördü:</i>\n"
+        for c in comparison:
+            source_label = html.escape(c["source"])
+            title = c.get("title") or ""
+            if title:
+                compare_lines += f"• <b>{source_label}</b>: {html.escape(title)}\n"
+            else:
+                compare_lines += f"• <b>{source_label}</b>: (başlık henüz saklanmamış)\n"
+        block += compare_lines
+
     if extra_reason:
         block += f"<i>Neden önemli: {html.escape(extra_reason)}</i>\n"
     block += link_lines

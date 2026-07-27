@@ -81,27 +81,76 @@ ortaklık), "negatif" (ör. faiz artışı, kötü veri, kriz, iflas, zarar \
 açıklaması, jeopolitik gerilim) veya "notr" (rutin bir duyuru, net bir \
 yön belirtmeyen haber) - üçünden sadece birini seç.
 
-Duygu (sentiment) etiketleme kuralları:
-- Haberin piyasa/ekonomi açısından etkisinin GENEL YÖNÜNÜ değerlendir: \
-"pozitif" (ör. güçlü kâr açıklaması, faiz indirimi, olumlu veri, anlaşma/\
-ortaklık), "negatif" (ör. faiz artışı, kötü veri, kriz, iflas, zarar \
-açıklaması, jeopolitik gerilim) veya "notr" (rutin bir duyuru, net bir \
-yön belirtmeyen haber) - üçünden sadece birini seç.
+Sektör etiketleme kuralları (sector, bir liste):
+- Haberin hangi sektör(ler)le ilgili olduğuna karar ver. Şu kategorilerden bir \
+veya birden fazlasını seç: "teknoloji", "enerji", "finans" (bankacılık, \
+sigorta, yatırım fonları vb.), "otomotiv", "perakende", "saglik", "savunma", \
+"gayrimenkul", "tarim", "diger" (yukarıdakilerin hiçbirine net şekilde \
+girmiyorsa veya genel/makroekonomik bir haberse).
+- Haber birden fazla sektörü ilgilendiriyorsa (ör. hem enerji hem otomotiv \
+şirketlerini etkileyen bir haberse) birden fazla etiket seç.
+- Liste asla boş olmasın; hiçbiri net değilse ["diger"] kullan.
 
 Piyasa Etkisi (market_impact) kuralları:
 - Haberin finans piyasalarına yansımasını bir finans uzmanı/analist gözüyle 1 cümlelik beklenti veya yorumla belirt. Eğer haber piyasa için çok anlamsızsa boş bırak (""). Örn: "Fed'in faiz şahin tutumu nedeniyle altın tarafında kısa vadede sert bir satış baskısı görebiliriz."
+- ÖNEMLİ: Gelen haber İngilizce veya başka yabancı bir dilde olsa bile çıktılarını KESİNLİKLE Türkçe olarak oluştur. Herhangi bir yabancı dilde sonuç döndürme.
+
 
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sentiment": "notr", "market_impact": "..."}
+{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "..."}
 """
 
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
 VALID_REGIONS = ("turkiye", "abd", "avrupa", "asya", "diger")
 
+# Bölge etiketlerinin dashboard'da gösterilecek Türkçe karşılıkları.
+REGION_LABELS = {
+    "turkiye": "Türkiye",
+    "abd": "ABD",
+    "avrupa": "Avrupa",
+    "asya": "Asya",
+    "diger": "Diğer",
+}
+
+# Modelden istenebilecek geçerli sektör etiketleri (bkz. SYSTEM_PROMPT).
+VALID_SECTORS = (
+    "teknoloji",
+    "enerji",
+    "finans",
+    "otomotiv",
+    "perakende",
+    "saglik",
+    "savunma",
+    "gayrimenkul",
+    "tarim",
+    "diger",
+)
+
+# Sektör etiketlerinin dashboard'da gösterilecek Türkçe karşılıkları.
+SECTOR_LABELS = {
+    "teknoloji": "Teknoloji",
+    "enerji": "Enerji",
+    "finans": "Finans",
+    "otomotiv": "Otomotiv",
+    "perakende": "Perakende",
+    "saglik": "Sağlık",
+    "savunma": "Savunma",
+    "gayrimenkul": "Gayrimenkul",
+    "tarim": "Tarım",
+    "diger": "Diğer",
+}
+
 # Modelden istenebilecek geçerli duygu etiketleri (bkz. SYSTEM_PROMPT).
 VALID_SENTIMENTS = ("pozitif", "negatif", "notr")
+
+# Duygu etiketlerinin dashboard'da gösterilecek Türkçe karşılıkları (emoji + metin).
+SENTIMENT_LABELS = {
+    "pozitif": "📈 Pozitif",
+    "negatif": "📉 Negatif",
+    "notr": "➖ Nötr",
+}
 
 # Günlük özet için: bir önceki 24 saatte toplanan haberler arasından
 # gerçekten değerli/aksiyon alınabilir 5-10 tanesini seçtirmek üzere ayrı bir
@@ -122,6 +171,26 @@ Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama
 olmadan döndür:
 
 {"selections": [{"index": 3, "reason": "..."}, {"index": 7, "reason": "..."}]}
+"""
+
+# Şirket/hisse profili sayfası için (bkz. src/company_profile.py, web
+# dashboard'daki "Şirket Profili" sayfası): kullanıcının aradığı şirketle
+# ilgili son 30 günün haberlerinden TEK bir genel görünüm (outlook) paragrafı
+# ürettirmek üzere ayrı bir sistem promptu.
+COMPANY_PROFILE_SYSTEM_PROMPT = """\
+Sen bir finans analistisin. Sana bir şirket/varlık adı ve o şirketle ilgili \
+son 30 günde toplanmış haberlerin başlık+özetleri verilecek.
+
+Görevin: TÜM bu haberlere bakarak, bu şirket hakkında son 30 günün GENEL \
+GÖRÜNÜMÜNÜ (outlook) özetleyen 3-5 cümlelik TEK bir paragraf (Türkçe) \
+yazmak - hangi konular/temalar öne çıktı, genel duygu/yön ne (olumlu/olumsuz/\
+karışık), varsa en dikkat çekici gelişme(ler) neydi. Objektif ve dengeli bir \
+üslup kullan, yatırım tavsiyesi verme.
+
+Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
+olmadan döndür:
+
+{"summary": "..."}
 """
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -263,6 +332,7 @@ class Summarizer:
             group.importance_score = None
             group.importance_reason = ""
             group.regions = []
+            group.sectors = []
             group.sentiment = None
             return
 
@@ -276,6 +346,7 @@ class Summarizer:
         group.importance_score = self._parse_importance_score(parsed.get("importance_score"))
         group.importance_reason = str(parsed.get("importance_reason", "")).strip()
         group.regions = self._parse_regions(parsed.get("regions"))
+        group.sectors = self._parse_sectors(parsed.get("sector"))
         group.sentiment = self._parse_sentiment(parsed.get("sentiment"))
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
 
@@ -445,6 +516,21 @@ class Summarizer:
         return regions or ["diger"]
 
     @staticmethod
+    def _parse_sectors(raw_value: Any) -> list[str]:
+        """Modelin döndürdüğü `sector` listesini VALID_SECTORS ile sınırlar,
+        bilinmeyen/hatalı değerleri sessizce eler, tekrarları kaldırır. Hiç
+        geçerli değer kalmazsa ["diger"] döner (bkz. _parse_regions - aynı
+        yaklaşım)."""
+        if not isinstance(raw_value, list):
+            return []
+        sectors: list[str] = []
+        for item in raw_value:
+            sector = str(item).strip().lower()
+            if sector in VALID_SECTORS and sector not in sectors:
+                sectors.append(sector)
+        return sectors or ["diger"]
+
+    @staticmethod
     def _parse_sentiment(raw_value: Any) -> str | None:
         """Modelin döndürdüğü `sentiment` değerini VALID_SENTIMENTS ile
         sınırlar; bilinmeyen/hatalı bir değer gelirse None döner (haber
@@ -498,6 +584,36 @@ class Summarizer:
 
         return selections[:10]
 
+    def summarize_company_profile(self, company_name: str, records: list[Any]) -> str:
+        """Verilen şirket adı ve (son 30 günlük) `NewsRecord` listesi için,
+        Gemini/Claude'a TEK bir ek çağrı ile genel görünüm (outlook) paragrafı
+        ürettirir (bkz. COMPANY_PROFILE_SYSTEM_PROMPT, src/company_profile.py).
+
+        Herhangi bir hata/ayrıştırma sorununda boş string döner (exception
+        fırlatmaz) - çağıran taraf bu durumda otomatik özeti göstermeden
+        sadece haber listesini gösterir."""
+        if not records:
+            return ""
+
+        lines = [f"Şirket/Varlık: {company_name}\n"]
+        for r in records:
+            summary = (r.summary or "").strip()[:300]
+            lines.append(f"- {r.title}\n  Özet: {summary or '(özet yok)'}")
+        user_prompt = "\n".join(lines)
+
+        try:
+            raw_text = self._call_model_with_retry(user_prompt, system_prompt=COMPANY_PROFILE_SYSTEM_PROMPT)
+        except Exception:  # noqa: BLE001 - profil özeti başarısız olursa çağıran taraf sessizce atlasın
+            logger.exception("Şirket profili özeti (LLM çağrısı) başarısız oldu: %s", company_name)
+            return ""
+
+        parsed = _extract_json(raw_text)
+        if not parsed or not isinstance(parsed.get("summary"), str):
+            logger.warning("Şirket profili özeti yanıtı beklenen JSON formatında değildi: %s", company_name)
+            return ""
+
+        return parsed["summary"].strip()
+
     def _apply_fallback(self, group: NewsGroup) -> None:
         rep = group.representative
         fallback = rep.raw_text.strip()[:280] or rep.title
@@ -506,5 +622,6 @@ class Summarizer:
         group.importance_score = None
         group.importance_reason = ""
         group.regions = []
+        group.sectors = []
         group.sentiment = None
         group.market_impact = None

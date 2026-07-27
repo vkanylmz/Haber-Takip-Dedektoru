@@ -25,13 +25,21 @@ import uvicorn
 # tam (blok) tamponlamaya geçer -> aşağıdaki dashboard adresi banner'ı,
 # uzun süre çalışan uvicorn.run() bloke ettiği sürece hiç görünmeyebilir.
 # Satır tamponlamaya zorlayarak print()'lerin hemen çıkması sağlanır.
+# encoding="utf-8": stdout gerçek bir Windows konsoluna değil de bir dosyaya/
+# pipe'a yönlendirildiğinde, Python sistemin ANSI kod sayfasına (ör. Türkçe
+# Windows'ta cp1254) düşer - bu kod sayfası aşağıdaki 📊 gibi emojileri temsil
+# edemediğinden UnicodeEncodeError ile TÜM sürecin (yakalanmadan) çökmesine
+# yol açıyordu (gerçek bir yeniden başlatma denemesiyle doğrulandı). errors=
+# "replace" ile de, ileride encode edilemeyen başka bir karakter çıkarsa artık
+# process çökmek yerine o karakteri "?" ile değiştirip devam eder.
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(line_buffering=True)
+    sys.stdout.reconfigure(line_buffering=True, encoding="utf-8", errors="replace")
 
 from src.config import load_config
 from src.config_setup import ensure_all_credentials
 from src.logging_setup import setup_logging
 from worker import start_background_scheduler
+from src.telegram_bot import stop_bot_listener_thread
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +75,7 @@ def main() -> None:
         uvicorn.run("src.web.app:app", host=host, port=port, log_level="warning")
     finally:
         scheduler.shutdown(wait=False)
+        stop_bot_listener_thread()
         logger.info("Uygulama kapatıldı.")
 
 

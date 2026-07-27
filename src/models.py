@@ -33,6 +33,11 @@ class NewsGroup:
     # "turkiye", "abd", "avrupa", "asya", "diger" alt kümesinden bir veya daha
     # fazlası. Boş liste -> henüz sınıflandırılmadı (bkz. summarizer.py).
     regions: list[str] = field(default_factory=list)
+    # Haberin ilgili olduğu sektör etiket(ler)i: "teknoloji", "enerji",
+    # "finans", "otomotiv", "perakende", "saglik", "savunma", "gayrimenkul",
+    # "tarim", "diger" alt kümesinden bir veya daha fazlası. Boş liste ->
+    # henüz sınıflandırılmadı (bkz. summarizer.py).
+    sectors: list[str] = field(default_factory=list)
     # Haberin piyasa/ekonomi açısından etkisi: "pozitif", "negatif", "notr".
     # None -> henüz sınıflandırılmadı (bkz. summarizer.py).
     sentiment: str | None = None

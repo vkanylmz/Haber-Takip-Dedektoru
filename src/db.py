@@ -65,6 +65,12 @@ class NewsRecord(Base):
     # (bkz. src/telegram_bot.py).
     regions = Column(Text, nullable=True)
 
+    # Haberin ilgili olduğu sektör etiket(ler)i, JSON string listesi:
+    # ör. '["finans"]' veya '["enerji", "otomotiv"]' (bkz.
+    # src/summarizer.py > VALID_SECTORS). Dashboard'daki sektör filtresi bu
+    # alana göre çalışır (bkz. src/web/app.py).
+    sector = Column(Text, nullable=True)
+
     # Haberin piyasa/ekonomi açısından etkisi: "pozitif" | "negatif" | "notr"
     # (bkz. src/summarizer.py > VALID_SENTIMENTS). None -> henüz sınıflandırılmadı.
     sentiment = Column(String(16), nullable=True)
@@ -102,6 +108,50 @@ class NewsRecord(Base):
         except json.JSONDecodeError:
             return []
 
+    def sectors_list(self) -> list[str]:
+        if not self.sector:
+            return []
+        try:
+            return json.loads(self.sector)
+        except json.JSONDecodeError:
+            return []
+
+    def source_comparison_list(self) -> list[dict[str, str]]:
+        """ÇAPRAZ KAYNAK KARŞILAŞTIRMA: bu haber grubunda birden fazla FARKLI
+        kaynak varsa (dedup/group_key mantığıyla birleştirilmiş), her
+        kaynağın konuyu KENDİ orijinal başlığı/özetiyle nasıl ele aldığını
+        döner - bkz. upsert_group'taki links_payload (title/snippet alanları).
+        Web dashboard'daki "Kaynak Karşılaştırması" paneli VE Telegram mesaj
+        formatlayıcısı (bkz. src/telegram_format.py > format_news_block) AYNI
+        bu metodu kullanır - ikisi arasında tutarsızlık olmaz.
+
+        Yalnızca GERÇEKTEN birden fazla farklı kaynak varsa dolu bir liste
+        döner, aksi halde boş liste (gösterilecek bir karşılaştırma yoktur)."""
+        links = self.links_list()
+        distinct_sources = {item.get("source") for item in links if item.get("source")}
+        if len(distinct_sources) < 2:
+            return []
+
+        seen: set[str] = set()
+        comparison: list[dict[str, str]] = []
+        for item in links:
+            source = item.get("source")
+            if not source or source in seen:
+                continue
+            seen.add(source)
+            # Eski kayıtlarda (bu özellik eklenmeden önce yazılmış) "title"/
+            # "snippet" alanları olmayabilir - bu durumda boş string döner
+            # (çağıran taraf bunu "henüz saklanmamış" olarak gösterir).
+            comparison.append(
+                {
+                    "source": source,
+                    "title": item.get("title") or "",
+                    "snippet": item.get("snippet") or "",
+                    "link": item.get("link") or "",
+                }
+            )
+        return comparison
+
 
 class Subscriber(Base):
     """Botla konuşup (/start ile) haber bildirimlerine abone olmuş bir kullanıcı.
@@ -117,6 +167,12 @@ class Subscriber(Base):
     username = Column(String(255), nullable=True)
     first_name = Column(String(255), nullable=True)
     subscribed_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Kullanıcının KENDİ önem eşiği (1-5, bkz. Telegram /esik komutu). Bir
+    # haberin importance_score'u bu değere eşit veya büyükse bildirim gider;
+    # global config.yaml > importance.threshold artık yalnızca yeni abonelerin
+    # VARSAYILAN eşiği olarak kullanılır (bkz. src/notifier.py).
+    importance_threshold = Column(Integer, nullable=False, default=4)
 
 
 class KeywordSubscription(Base):
@@ -138,6 +194,22 @@ class KeywordSubscription(Base):
     # sağlıyoruz - subscribers/news_records'taki diğer uniqueness kontrolleriyle
     # aynı stil.
     __table_args__ = (UniqueConstraint("chat_id", "keyword", name="uq_keyword_subscription_chat_keyword"),)
+
+
+class SourceHealth(Base):
+    """Bir fetcher'ın (RSS/scrape/lisanslı agregatör) TEK BİR çalıştırma
+    denemesinin kaydı - kaynak sağlık paneli için (bkz. src/main.py >
+    fetch_source, web/app.py > /kaynak-sagligi). Her tarama turunda, her
+    kaynak için (başarılı da olsa başarısız da olsa) bir satır eklenir."""
+
+    __tablename__ = "source_health"
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(255), index=True, nullable=False)
+    ran_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    success = Column(Boolean, nullable=False)
+    item_count = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text, nullable=True)
 
 
 class KeywordNotification(Base):
@@ -236,6 +308,22 @@ def _migrate_add_missing_columns(engine) -> None:
         if "market_impact" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN market_impact TEXT")
             logger.info("Veritabanı migrasyonu: news_records.market_impact kolonu eklendi.")
+        if "sector" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN sector TEXT")
+            logger.info("Veritabanı migrasyonu: news_records.sector kolonu eklendi.")
+
+        existing_subscriber_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(subscribers)").fetchall()
+        }
+        if "importance_threshold" not in existing_subscriber_columns:
+            # Var olan aboneler için varsayılan olarak mevcut global eşik (4)
+            # kullanılır - config.yaml > importance.threshold değişse bile bu
+            # geriye dönük backfill sabit kalır (kullanıcı /esik ile
+            # istediğinde kendi değerini ayarlayabilir).
+            conn.exec_driver_sql(
+                "ALTER TABLE subscribers ADD COLUMN importance_threshold INTEGER NOT NULL DEFAULT 4"
+            )
+            logger.info("Veritabanı migrasyonu: subscribers.importance_threshold kolonu eklendi.")
 
 
 @contextmanager
@@ -284,7 +372,18 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
     now = datetime.now(timezone.utc)
     rep = group.representative
 
-    links_payload = [{"source": i.source, "link": i.link} for i in group.items]
+    # `title` ve `snippet`, dashboard'daki ÇAPRAZ KAYNAK KARŞILAŞTIRMA
+    # görünümü için tutuluyor (bkz. src/web/app.py > _build_source_comparison):
+    # dedup/gruplama aynı konudaki haberleri TEK bir kayıtta birleştirdiğinden
+    # (bkz. group_key), her kaynağın o konuyu KENDİ başlığı/özetiyle nasıl
+    # ele aldığı normalde kaybolur - burada saklanarak dashboard'da yan yana
+    # gösterilebiliyor. `link`/`source` alanları zaten var olan "Linkler"
+    # bölümü tarafından da kullanıldığından GERİYE DÖNÜK UYUMLU (eski
+    # şablon kodu bu yeni alanları basitçe yok sayar).
+    links_payload = [
+        {"source": i.source, "link": i.link, "title": i.title, "snippet": (i.raw_text or "").strip()[:400]}
+        for i in group.items
+    ]
     sources_str = ", ".join(group.sources)
 
     record = find_record_by_group_key(session, group_key)
@@ -300,6 +399,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             importance_score=group.importance_score,
             importance_reason=group.importance_reason,
             regions=json.dumps(group.regions, ensure_ascii=False),
+            sector=json.dumps(group.sectors, ensure_ascii=False),
             sentiment=group.sentiment,
             market_impact=group.market_impact,
             notified=False,
@@ -316,6 +416,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.importance_score = group.importance_score if group.importance_score is not None else record.importance_score
         record.importance_reason = group.importance_reason or record.importance_reason
         record.regions = json.dumps(group.regions, ensure_ascii=False) if group.regions else record.regions
+        record.sector = json.dumps(group.sectors, ensure_ascii=False) if group.sectors else record.sector
         record.sentiment = group.sentiment or record.sentiment
         record.market_impact = group.market_impact or record.market_impact
         record.last_seen_at = now
@@ -342,10 +443,42 @@ def get_recent_records(
     session: Session,
     limit: int = 100,
     source_filter: str | None = None,
+    sector_filter: str | None = None,
+    region_filter: str | None = None,
+    sentiment_filter: str | None = None,
+    min_importance: int | None = None,
+    search_query: str | None = None,
+    since: datetime | None = None,
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
+    if since is not None:
+        # Şirket/hisse profili sayfası (bkz. src/company_profile.py) gibi
+        # "son N gün" ile sınırlı sorgular için - diğer çağıranlar (ör.
+        # dashboard'un ana listesi) bunu hiç kullanmaz, davranışları değişmez.
+        query = query.filter(NewsRecord.first_seen_at >= since)
     if source_filter:
         query = query.filter(NewsRecord.sources.contains(source_filter))
+    if search_query:
+        # Basit case-insensitive LIKE arama (başlık + özet). SQLite'ın
+        # varsayılan LIKE'ı ASCII dışı karakterlerde (ör. Türkçe İ/ı) tam
+        # case-insensitive değildir, ama pratikte yeterlidir - karmaşık bir
+        # full-text-search motoru (FTS5 vb.) KASITLI OLARAK kullanılmadı.
+        like_pattern = f"%{search_query.strip()}%"
+        query = query.filter(
+            (NewsRecord.title.ilike(like_pattern)) | (NewsRecord.summary.ilike(like_pattern))
+        )
+    if sector_filter:
+        # `sector` bir JSON string listesi olarak tutuluyor (ör. '["finans"]');
+        # tırnaklarla birlikte arama ("finans" gibi tam eşleşme), "finansal"
+        # gibi kısmi bir kelimeyle yanlışlıkla eşleşmeyi önler.
+        query = query.filter(NewsRecord.sector.contains(f'"{sector_filter}"'))
+    if region_filter:
+        # `regions` da aynı şekilde JSON string listesi (bkz. yukarıdaki not).
+        query = query.filter(NewsRecord.regions.contains(f'"{region_filter}"'))
+    if sentiment_filter:
+        query = query.filter(NewsRecord.sentiment == sentiment_filter)
+    if min_importance is not None:
+        query = query.filter(NewsRecord.importance_score >= min_importance)
     query = query.order_by(
         NewsRecord.published_at.desc().nullslast(),
         NewsRecord.last_seen_at.desc(),
@@ -361,6 +494,30 @@ def get_records_since(since: datetime) -> list[NewsRecord]:
         return (
             session.query(NewsRecord)
             .filter(NewsRecord.first_seen_at >= since)
+            .order_by(NewsRecord.importance_score.desc().nullslast(), NewsRecord.first_seen_at.desc())
+            .all()
+        )
+
+
+def search_records(search_query: str, limit: int = 15) -> list[NewsRecord]:
+    """Telegram /ara komutu için (bkz. src/telegram_bot.py): dashboard'daki
+    arama kutusuyla (bkz. get_recent_records > search_query) AYNI basit
+    case-insensitive LIKE mantığını kullanır - kendi kısa ömürlü session'ını
+    açar/kapatır, çağıran tarafın bir session yönetmesi gerekmez."""
+    with get_session() as session:
+        return get_recent_records(session, limit=limit, search_query=search_query)
+
+
+def get_records_between(start: datetime, end: datetime) -> list[NewsRecord]:
+    """`start` (dahil) ile `end` (hariç) arasında görülmüş (first_seen_at)
+    TÜM haberleri döner - haftalık/aylık trend raporu için bir önceki
+    dönemle karşılaştırma yapmakta kullanılır (bkz. src/trend_report.py).
+    `get_records_since`'ten farkı: üst sınırı da olması (o fonksiyon yalnızca
+    "şu ana kadar" için kullanılıyor, geçmiş bir dönemi izole edemez)."""
+    with get_session() as session:
+        return (
+            session.query(NewsRecord)
+            .filter(NewsRecord.first_seen_at >= start, NewsRecord.first_seen_at < end)
             .order_by(NewsRecord.importance_score.desc().nullslast(), NewsRecord.first_seen_at.desc())
             .all()
         )
@@ -391,9 +548,18 @@ def get_records_since_by_region(region: str, since: datetime) -> list[NewsRecord
 # --------------------------------------------------------------------------
 
 
-def add_subscriber(chat_id: str | int, username: str | None = None, first_name: str | None = None) -> bool:
+def add_subscriber(
+    chat_id: str | int,
+    username: str | None = None,
+    first_name: str | None = None,
+    default_threshold: int = 4,
+) -> bool:
     """Yeni bir Telegram abonesi ekler. `chat_id` zaten kayıtlıysa (UNIQUE)
-    hiçbir şey yapmaz. Döner: yeni eklendiyse True, zaten aboneyse False."""
+    hiçbir şey yapmaz. Döner: yeni eklendiyse True, zaten aboneyse False.
+
+    `default_threshold`: yeni abonenin başlangıç önem eşiği (bkz. Telegram
+    /esik komutu) - çağıran taraf (src/telegram_bot.py) burada config.yaml >
+    importance.threshold değerini geçirir."""
     chat_id_str = str(chat_id)
     with get_session() as session:
         existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
@@ -405,6 +571,7 @@ def add_subscriber(chat_id: str | int, username: str | None = None, first_name: 
                 username=username,
                 first_name=first_name,
                 subscribed_at=datetime.now(timezone.utc),
+                importance_threshold=default_threshold,
             )
         )
         logger.info("Yeni Telegram abonesi kaydedildi: %s (%s)", chat_id_str, first_name or username or "isimsiz")
@@ -430,6 +597,42 @@ def get_all_subscriber_chat_ids(session: Session | None = None) -> list[str]:
         return [chat_id for (chat_id,) in session.query(Subscriber.chat_id).all()]
     with get_session() as s:
         return [chat_id for (chat_id,) in s.query(Subscriber.chat_id).all()]
+
+
+def get_subscriber_chat_ids_for_score(score: int) -> list[str]:
+    """Verilen önem skorunu ALACAK abonelerin chat_id'lerini döner: yani
+    kendi `importance_threshold` değeri `score`'a eşit veya küçük olanlar
+    (ör. skor 3 olan bir haber, eşiği 3 VEYA daha düşük olan herkese gider,
+    eşiği 4 olanlara gitmez). Bkz. Telegram /esik komutu, src/notifier.py."""
+    with get_session() as session:
+        return [
+            chat_id
+            for (chat_id,) in session.query(Subscriber.chat_id)
+            .filter(Subscriber.importance_threshold <= score)
+            .all()
+        ]
+
+
+def set_subscriber_threshold(chat_id: str | int, threshold: int) -> bool:
+    """Bir abonenin kişisel önem eşiğini günceller (bkz. /esik komutu).
+    Döner: abone kayıtlıysa ve güncellendiyse True, abone değilse False."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        if existing is None:
+            return False
+        existing.importance_threshold = threshold
+        logger.info("Abone eşiği güncellendi: chat_id=%s, esik=%d", chat_id_str, threshold)
+        return True
+
+
+def get_subscriber_threshold(chat_id: str | int) -> int | None:
+    """Bir abonenin kişisel önem eşiğini döner. Abone değilse None döner
+    (bkz. /esikgoster komutu)."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        return existing.importance_threshold if existing is not None else None
 
 
 # --------------------------------------------------------------------------
@@ -528,6 +731,84 @@ def mark_keyword_notified(chat_id: str | int, group_key: str) -> None:
         )
 
 
+def record_source_health(source: str, success: bool, item_count: int = 0, error_message: str | None = None) -> None:
+    """Bir fetcher çalıştırma denemesini kaydeder (bkz. SourceHealth, src/main.py
+    > fetch_source). Kendi kısa ömürlü session'ını açar/kapatır - çağıran
+    taraf (ThreadPoolExecutor içindeki her kaynak thread'i) başka bir session
+    yönetmek zorunda kalmaz. Hiçbir durumda exception fırlatmaz (bkz. çağrı
+    yeri) - sağlık kaydı asla asıl tarama akışını bozmasın."""
+    try:
+        with get_session() as session:
+            session.add(
+                SourceHealth(
+                    source=source,
+                    ran_at=datetime.now(timezone.utc),
+                    success=success,
+                    item_count=item_count,
+                    error_message=(error_message or "")[:2000] or None,
+                )
+            )
+    except Exception:  # noqa: BLE001 - sağlık kaydı asla ana akışı etkilemesin
+        logger.exception("Kaynak sağlık kaydı yazılamadı: source=%s", source)
+
+
+def get_source_health_summary(since: datetime) -> list[dict[str, Any]]:
+    """Dashboard'daki kaynak sağlık panelinin (bkz. src/web/app.py >
+    /kaynak-sagligi) ihtiyaç duyduğu özet istatistikleri hesaplar: her kaynak
+    için `since`'ten bu yana başarı oranı, ortalama haber sayısı (yalnızca
+    başarılı çalıştırmalar üzerinden) ve son başarılı/başarısız çalıştırma
+    zamanı. Kaynak adına göre alfabetik sıralı döner."""
+    with get_session() as session:
+        rows = (
+            session.query(SourceHealth)
+            .filter(SourceHealth.ran_at >= since)
+            .order_by(SourceHealth.ran_at.asc())
+            .all()
+        )
+
+    stats: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        s = stats.setdefault(
+            row.source,
+            {
+                "source": row.source,
+                "total_runs": 0,
+                "success_runs": 0,
+                "item_count_sum": 0,
+                "last_success_at": None,
+                "last_failure_at": None,
+                "last_error_message": None,
+            },
+        )
+        s["total_runs"] += 1
+        if row.success:
+            s["success_runs"] += 1
+            s["item_count_sum"] += row.item_count
+            s["last_success_at"] = row.ran_at
+        else:
+            s["last_failure_at"] = row.ran_at
+            s["last_error_message"] = row.error_message
+
+    result = []
+    for source, s in stats.items():
+        success_rate = round(100 * s["success_runs"] / s["total_runs"], 1) if s["total_runs"] else 0.0
+        avg_items = round(s["item_count_sum"] / s["success_runs"], 1) if s["success_runs"] else 0.0
+        result.append(
+            {
+                "source": source,
+                "success_rate": success_rate,
+                "avg_item_count": avg_items,
+                "total_runs": s["total_runs"],
+                "last_success_at": s["last_success_at"],
+                "last_failure_at": s["last_failure_at"],
+                "last_error_message": s["last_error_message"],
+            }
+        )
+
+    result.sort(key=lambda item: item["source"])
+    return result
+
+
 def get_distinct_sources(session: Session) -> list[str]:
     """Dashboard'daki kaynak filtresi için tekil kaynak adlarını çıkarır.
 
@@ -540,3 +821,17 @@ def get_distinct_sources(session: Session) -> list[str]:
             if name:
                 names.add(name)
     return sorted(names)
+
+
+def get_distinct_sectors(session: Session) -> list[str]:
+    """Dashboard'daki sektör filtresi için görülmüş tüm sektör etiketlerini
+    döner. `sector` kolonu JSON string listesi olarak tutulduğundan (bkz.
+    NewsRecord.sectors_list), tüm kayıtlar taranıp Python tarafında ayrıştırılır."""
+    slugs: set[str] = set()
+    for (sector_json,) in session.query(NewsRecord.sector).filter(NewsRecord.sector.isnot(None)).all():
+        try:
+            for slug in json.loads(sector_json):
+                slugs.add(slug)
+        except json.JSONDecodeError:
+            continue
+    return sorted(slugs)

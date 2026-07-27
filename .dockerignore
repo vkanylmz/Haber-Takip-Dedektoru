@@ -1,0 +1,20 @@
+# .env ve data/ container İÇİNE kopyalanmamalı - ikisi de docker-compose.yml
+# tarafından volume olarak dıştan bağlanıyor (bkz. README > Docker ile
+# Çalıştırma). Bunları imaja dahil etmek, gerçek API anahtarlarını/bot
+# token'ını VE gerçek abone chat_id'lerini imajın içine gömer - imaj
+# paylaşılırsa/push edilirse bu bir sızıntı olur.
+.env
+data/
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+.git/
+.gitignore
+
+# Docker'ın kendi dosyaları (imaja gerek yok)
+Dockerfile
+docker-compose.yml
+.dockerignore

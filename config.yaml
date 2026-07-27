@@ -87,7 +87,10 @@ database:
 web:
   host: "0.0.0.0"
   port: 8000
-  # Dashboard sayfasının kaç saniyede bir otomatik yenileneceği
+  # ARTIK KULLANILMIYOR: tam sayfa meta-refresh, piyasa şeridi/ısı haritasının
+  # kendi AJAX güncellemeleriyle çakışıp görsel "zıplamaya" sebep olduğu için
+  # kaldırıldı (bkz. src/web/templates/dashboard.html <head> yorumu). Haber
+  # listesi artık manuel sayfa yenileme veya filtre değiştirmeyle güncellenir.
   refresh_seconds: 30
   # Dashboard'da gösterilecek en fazla haber sayısı
   max_items: 100
