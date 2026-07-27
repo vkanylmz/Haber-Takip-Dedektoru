@@ -473,6 +473,22 @@ async def ticker_quotes_endpoint(tickers: str = "") -> dict[str, Any]:
     Çözülemeyen/başarısız sembolller sessizce sonuçta YER ALMAZ (frontend
     bu durumda o etikete sadece fiyat eklemeden bırakır, hata göstermez)."""
     parsed = [t.strip() for t in tickers.split(",") if t.strip()]
+    if tickers == "__debug__":
+        # GEÇİCİ TEŞHİS (bkz. sohbet notu) - Render'da neden 0 sonuç
+        # döndüğünü anlamak için ham adımları gösterir. Kalıcı değil,
+        # sorun çözülünce kaldırılacak.
+        from src.web.market_data import _resolve_yahoo_symbol, _fetch_one
+        import httpx as _httpx
+        debug: dict[str, Any] = {"raw_tickers_param": tickers, "python_parsed": parsed}
+        resolved = _resolve_yahoo_symbol("X: ^GSPC")
+        debug["resolved_symbol"] = resolved
+        async with _httpx.AsyncClient(timeout=12.0) as client:
+            try:
+                direct = await _fetch_one(client, resolved, resolved)
+                debug["direct_fetch_one_result"] = direct
+            except Exception as exc:  # noqa: BLE001
+                debug["direct_fetch_one_exception"] = repr(exc)
+        return debug
     if not parsed:
         return {}
     return await get_quotes_for_company_tickers(parsed)
