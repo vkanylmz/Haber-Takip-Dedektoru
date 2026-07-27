@@ -176,6 +176,92 @@ async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict
         return None
 
 
+# --------------------------------------------------------------------------
+# "Detaylı İnceleme" > Şirket sütunu: haberdeki "BORSA: SEMBOL" (ör.
+# "NASDAQ: TSLA", "BIST: THYAO" - bkz. src/summarizer.py > company_ticker)
+# etiketi için, MÜMKÜNSE gerçek anlık fiyat/günlük değişim de gösterilir.
+# Bu, yukarıdaki sabit MARKET_SYMBOLS listesinden TAMAMEN AYRI, keyfi/
+# dinamik semboller içeren bir mekanizmadır - kendi (daha uzun ömürlü,
+# 30 sn) önbelleğine sahiptir; ana piyasa şeridinin 10 sn'lik önbelleğiyle
+# KARIŞTIRILMAZ. Opsiyonel/bonus bir özelliktir: bir sembol çözülemez veya
+# Yahoo'dan veri alınamazsa o haber için sessizce fiyat gösterilmez (sayfa
+# hata vermez).
+# --------------------------------------------------------------------------
+
+# Borsa kodundan Yahoo Finance sembol sonekine kaba bir eşleme. Kapsamlı
+# değildir (özellikle "EURONEXT" gibi çok şehirli borsalar için Paris
+# varsayıldı) - amaç, modelin ürettiği en yaygın borsa kodları için makul
+# bir tahmin sağlamak; eşleşmeyen bir kod soneksiz (ör. ABD borsaları gibi)
+# denenir.
+_EXCHANGE_YAHOO_SUFFIX: dict[str, str] = {
+    "NASDAQ": "",
+    "NYSE": "",
+    "NYSEAMERICAN": "",
+    "AMEX": "",
+    "BIST": ".IS",
+    "LSE": ".L",
+    "TSE": ".T",
+    "TYO": ".T",
+    "HKEX": ".HK",
+    "HKSE": ".HK",
+    "SGX": ".SI",
+    "SSE": ".SS",
+    "SZSE": ".SZ",
+    "ASX": ".AX",
+    "TWSE": ".TW",
+    "KRX": ".KS",
+    "KOSPI": ".KS",
+    "EURONEXT": ".PA",
+}
+
+_TICKER_QUOTE_CACHE_TTL_SECONDS = 30.0
+_ticker_quote_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def _resolve_yahoo_symbol(company_ticker: str) -> str | None:
+    """"NASDAQ: TSLA" -> "TSLA", "BIST: THYAO" -> "THYAO.IS" gibi. Beklenen
+    "BORSA: SEMBOL" formatında değilse (ör. ":" yoksa) None döner."""
+    if not company_ticker or ":" not in company_ticker:
+        return None
+    exchange, _, symbol = company_ticker.partition(":")
+    exchange = exchange.strip().upper()
+    symbol = symbol.strip().upper()
+    if not symbol:
+        return None
+    suffix = _EXCHANGE_YAHOO_SUFFIX.get(exchange, "")
+    return f"{symbol}{suffix}"
+
+
+async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str, dict[str, Any]]:
+    """Verilen "BORSA: SEMBOL" string listesi için, çözülebilen ve Yahoo'dan
+    gerçek veri alınabilenler için {orijinal_company_ticker: quote_dict} döner.
+    Çözülemeyen/başarısız olanlar sonuçta YER ALMAZ (exception fırlatmaz)."""
+    now = time.monotonic()
+    to_fetch: dict[str, str] = {}  # yahoo_symbol -> orijinal company_ticker
+    results: dict[str, dict[str, Any]] = {}
+
+    for ct in set(company_tickers):
+        yahoo_symbol = _resolve_yahoo_symbol(ct)
+        if not yahoo_symbol:
+            continue
+        cached = _ticker_quote_cache.get(yahoo_symbol)
+        if cached and (now - cached[0]) < _TICKER_QUOTE_CACHE_TTL_SECONDS:
+            if cached[1] is not None:
+                results[ct] = cached[1]
+        else:
+            to_fetch[yahoo_symbol] = ct
+
+    if to_fetch:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            fetched = await asyncio.gather(*(_fetch_one(client, sym, sym) for sym in to_fetch))
+        for sym, quote in zip(to_fetch.keys(), fetched):
+            _ticker_quote_cache[sym] = (now, quote)
+            if quote is not None:
+                results[to_fetch[sym]] = quote
+
+    return results
+
+
 async def get_market_snapshot() -> list[dict[str, Any]]:
     """İzlenen tüm sembollerin güncel fiyat/günlük değişim yüzdesini,
     dashboard'daki gösterim sırasına göre döner. Başarısız olan semboller

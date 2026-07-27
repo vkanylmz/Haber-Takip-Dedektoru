@@ -52,6 +52,11 @@ class NewsGroup:
     # banka kâr açıklaması da sector="finans" olabilir ama bu "sirket"tir)
     # AYRI bir alan olarak tutulur. None -> henüz sınıflandırılmadı.
     top_category: str | None = None
+    # Yalnızca top_category="sirket" olan haberlerde anlamlı: ilgili şirketin
+    # borsa kodu + ticker sembolü, "BORSA: SEMBOL" formatında (ör.
+    # "NASDAQ: TSLA", "BIST: THYAO"). None -> net bir şirket/ticker
+    # belirlenemedi (bkz. summarizer.py > _parse_company_ticker).
+    company_ticker: str | None = None
 
     @property
     def representative(self) -> NewsItem:

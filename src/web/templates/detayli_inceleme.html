@@ -87,9 +87,13 @@
     }
 
     main {
-      max-width: 1400px;
+      /* Masaüstünde ekranın büyük çoğunluğunu kullan (dar/ortalanmış 1400px
+         yerine) - geniş monitörlerde çok fazla boş kenar boşluğu bırakan
+         önceki değer, sütunları gereksiz yere daraltıyordu. */
+      max-width: 1900px;
+      width: 97%;
       margin: 1.5rem auto;
-      padding: 0 1rem;
+      padding: 0 0.5rem;
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
@@ -206,7 +210,10 @@
     .columns-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 1.1rem;
+      /* Sütunlar arası boşluk makul ama gereksiz büyük değil - main'in
+         genişlemesiyle birlikte her sütun artık gözle görülür şekilde daha
+         geniş (satır uzunluğu arttı, başlıklar daha az kırılıyor). */
+      gap: 0.85rem;
       align-items: start;
     }
 
@@ -406,6 +413,35 @@
       font-size: 0.82rem;
     }
 
+    /* --- Şirket haberlerinde borsa+ticker etiketi (ör. "🏢 NASDAQ: TSLA") --- */
+    .ticker-badge {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #93c5fd;
+      background: rgba(37, 99, 235, 0.12);
+      border: 1px solid rgba(37, 99, 235, 0.25);
+      border-radius: 6px;
+      padding: 0.2rem 0.55rem;
+      margin-bottom: 0.5rem;
+      width: fit-content;
+    }
+
+    .ticker-price {
+      font-weight: 600;
+    }
+
+    .ticker-up {
+      color: var(--pos-txt);
+    }
+
+    .ticker-down {
+      color: var(--neg-txt);
+    }
+
     .sector-tag {
       display: inline-block;
       padding: 0.08rem 0.4rem;
@@ -550,6 +586,18 @@
               </div>
               <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
             </div>
+
+            {% if r.company_ticker %}
+            <div class="ticker-badge">
+              <span>🏢 {{ r.company_ticker }}</span>
+              {% if r.ticker_quote %}
+              <span class="ticker-price {% if r.ticker_quote.change_pct >= 0 %}ticker-up{% else %}ticker-down{% endif %}">
+                {{ "%.2f"|format(r.ticker_quote.price) }} {{ r.ticker_quote.currency }}
+                ({{ "%+.2f"|format(r.ticker_quote.change_pct) }}%)
+              </span>
+              {% endif %}
+            </div>
+            {% endif %}
 
             <div class="summary">{{ r.summary }}</div>
 

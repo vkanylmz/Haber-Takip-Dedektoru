@@ -87,6 +87,12 @@ class NewsRecord(Base):
     # (ör. bu özellik eklenmeden önce özetlenmiş eski bir haber).
     top_category = Column(String(16), nullable=True)
 
+    # Yalnızca top_category="sirket" olan kayıtlarda anlamlı: "BORSA: SEMBOL"
+    # formatında (ör. "NASDAQ: TSLA", "BIST: THYAO") - bkz.
+    # src/summarizer.py > _parse_company_ticker. None -> net bir şirket/ticker
+    # belirlenemedi ya da bu özellik eklenmeden önce özetlenmiş eski bir haber.
+    company_ticker = Column(String(64), nullable=True)
+
     notified = Column(Boolean, nullable=False, default=False)
     notified_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -379,6 +385,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "top_category" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN top_category VARCHAR(16)")
             logger.info("Veritabanı migrasyonu: news_records.top_category kolonu eklendi.")
+        if "company_ticker" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN company_ticker VARCHAR(64)")
+            logger.info("Veritabanı migrasyonu: news_records.company_ticker kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -511,6 +520,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             sentiment=group.sentiment,
             market_impact=group.market_impact,
             top_category=group.top_category,
+            company_ticker=group.company_ticker,
             notified=False,
             first_seen_at=now,
             last_seen_at=now,
@@ -529,6 +539,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.sentiment = group.sentiment or record.sentiment
         record.market_impact = group.market_impact or record.market_impact
         record.top_category = group.top_category or record.top_category
+        record.company_ticker = group.company_ticker or record.company_ticker
         record.last_seen_at = now
 
     session.flush()

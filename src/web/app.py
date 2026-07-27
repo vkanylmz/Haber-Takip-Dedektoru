@@ -12,6 +12,8 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -44,7 +46,9 @@ from src.summarizer import (
     VALID_TOP_CATEGORIES,
 )
 from src.trend_report import get_dashboard_trend_summary
-from src.web.market_data import get_market_snapshot
+from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers
+
+logger = logging.getLogger(__name__)
 
 # Önem skoru filtresi dropdown'ında sunulan eşik seçenekleri (min. skor).
 _IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
@@ -164,6 +168,8 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "sentiment_label": sentiment_label,
         "sector_labels": sector_labels,
         "source_comparison": source_comparison,
+        "company_ticker": record.company_ticker,
+        "ticker_quote": None,
     }
 
 
@@ -377,6 +383,23 @@ def detayli_inceleme_page(
                     "count": len(views),
                 }
             )
+
+    # Şirket sütunundaki haberlere (varsa) GERÇEK anlık fiyat/günlük değişim
+    # eklenir - bkz. src/web/market_data.py > get_quotes_for_company_tickers.
+    # Bonus/opsiyonel bir özellik: herhangi bir sembol çözülemez/Yahoo'dan
+    # veri alınamazsa o habere sessizce fiyat eklenmez (sayfa hata vermez).
+    sirket_column = next((c for c in columns if c["slug"] == "sirket"), None)
+    if sirket_column is not None:
+        tickers = {v["company_ticker"] for v in sirket_column["records"] if v["company_ticker"]}
+        if tickers:
+            try:
+                quotes = asyncio.run(get_quotes_for_company_tickers(list(tickers)))
+            except Exception:  # noqa: BLE001 - fiyat çekilemezse sayfa YİNE DE render edilsin
+                logger.warning("Şirket ticker fiyatları alınamadı.", exc_info=True)
+                quotes = {}
+            for v in sirket_column["records"]:
+                if v["company_ticker"]:
+                    v["ticker_quote"] = quotes.get(v["company_ticker"])
 
     # Piyasa Duygusu, bu sayfada gösterilen 3 kategorinin BİRLEŞİMİNDEN
     # (union) hesaplanır - ana dashboard'daki gibi TEK bir filtrelenmiş

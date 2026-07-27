@@ -191,6 +191,7 @@ def _reuse_or_mark_for_summarization(
                 group.sectors = existing.sectors_list()
                 group.sentiment = existing.sentiment
                 group.top_category = existing.top_category
+                group.company_ticker = existing.company_ticker
             else:
                 to_summarize.append(group)
 

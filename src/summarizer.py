@@ -111,10 +111,22 @@ anlaşmalar) - ekonomik etkisi olsa bile TEMEL doğası siyasi/jeopolitikse.
 özeti, emtia fiyat hareketi, teknoloji/bilim haberi, spor/yaşam tarzı).
 - Yalnızca EN BASKIN/ANA temayı yansıtan TEK bir değer seç (liste değil).
 
+Borsa/Ticker tespiti (company_ticker, TEK bir string - SADECE top_category \
+"sirket" olan haberlerde anlamlıdır):
+- Haberin ANA konusu olan, halka açık/borsada işlem gören BELİRLİ bir şirket \
+net şekilde belirtiliyorsa, o şirketin işlem gördüğü borsa kodu ve ticker \
+sembolünü "BORSA: SEMBOL" formatında ver - ör. "NASDAQ: TSLA", "NYSE: XOM", \
+"BIST: THYAO", "LSE: BP".
+- Haberde birden fazla şirket geçiyorsa, haberin ASIL konusu olan/en öne \
+çıkan şirketi seç.
+- Şirket borsada işlem görmüyorsa, net bir şirket/ticker belirlenemiyorsa \
+veya haber "sirket" kategorisinde değilse boş string ("") döndür - ASLA \
+tahmin/uydurma bir sembol üretme, emin değilsen boş bırak.
+
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro"}
+{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": ""}
 """
 
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
@@ -362,6 +374,7 @@ class Summarizer:
             group.sectors = []
             group.sentiment = None
             group.top_category = None
+            group.company_ticker = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -378,6 +391,7 @@ class Summarizer:
         group.sentiment = self._parse_sentiment(parsed.get("sentiment"))
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
         group.top_category = self._parse_top_category(parsed.get("top_category"))
+        group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
 
     def _throttle(self) -> None:
         """Sağlayıcının dakika başına istek (RPM) limitini aşmamak için, bir
@@ -576,6 +590,19 @@ class Summarizer:
         value = str(raw_value).strip().lower() if raw_value is not None else ""
         return value if value in VALID_TOP_CATEGORIES else None
 
+    @staticmethod
+    def _parse_company_ticker(raw_value: Any) -> str | None:
+        """Modelin döndürdüğü `company_ticker` değerini ("BORSA: SEMBOL" \
+        formatında bir string bekleniyor) sadeleştirir. Boş/eksik/aşırı \
+        uzun (muhtemelen hatalı) bir değer gelirse None döner - kart üzerinde \
+        hiçbir borsa/ticker etiketi gösterilmez (bkz. src/web/app.py)."""
+        if raw_value is None:
+            return None
+        value = str(raw_value).strip()
+        if not value or len(value) > 40:
+            return None
+        return value
+
     def select_daily_highlights(self, records: list[Any]) -> list[dict[str, Any]]:
         """Verilen (son 24 saatteki) `NewsRecord` listesi arasından GERÇEKTEN
         önemli 5-10 tanesini seçtirmek için Gemini/Claude'a TEK bir ek çağrı
@@ -664,3 +691,4 @@ class Summarizer:
         group.sentiment = None
         group.market_impact = None
         group.top_category = None
+        group.company_ticker = None
