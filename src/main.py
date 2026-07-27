@@ -190,6 +190,7 @@ def _reuse_or_mark_for_summarization(
                 group.regions = existing.regions_list()
                 group.sectors = existing.sectors_list()
                 group.sentiment = existing.sentiment
+                group.top_category = existing.top_category
             else:
                 to_summarize.append(group)
 

@@ -95,11 +95,26 @@ Piyasa Etkisi (market_impact) kuralları:
 - Haberin finans piyasalarına yansımasını bir finans uzmanı/analist gözüyle 1 cümlelik beklenti veya yorumla belirt. Eğer haber piyasa için çok anlamsızsa boş bırak (""). Örn: "Fed'in faiz şahin tutumu nedeniyle altın tarafında kısa vadede sert bir satış baskısı görebiliriz."
 - ÖNEMLİ: Gelen haber İngilizce veya başka yabancı bir dilde olsa bile çıktılarını KESİNLİKLE Türkçe olarak oluştur. Herhangi bir yabancı dilde sonuç döndürme.
 
+Üst kategori etiketleme kuralları (top_category, TEK bir değer - `sector`/
+`regions`'tan FARKLI ve BAĞIMSIZ bir sınıflandırma eksenidir):
+- "makro": Haberin ANA konusu makroekonomi/para politikasıysa - merkez \
+bankası (Fed, TCMB, ECB vb.) faiz kararı, enflasyon/işsizlik/büyüme verisi, \
+döviz kuru rejimi, bütçe/maliye politikası gibi GENEL ekonomiyi ilgilendiren \
+(belirli TEK bir şirketle ilgili OLMAYAN) haberler.
+- "sirket": Haberin ANA konusu BELİRLİ bir şirket/marka ise (ör. Tesla, \
+Turkcell, bir bankanın çeyreklik kâr açıklaması, bir CEO değişikliği, bir \
+birleşme/satın alma) - şirket ismi/hissesi haberin merkezindeyse bunu seç.
+- "siyasi": Haberin ANA konusu siyasi/jeopolitik bir gelişmeyse (ör. \
+ABD-İran gerilimi, seçimler, yaptırımlar, savaş/çatışma, uluslararası \
+anlaşmalar) - ekonomik etkisi olsa bile TEMEL doğası siyasi/jeopolitikse.
+- "diger": Yukarıdaki üçüne de NET şekilde girmiyorsa (ör. genel piyasa \
+özeti, emtia fiyat hareketi, teknoloji/bilim haberi, spor/yaşam tarzı).
+- Yalnızca EN BASKIN/ANA temayı yansıtan TEK bir değer seç (liste değil).
 
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "..."}
+{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro"}
 """
 
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
@@ -150,6 +165,18 @@ SENTIMENT_LABELS = {
     "pozitif": "📈 Pozitif",
     "negatif": "📉 Negatif",
     "notr": "➖ Nötr",
+}
+
+# "Detaylı İnceleme" sayfasındaki (bkz. src/web/app.py) kategori sekmelerinin
+# geçerli değerleri (bkz. SYSTEM_PROMPT > top_category). `sector`/`regions`'tan
+# BAĞIMSIZ bir eksen - TEK bir değer (liste değil).
+VALID_TOP_CATEGORIES = ("makro", "sirket", "siyasi", "diger")
+
+TOP_CATEGORY_LABELS = {
+    "makro": "🏛️ Makro",
+    "sirket": "🏢 Şirket",
+    "siyasi": "🌍 Siyasi",
+    "diger": "📌 Diğer",
 }
 
 # Günlük özet için: bir önceki 24 saatte toplanan haberler arasından
@@ -334,6 +361,7 @@ class Summarizer:
             group.regions = []
             group.sectors = []
             group.sentiment = None
+            group.top_category = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -349,6 +377,7 @@ class Summarizer:
         group.sectors = self._parse_sectors(parsed.get("sector"))
         group.sentiment = self._parse_sentiment(parsed.get("sentiment"))
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
+        group.top_category = self._parse_top_category(parsed.get("top_category"))
 
     def _throttle(self) -> None:
         """Sağlayıcının dakika başına istek (RPM) limitini aşmamak için, bir
@@ -538,6 +567,15 @@ class Summarizer:
         value = str(raw_value).strip().lower() if raw_value is not None else ""
         return value if value in VALID_SENTIMENTS else None
 
+    @staticmethod
+    def _parse_top_category(raw_value: Any) -> str | None:
+        """Modelin döndürdüğü `top_category` değerini VALID_TOP_CATEGORIES ile
+        sınırlar; bilinmeyen/hatalı bir değer gelirse None döner ("Detaylı
+        İnceleme" sayfasındaki sekmelerin hiçbirinde görünmez, bkz.
+        src/web/app.py)."""
+        value = str(raw_value).strip().lower() if raw_value is not None else ""
+        return value if value in VALID_TOP_CATEGORIES else None
+
     def select_daily_highlights(self, records: list[Any]) -> list[dict[str, Any]]:
         """Verilen (son 24 saatteki) `NewsRecord` listesi arasından GERÇEKTEN
         önemli 5-10 tanesini seçtirmek için Gemini/Claude'a TEK bir ek çağrı
@@ -625,3 +663,4 @@ class Summarizer:
         group.sectors = []
         group.sentiment = None
         group.market_impact = None
+        group.top_category = None

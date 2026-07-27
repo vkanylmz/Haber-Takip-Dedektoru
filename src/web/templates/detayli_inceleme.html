@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detaylı İnceleme — Finansal Haber Dashboard</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+
+      --critical: #ef4444;
+      --critical-glow: rgba(239, 68, 68, 0.4);
+      --important: #f59e0b;
+      --medium: #eab308;
+      --low: #64748b;
+
+      --pos-bg: rgba(34, 197, 94, 0.15);
+      --pos-txt: #4ade80;
+      --neg-bg: rgba(239, 68, 68, 0.15);
+      --neg-txt: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      margin: 0;
+      padding: 0 0 3rem 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    header {
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1.25rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    header .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    .back-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .back-link:hover {
+      color: var(--text-main);
+    }
+
+    main {
+      max-width: 900px;
+      margin: 1.5rem auto;
+      padding: 0 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* --- Piyasa Duygusu (Korku/Açgözlülük) --- */
+    .fear-greed-container {
+      background: rgba(24, 24, 27, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .fear-greed-title {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #f8fafc;
+      white-space: nowrap;
+    }
+
+    .fear-greed-bar {
+      flex: 1;
+      min-width: 120px;
+      height: 12px;
+      background: #18181b;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    .fear-greed-gradient {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 50%, #84cc16 75%, #22c55e 100%);
+      opacity: 0.8;
+    }
+
+    .fear-greed-marker {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 4px;
+      background: #fff;
+      border-radius: 2px;
+      box-shadow: 0 0 10px #fff;
+    }
+
+    .fear-greed-label {
+      font-size: 1rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .fg-extreme-fear {
+      color: #ef4444;
+    }
+
+    .fg-fear {
+      color: #f97316;
+    }
+
+    .fg-neutral {
+      color: #eab308;
+    }
+
+    .fg-greed {
+      color: #84cc16;
+    }
+
+    .fg-extreme-greed {
+      color: #22c55e;
+    }
+
+    /* --- Kategori sekmeleri --- */
+    .tabs-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.55rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    /* --- Önizleme etiketleri (aktif kategorideki öne çıkan haberler) --- */
+    .preview-pills {
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .preview-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+    }
+
+    .preview-pill {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.76rem;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* --- Sıralama --- */
+    .sort-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.85rem 1.25rem;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .sort-heading {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+    }
+
+    select {
+      font-family: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      background: #18181b;
+      cursor: pointer;
+    }
+
+    /* --- Haber kartları (ana dashboard'daki AYNI görsel dil) --- */
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      position: relative;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem 0;
+      line-height: 1.4;
+      color: #e2e8f0;
+    }
+
+    .card-meta {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .meta-divider {
+      color: #334155;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      flex-shrink: 0;
+    }
+
+    .badge-critical {
+      background: var(--critical);
+      color: #fff;
+      box-shadow: 0 0 15px var(--critical-glow);
+    }
+
+    .badge-important {
+      background: var(--important);
+      color: #fff;
+    }
+
+    .badge-medium {
+      background: var(--medium);
+      color: #000;
+    }
+
+    .badge-low {
+      background: var(--low);
+      color: #fff;
+    }
+
+    .badge-unknown {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .sentiment {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .sentiment-positive {
+      background: var(--pos-bg);
+      color: var(--pos-txt);
+    }
+
+    .sentiment-negative {
+      background: var(--neg-bg);
+      color: var(--neg-txt);
+    }
+
+    .sentiment-neutral {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+    }
+
+    .summary {
+      margin: 0 0 0.5rem 0;
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-size: 0.9rem;
+    }
+
+    .sector-tag {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.7rem;
+    }
+
+    .links {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .links a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.8rem;
+      padding: 0.25rem 0.5rem;
+      background: rgba(96, 165, 250, 0.1);
+      border-radius: 4px;
+    }
+
+    .links a:hover {
+      background: rgba(96, 165, 250, 0.2);
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 3rem 1rem;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+    }
+
+    /* --- Mobil --- */
+    @media (max-width: 600px) {
+      header {
+        padding: 1rem;
+      }
+
+      main {
+        margin: 1rem auto;
+      }
+
+      .tab {
+        flex: 1 1 auto;
+        justify-content: center;
+        font-size: 0.82rem;
+        padding: 0.5rem 0.6rem;
+      }
+
+      .preview-pill {
+        max-width: 160px;
+      }
+
+      .card {
+        padding: 1rem;
+      }
+
+      .card-top {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>📊 Detaylı İnceleme</h1>
+      <div class="meta"><a class="back-link" href="/">← Dashboard'a dön</a></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="fear-greed-container">
+      <div class="fear-greed-title">Piyasa Duygusu</div>
+      <div class="fear-greed-bar">
+        <div class="fear-greed-gradient"></div>
+        <div class="fear-greed-marker" style="left: {{ fear_greed_index }}%;"></div>
+      </div>
+      <div
+        class="fear-greed-label {% if fear_greed_index < 25 %}fg-extreme-fear{% elif fear_greed_index < 45 %}fg-fear{% elif fear_greed_index < 55 %}fg-neutral{% elif fear_greed_index < 75 %}fg-greed{% else %}fg-extreme-greed{% endif %}">
+        {% if fear_greed_index < 25 %}Aşırı Korku {% elif fear_greed_index < 45 %}Korku {% elif fear_greed_index < 55
+          %}Nötr {% elif fear_greed_index < 75 %}Açgözlülük {% else %}Aşırı Açgözlülük{% endif %} ({{ fear_greed_index
+          }})
+      </div>
+    </div>
+
+    <div class="tabs-section">
+      <div class="tabs">
+        {% for cat in categories %}
+        <a href="/detayli-inceleme?category={{ cat.slug }}&sort={{ selected_sort }}"
+          class="tab {% if cat.slug == selected_category %}active{% endif %}">{{ cat.label }}</a>
+        {% endfor %}
+      </div>
+
+      {% if preview_records %}
+      <div class="preview-pills">
+        <span class="preview-label">Öne Çıkanlar:</span>
+        {% for p in preview_records %}
+        <span class="preview-pill" title="{{ p.title }}">{{ p.title|truncate(45) }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="sort-section">
+      <span class="sort-heading">Sıralama</span>
+      <form method="get" action="/detayli-inceleme" style="display: contents;">
+        <input type="hidden" name="category" value="{{ selected_category }}">
+        <select name="sort" onchange="this.form.submit()">
+          <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
+          <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
+        </select>
+      </form>
+    </div>
+
+    {% if not records %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">📭</div>
+      Bu kategoride henüz haber yok. Bu yeni bir sınıflandırma alanı olduğundan
+      yalnızca bu özellik eklendikten SONRA özetlenen haberler burada görünür -
+      zamanla artacaktır.
+    </div>
+    {% endif %}
+
+    {% for r in records %}
+    <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
+      <div class="card-top">
+        <div>
+          <h2 class="card-title">{{ r.title }}</h2>
+          <div class="card-meta">
+            <span>{{ r.published_at }}</span>
+            <span class="meta-divider">|</span>
+            <span>Kaynak: {{ r.sources }}</span>
+            {% if r.sentiment_label %}
+            <span class="meta-divider">|</span>
+            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+            {% endif %}
+            {% if r.sector_labels %}
+            <span class="meta-divider">|</span>
+            {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+            {% endif %}
+          </div>
+        </div>
+        <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+      </div>
+
+      <div class="summary">{{ r.summary }}</div>
+
+      <div class="links">
+        {% for link in r.links %}
+        <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </main>
+</body>
+
+</html>

@@ -43,6 +43,15 @@ class NewsGroup:
     sentiment: str | None = None
     # Haberin piyasaya yansimasina dair AI tarafindan uretilen profesyonel yorum
     market_impact: str | None = None
+    # Haberin "Detaylı İnceleme" sayfasındaki (bkz. src/web/app.py) TEK bir üst
+    # kategorisi: "makro" (Fed/TCMB/enflasyon/faiz gibi makroekonomi), "sirket"
+    # (belirli bir şirketi ilgilendiren haber, ör. Tesla/Turkcell), "siyasi"
+    # (siyasi/jeopolitik, ör. ABD-İran) veya "diger" (üçüne de net girmiyor).
+    # `sector`/`regions`'tan FARKLI bir sınıflandırma ekseni olduğundan
+    # (ör. bir TCMB haberi sector="finans" olabilir ama bu "makro"dur, bir
+    # banka kâr açıklaması da sector="finans" olabilir ama bu "sirket"tir)
+    # AYRI bir alan olarak tutulur. None -> henüz sınıflandırılmadı.
+    top_category: str | None = None
 
     @property
     def representative(self) -> NewsItem:

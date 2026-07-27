@@ -80,6 +80,13 @@ class NewsRecord(Base):
     # Haberin finansal/piyasa beklentisini aciklayan tek cumlelik analist yorumu
     market_impact = Column(Text, nullable=True)
 
+    # "Detaylı İnceleme" sayfasındaki (bkz. src/web/app.py) TEK bir üst
+    # kategori: "makro" | "sirket" | "siyasi" | "diger" (bkz.
+    # src/summarizer.py > VALID_TOP_CATEGORIES). `sector`/`regions`'tan
+    # BAĞIMSIZ bir sınıflandırma ekseni. None -> henüz sınıflandırılmadı
+    # (ör. bu özellik eklenmeden önce özetlenmiş eski bir haber).
+    top_category = Column(String(16), nullable=True)
+
     notified = Column(Boolean, nullable=False, default=False)
     notified_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -369,6 +376,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "sector" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN sector TEXT")
             logger.info("Veritabanı migrasyonu: news_records.sector kolonu eklendi.")
+        if "top_category" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN top_category VARCHAR(16)")
+            logger.info("Veritabanı migrasyonu: news_records.top_category kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -402,6 +412,7 @@ def _ensure_performance_indexes(engine) -> None:
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_last_seen_at ON news_records (last_seen_at)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_published_at ON news_records (published_at)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_sentiment ON news_records (sentiment)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_top_category ON news_records (top_category)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_importance_score ON news_records (importance_score)")
 
         if engine.dialect.name == "postgresql":
@@ -499,6 +510,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             sector=json.dumps(group.sectors, ensure_ascii=False),
             sentiment=group.sentiment,
             market_impact=group.market_impact,
+            top_category=group.top_category,
             notified=False,
             first_seen_at=now,
             last_seen_at=now,
@@ -516,6 +528,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.sector = json.dumps(group.sectors, ensure_ascii=False) if group.sectors else record.sector
         record.sentiment = group.sentiment or record.sentiment
         record.market_impact = group.market_impact or record.market_impact
+        record.top_category = group.top_category or record.top_category
         record.last_seen_at = now
 
     session.flush()
@@ -547,8 +560,15 @@ def get_recent_records(
     search_query: str | None = None,
     since: datetime | None = None,
     sort_order: str = "newest",
+    category_filter: str | None = None,
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
+    if category_filter:
+        # `top_category` sector/regions'ın AKSİNE düz bir string kolon
+        # (JSON listesi DEĞİL, TEK bir değer) - bkz. src/summarizer.py >
+        # VALID_TOP_CATEGORIES, "Detaylı İnceleme" sayfasının kategori
+        # sekmeleri bunu kullanır (bkz. src/web/app.py).
+        query = query.filter(NewsRecord.top_category == category_filter)
     if since is not None:
         # Şirket/hisse profili sayfası (bkz. src/company_profile.py) gibi
         # "son N gün" ile sınırlı sorgular için - diğer çağıranlar (ör.

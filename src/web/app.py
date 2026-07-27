@@ -34,7 +34,15 @@ from src.db import (
     get_source_health_summary,
     init_db,
 )
-from src.summarizer import REGION_LABELS, SECTOR_LABELS, SENTIMENT_LABELS, VALID_REGIONS, VALID_SENTIMENTS
+from src.summarizer import (
+    REGION_LABELS,
+    SECTOR_LABELS,
+    SENTIMENT_LABELS,
+    TOP_CATEGORY_LABELS,
+    VALID_REGIONS,
+    VALID_SENTIMENTS,
+    VALID_TOP_CATEGORIES,
+)
 from src.trend_report import get_dashboard_trend_summary
 from src.web.market_data import get_market_snapshot
 
@@ -60,6 +68,30 @@ _HEATMAP_MIN_COUNT_FOR_COLOR = 2
 # istekte bu iki tam-tablo taramasını tekrarlamayı önler.
 _FILTER_OPTIONS_CACHE_TTL_SECONDS = 60.0
 _filter_options_cache: dict[str, Any] = {"sources": None, "sectors": None, "fetched_at": 0.0}
+
+
+def _compute_fear_greed_index(records: list[NewsRecord]) -> int:
+    """Sentiment dağılımından basit bir "Piyasa Duygusu" (Korku/Açgözlülük)
+    endeksi hesaplar (0-100, 50=nötr). Hem ana dashboard'da hem "Detaylı
+    İnceleme" sayfasında (bkz. src/web/app.py) AYNI hesaplama kullanılır -
+    tek bir kaynak-of-truth, iki yerde tutarsızlık olmaz."""
+    fg_score = 0
+    fg_valid_count = 0
+    for r in records[:50]:
+        if r.sentiment == "pozitif":
+            fg_score += 1
+            fg_valid_count += 1
+        elif r.sentiment == "negatif":
+            fg_score -= 1
+            fg_valid_count += 1
+        elif r.sentiment == "notr":
+            fg_valid_count += 1
+
+    if fg_valid_count == 0:
+        return 50  # varsayılan nötr
+
+    normalized = fg_score / fg_valid_count  # -1.0 ile 1.0 arası
+    return int((normalized + 1.0) / 2.0 * 100)
 
 
 def _get_cached_filter_options(session) -> tuple[list[str], list[dict[str, str]]]:
@@ -253,23 +285,7 @@ def dashboard(
     regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
     sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
 
-    # Fear/Greed Calculation
-    fg_score = 0
-    fg_valid_count = 0
-    for r in records[:50]:
-        if r.sentiment == "pozitif":
-            fg_score += 1
-            fg_valid_count += 1
-        elif r.sentiment == "negatif":
-            fg_score -= 1
-            fg_valid_count += 1
-        elif r.sentiment == "notr":
-            fg_valid_count += 1
-    
-    fear_greed_index = 50 # Default neutral
-    if fg_valid_count > 0:
-        normalized = (fg_score / fg_valid_count) # -1.0 to 1.0
-        fear_greed_index = int((normalized + 1.0) / 2.0 * 100)
+    fear_greed_index = _compute_fear_greed_index(records)
 
     views = [_record_to_view(r, threshold) for r in records]
 
@@ -289,6 +305,75 @@ def dashboard(
             "importance_options": _IMPORTANCE_FILTER_OPTIONS,
             "selected_min_importance": min_importance_value,
             "selected_query": q or "",
+            "selected_sort": sort_normalized,
+            "threshold": threshold,
+            "total_count": len(views),
+            "fear_greed_index": fear_greed_index,
+        },
+    )
+
+
+@app.get("/detayli-inceleme", response_class=HTMLResponse)
+def detayli_inceleme_page(
+    request: Request,
+    category: str = "makro",
+    sort: str = "newest",
+) -> HTMLResponse:
+    """"Detaylı İnceleme" sayfası: ana dashboard'dan TAMAMEN AYRI, kendi
+    kategori sekmeleri (makro/şirket/siyasi, bkz. src/summarizer.py >
+    VALID_TOP_CATEGORIES) olan bir görünüm. Ana dashboard'un HİÇBİR
+    özelliğine (filtreler, arama, piyasa şeridi, ısı haritası) dokunmaz -
+    tamamen ayrı bir route, kendi template'i.
+
+    NOT: `top_category` YENİ bir alan olduğundan, bu özellik eklenmeden
+    ÖNCE özetlenmiş eski haberlerde bu alan boştur (None) - dedup/group_key
+    önbelleği zaten özetlenmiş haberleri yeniden özetlemediğinden (bkz.
+    src/main.py > _reuse_or_mark_for_summarization), geçmiş haberler
+    otomatik olarak GERİYE DÖNÜK sınıflandırılmaz. Yalnızca bu değişiklikten
+    SONRA yeni özetlenen haberler sekmelerde görünür - zamanla artar.
+    """
+    config = load_config()
+    threshold = config.get("importance", {}).get("threshold", 4)
+    max_items = config.get("web", {}).get("max_items", 100)
+
+    category_normalized = category if category in VALID_TOP_CATEGORIES else "makro"
+    sort_normalized = "oldest" if sort == "oldest" else "newest"
+
+    with get_session() as session:
+        records = get_recent_records(
+            session,
+            limit=max_items,
+            category_filter=category_normalized,
+            sort_order=sort_normalized,
+        )
+
+    fear_greed_index = _compute_fear_greed_index(records)
+
+    # Yalnızca 3 ana sekme gösterilir (bkz. gereksinim) - "diger" bilerek
+    # bir sekme olarak sunulmaz.
+    categories = [
+        {"slug": c, "label": TOP_CATEGORY_LABELS.get(c, c)}
+        for c in VALID_TOP_CATEGORIES
+        if c != "diger"
+    ]
+
+    views = [_record_to_view(r, threshold) for r in records]
+
+    # Sekme önizlemesi: aktif kategorideki EN ÖNEMLİ birkaç haber başlığı
+    # (zaten çekilmiş `views` listesinden, EK bir sorgu YAPILMADAN) - kullanıcının
+    # seçtiği sıralamadan (en yeni/en eski) BAĞIMSIZ olarak önem skoruna göre.
+    preview_views = sorted(
+        views, key=lambda v: v["importance_score"] if v["importance_score"] is not None else 0, reverse=True
+    )[:5]
+
+    return templates.TemplateResponse(
+        request,
+        "detayli_inceleme.html",
+        {
+            "records": views,
+            "preview_records": preview_views,
+            "categories": categories,
+            "selected_category": category_normalized,
             "selected_sort": sort_normalized,
             "threshold": threshold,
             "total_count": len(views),
