@@ -159,6 +159,26 @@ sources:
     # feedparser bozo=False, 25 güncel/geçerli haber.
     url: "https://www.ekonomim.com/rss/ekonomi.xml"
 
+  - name: "Channel News Asia (CNA)"
+    id: cna
+    type: rss
+    enabled: true
+    # Singapur merkezli CNA'nın robots.txt'i genel "Disallow: /api/*" kuralına
+    # rağmen bu RSS yolunu özel olarak "Allow: /api/v1/rss-outbound-feed" ile
+    # açıkça izin veriyor (daha spesifik kural kazanır - RFC 9309). Hem curl
+    # hem de projenin kullandığı urllib.robotparser ile doğrulandı: True.
+    # Business/Asia'ya özel bir feed varyantı YOK - denenenler: ?category=business
+    # (200 OK ama 0 <item>, parametre sessizce yok sayılıyor), ?type=business
+    # (genel feed'in birebir aynısını döndürüyor), /business/rss.xml (404),
+    # /business sayfasında RSS auto-discovery linki yok. Bu yüzden resmi genel
+    # "Latest News" feed'i kullanılıyor; finans/iş haberleri (bkz. "business/"
+    # linkli öğeler) zaten karışık olarak geliyor, projenin LLM
+    # önem/sektör sınıflandırması geri kalanı doğal olarak filtreliyor - tıpkı
+    # Yahoo Finance/Bloomberg HT gibi diğer genel feed'lerde olduğu gibi. Test
+    # edildi (2026-07): 200 OK, feedparser bozo=False, gerçek fetch_rss() ile
+    # 15 güncel haber (Endonezya merkez bankası istifası, iş anlaşmaları vb.).
+    url: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml"
+
   # Reuters ve Bloomberg'in genel erişime açık, izinsiz kullanılabilecek resmi
   # bir RSS feed'i yok (bkz. aşağıdaki "Bloomberg (Finans/Piyasalar)" notu ve
   # README). Bu kaynağı doğrudan scrape ETMEK YERİNE, bu iki kaynağı resmi
