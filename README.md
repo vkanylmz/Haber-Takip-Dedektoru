@@ -483,6 +483,93 @@ API anahtarlarınızın/bot token'ınızın YANLIŞLIKLA GitHub'a gitmediğinden
 olmak için `git status`/`git add` sonrası çıktıyı push etmeden önce bir kez
 gözden geçirin (bkz. proje genelindeki güvenlik notları).
 
+## Vercel'e Deploy (Salt-Okunur Dashboard - Hibrit Mimari)
+
+Bu, Fly.io bölümünde anlatılan "tüm uygulamayı taşı" yaklaşımından FARKLI bir
+model: **worker (RSS taraması) ve Telegram bot dinleyicisi yerel
+bilgisayarınızda (`python main.py` ile) çalışmaya DEVAM EDER** - yalnızca
+web dashboard'un SALT-OKUNUR bir kopyası Vercel'de, internetten erişilebilir
+şekilde barındırılır. İkisi de AYNI paylaşımlı veritabanını (Neon Postgres)
+kullanır, böylece Vercel'deki dashboard her zaman güncel veriyi gösterir.
+
+**Neden bu model?** Vercel'in serverless mimarisi (Hobby planda cron en fazla
+günde 1 kez, fonksiyon başına en fazla 300 saniye çalışma süresi) bu
+projenin hız-sınırlı LLM özetleme hattını (haber başına ~12.5 sn bekleme)
+YETİŞTİREMEZ - bu yüzden worker'ı Vercel'e taşımak yerine yerelde bırakıp
+sadece dashboard'u taşıyoruz.
+
+**Ön koşul - kod hazır mı?** Evet: `vercel.json`, `api/index.py` ve
+`.vercelignore` dosyaları projede zaten mevcut ve yerel olarak test edildi
+(gerçek Neon Postgres verisiyle, tüm rotalar 200 döndü). `src/db.py`,
+`DATABASE_URL` ortam değişkeni tanımlıysa otomatik olarak Postgres'e bağlanır
+- Vercel'de bu değişkeni ayarlamanız YETERLİ, başka hiçbir kod değişikliği
+gerekmez.
+
+### 1) GitHub'a push edin
+
+Vercel'in web arayüzünden "Import Project" yapabilmesi için kod GitHub'da
+olmalı. Yukarıdaki **"GitHub'a Yükleme"** bölümündeki adımları izleyin (proje
+zaten bir git deposu ve `origin` remote'u tanımlı):
+
+```bash
+git add -A
+git commit -m "Vercel deploy hazırlığı"
+git push origin main
+```
+
+### 2) Vercel hesabı açın
+
+[vercel.com/signup](https://vercel.com/signup) - GitHub hesabınızla giriş
+yapmanız en kolayı (aynı zamanda repo erişimini otomatik yetkilendirir).
+Kredi kartı GEREKMEZ (Hobby plan ücretsizdir).
+
+### 3) Projeyi "Import" edin
+
+1. [vercel.com/new](https://vercel.com/new) adresine gidin.
+2. GitHub hesabınızı bağladıysanız repo listesinde projenizi
+   (`Haber-Takip-Dedektoru` veya push ettiğiniz repo adı) göreceksiniz -
+   yanındaki **"Import"** butonuna tıklayın.
+3. **Framework Preset:** Vercel `vercel.json`'ı otomatik algılayıp "Other"
+   olarak ayarlayacaktır - elle bir şey seçmenize gerek yok.
+4. **Root Directory:** değiştirmeyin, proje kökü olarak kalsın (`.`).
+5. **Environment Variables** bölümünü AÇIN (deploy'dan ÖNCE, "Deploy"
+   butonuna basmadan önce) ve şunu ekleyin:
+
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | Neon'dan aldığınız bağlantı dizesi (ör. `postgresql://neondb_owner:...@ep-....neon.tech/neondb?sslmode=require`) - yerel `.env` dosyanızdakiyle AYNI değer |
+
+   Bu dashboard **başka HİÇBİR gizli bilgiye ihtiyaç duymaz** - `GEMINI_API_KEY`,
+   `TELEGRAM_BOT_TOKEN` vb. eklemenize GEREK YOK (bkz. `api/index.py` -
+   `/sirket-profili` gibi LLM tetikleyen rotalar kasıtlı olarak bu Vercel
+   uygulamasına dahil edilmedi).
+6. **"Deploy"** butonuna basın. İlk deploy birkaç dakika sürebilir
+   (bağımlılıkların kurulumu dahil).
+
+### 4) Deploy sonrası kontrol
+
+Vercel size `https://<proje-adi>.vercel.app` gibi bir URL verecektir.
+
+1. `https://<proje-adi>.vercel.app/health` adresini açın - `{"status":"ok"}`
+   dönmesi beklenir.
+2. Ana sayfayı (`/`) açın - yerel `python main.py`'nizin topladığı GERÇEK
+   haberleri görmeniz gerekir (aynı Neon Postgres veritabanından okunuyor).
+3. Filtreleri/aramayı deneyin, `/kaynak-sagligi` sayfasına bakın.
+4. Kalıcılığı doğrulamak isterseniz: yerelde worker'ın yeni bir haber
+   eklemesini bekleyin (1 dakikada bir tarıyor), birkaç dakika sonra Vercel
+   URL'sini yenileyin - yeni haberi orada da görmelisiniz.
+
+Sorun giderme: Vercel projenizin **"Deployments"** sekmesinden build/runtime
+loglarına bakabilirsiniz - `DATABASE_URL` yanlış/eksikse dashboard boş
+görünür ama ÇÖKMEZ (bkz. src/db.py - Postgres bağlantısı başarısız olursa
+hata loglanır, sayfa yine de yüklenir).
+
+**Not:** Worker/Telegram bot yerel bilgisayarınızda çalışmaya devam ettiği
+sürece (bilgisayar kapanırsa onlar da durur - bkz. Fly.io/Oracle Cloud
+alternatifleri kalıcı bir çözüm için) veri akmaya devam eder; Vercel
+dashboard'u yalnızca bu veriyi GÖRÜNTÜLEMEK için var, kendi başına hiçbir
+veri toplamaz.
+
 ## Yapılandırma (`config.yaml`)
 
 - `app`: zaman aşımı, rate-limit, User-Agent, tekilleştirme (dedup) eşiği gibi genel ayarlar
