@@ -205,14 +205,38 @@ async def get_market_snapshot() -> list[dict[str, Any]]:
             results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
 
         data = [r for r in results if r is not None]
-        if data:
+
+        if len(data) == len(MARKET_SYMBOLS):
+            # Tam başarı - önbelleği doğrudan güncelle.
             _cache["data"] = data
             _cache["fetched_at"] = now
+        elif data:
+            # KISMİ başarı (ör. 12 semboldan sadece birkaçı) - bu turda
+            # BAŞARISIZ olan sembollerin ESKİ (varsa) değerlerini KORUYARAK
+            # birleştir, ham `data`'yı doğrudan önbelleğe YAZMA. Aksi halde
+            # kısmi bir başarı, önceki TAM (ör. 12/12) önbelleği aniden
+            # sparse bir veriyle EZERDİ - bu, GERÇEK production'da (Render'da,
+            # 2026-07) gözlemlendi: Yahoo Finance bazı sembolleri geçici
+            # olarak reddederken, önbellek her turda 1-2 sembole düşüyor,
+            # kullanıcı önceden gördüğü diğer 10-11 sembolü KAYBEDİYORDU.
+            previous_by_symbol = {item["symbol"]: item for item in (_cache["data"] or [])}
+            new_by_symbol = {item["symbol"]: item for item in data}
+            merged = [
+                new_by_symbol.get(symbol) or previous_by_symbol.get(symbol)
+                for symbol, _label in MARKET_SYMBOLS
+            ]
+            _cache["data"] = [item for item in merged if item is not None]
+            _cache["fetched_at"] = now
+            logger.warning(
+                "Piyasa verisi tazeleme denemesi KISMİ başarılı (%d/%d sembol) - "
+                "eksik semboller için önbellekteki eski değerler korundu.",
+                len(data), len(MARKET_SYMBOLS),
+            )
         elif _cache["data"] is not None:
             logger.warning(
-                "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (%d/%d sembol) - "
+                "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (0/%d sembol) - "
                 "önbellekteki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
-                0, len(MARKET_SYMBOLS),
+                len(MARKET_SYMBOLS),
             )
         else:
             # İlk çalıştırmadan beri hiç başarılı veri yok - gösterilecek
