@@ -41,6 +41,7 @@ from src.web.app import (
     market_data as _market_data_view,
     sector_heatmap as _sector_heatmap_view,
     source_health_page as _source_health_view,
+    ticker_quotes_endpoint as _ticker_quotes_view,
     trend_summary as _trend_summary_view,
 )
 
@@ -62,6 +63,7 @@ app.get("/", response_class=HTMLResponse)(_dashboard_view)
 app.get("/detayli-inceleme", response_class=HTMLResponse)(_detayli_inceleme_view)
 app.get("/kaynak-sagligi", response_class=HTMLResponse)(_source_health_view)
 app.get("/api/market-data")(_market_data_view)
+app.get("/api/ticker-quotes")(_ticker_quotes_view)
 app.get("/api/sector-heatmap")(_sector_heatmap_view)
 app.get("/api/trend-summary")(_trend_summary_view)
 app.get("/health")(_health_view)

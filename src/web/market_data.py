@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -186,7 +187,51 @@ async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict
 # KARIŞTIRILMAZ. Opsiyonel/bonus bir özelliktir: bir sembol çözülemez veya
 # Yahoo'dan veri alınamazsa o haber için sessizce fiyat gösterilmez (sayfa
 # hata vermez).
+#
+# GERÇEK RENDER TESTİYLE bulunan sorun (2026-07): sayfa render'ı SIRASINDA
+# (asyncio.run ile, senkron route içinde) 9 farklı sembolü TAMAMEN eşzamanlı
+# (asyncio.gather, sınırsız) çekmeye çalışmak, Render'ın kısıtlı 0.1 vCPU'su
+# altında ~9/9'dan sadece ~1'inin 8 sn'lik timeout içinde tamamlanmasına yol
+# açıyordu (CPU zamanlaması için 9 eşzamanlı isteğin birbiriyle yarışması).
+# Çözüm İKİ parçalı:
+#   1. Fiyat çekme işlemi artık sayfa render'ını HİÇ bloklamıyor - ayrı bir
+#      `/api/ticker-quotes` endpoint'i üzerinden, sayfa tamamen yüklendikten
+#      SONRA tarayıcıda arka planda (bkz. detayli_inceleme.html <script>)
+#      ve yalnızca İLK birkaç (8) benzersiz ticker için çağrılıyor.
+#   2. Bu modül içinde de bir eşzamanlılık sınırı (_TICKER_QUOTE_SEMAPHORE)
+#      eklendi - Render'ın kısıtlı CPU'suna aynı anda en fazla 4 istek
+#      gönderilir, geri kalanı sırayla işlenir. Bu, HER isteğin kendi
+#      payına daha fazla gerçek CPU zamanı bulmasını sağlar.
 # --------------------------------------------------------------------------
+
+# Sayfa render'ını asla bloklamayacak şekilde artık ayrı bir arka plan
+# çağrısı (bkz. yukarıdaki not) olduğundan, ana piyasa şeridinden (8.0 sn)
+# biraz daha cömert bir timeout güvenle kullanılabilir - kullanıcı bu
+# çağrının birkaç saniye sürmesini fark etmez (sayfa zaten yüklenmiş
+# durumda), ama yine de sonsuza kadar asılı kalmayı önlemek için sınırlı.
+_TICKER_QUOTE_HTTP_TIMEOUT = 12.0
+
+# Render'ın kısıtlı CPU'su altında GERÇEK testte ölçülen kök neden: çok
+# sayıda (9) eşzamanlı istek birbiriyle CPU zamanlaması için yarışıyordu.
+# Bu semaphore, aynı anda en fazla bu kadar isteğin gerçekten "uçuşta"
+# olmasını garanti eder - geri kalanı sırada bekler, bir öncekinin CPU
+# payını çalmaz.
+_TICKER_QUOTE_MAX_CONCURRENT = 4
+_ticker_quote_semaphore = asyncio.Semaphore(_TICKER_QUOTE_MAX_CONCURRENT)
+
+# Bu, artık HERKESE AÇIK bir endpoint'ten (bkz. src/web/app.py >
+# /api/ticker-quotes) çağrıldığından, tek bir istekte kabul edilecek
+# sembol sayısına sunucu tarafında da SERT bir üst sınır konur - frontend
+# zaten en fazla 8 gönderiyor (bkz. detayli_inceleme.html), ama bu sunucu
+# tarafı sınır kötü niyetli/hatalı bir çağrıya karşı bağımsız bir koruma.
+_TICKER_QUOTE_MAX_SYMBOLS_PER_CALL = 10
+
+# Yahoo'nun chart endpoint'ine gönderilecek sembol, path'e doğrudan
+# gömüldüğünden (bkz. _CHART_URL.format) beklenmedik karakterler
+# (boşluk, "/", vb.) içeren bir "sembol" sessizce reddedilir - geçerli
+# semboller (bkz. MARKET_SYMBOLS) yalnızca harf/rakam/".", "^", "=", "-"
+# içerir.
+_VALID_YAHOO_SYMBOL_RE = re.compile(r"^[A-Z0-9.\^=-]{1,15}$")
 
 # Borsa kodundan Yahoo Finance sembol sonekine kaba bir eşleme. Kapsamlı
 # değildir (özellikle "EURONEXT" gibi çok şehirli borsalar için Paris
@@ -220,7 +265,9 @@ _ticker_quote_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 def _resolve_yahoo_symbol(company_ticker: str) -> str | None:
     """"NASDAQ: TSLA" -> "TSLA", "BIST: THYAO" -> "THYAO.IS" gibi. Beklenen
-    "BORSA: SEMBOL" formatında değilse (ör. ":" yoksa) None döner."""
+    "BORSA: SEMBOL" formatında değilse (ör. ":" yoksa) veya sonuç geçerli
+    bir Yahoo sembolü şeklinde değilse (bkz. _VALID_YAHOO_SYMBOL_RE - artık
+    HERKESE AÇIK bir endpoint'ten geldiğinden bu doğrulama önemli) None döner."""
     if not company_ticker or ":" not in company_ticker:
         return None
     exchange, _, symbol = company_ticker.partition(":")
@@ -229,18 +276,38 @@ def _resolve_yahoo_symbol(company_ticker: str) -> str | None:
     if not symbol:
         return None
     suffix = _EXCHANGE_YAHOO_SUFFIX.get(exchange, "")
-    return f"{symbol}{suffix}"
+    yahoo_symbol = f"{symbol}{suffix}"
+    if not _VALID_YAHOO_SYMBOL_RE.match(yahoo_symbol):
+        return None
+    return yahoo_symbol
+
+
+async def _fetch_one_limited(client: httpx.AsyncClient, symbol: str, label: str) -> dict[str, Any] | None:
+    """`_fetch_one`'ı bir semaphore ile sarar - Render'ın kısıtlı CPU'su
+    altında GERÇEK testte doğrulandığı üzere (bkz. modül başındaki not),
+    çok sayıda eşzamanlı isteği aynı anda göndermek CPU zamanlaması
+    yüzünden çoğunun timeout'a düşmesine yol açıyordu; bu, aynı anda
+    en fazla _TICKER_QUOTE_MAX_CONCURRENT isteğin gerçekten "uçuşta"
+    olmasını garanti eder."""
+    async with _ticker_quote_semaphore:
+        return await _fetch_one(client, symbol, label)
 
 
 async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str, dict[str, Any]]:
     """Verilen "BORSA: SEMBOL" string listesi için, çözülebilen ve Yahoo'dan
     gerçek veri alınabilenler için {orijinal_company_ticker: quote_dict} döner.
-    Çözülemeyen/başarısız olanlar sonuçta YER ALMAZ (exception fırlatmaz)."""
+    Çözülemeyen/başarısız olanlar sonuçta YER ALMAZ (exception fırlatmaz).
+
+    Sunucu tarafı sert sınır: en fazla _TICKER_QUOTE_MAX_SYMBOLS_PER_CALL
+    (10) benzersiz sembol işlenir - fazlası sessizce yok sayılır (bkz.
+    modül başındaki not, bu artık herkese açık bir endpoint'ten çağrılıyor)."""
     now = time.monotonic()
     to_fetch: dict[str, str] = {}  # yahoo_symbol -> orijinal company_ticker
     results: dict[str, dict[str, Any]] = {}
 
-    for ct in set(company_tickers):
+    unique_tickers = list(dict.fromkeys(company_tickers))[:_TICKER_QUOTE_MAX_SYMBOLS_PER_CALL]
+
+    for ct in unique_tickers:
         yahoo_symbol = _resolve_yahoo_symbol(ct)
         if not yahoo_symbol:
             continue
@@ -252,8 +319,8 @@ async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str
             to_fetch[yahoo_symbol] = ct
 
     if to_fetch:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            fetched = await asyncio.gather(*(_fetch_one(client, sym, sym) for sym in to_fetch))
+        async with httpx.AsyncClient(timeout=_TICKER_QUOTE_HTTP_TIMEOUT) as client:
+            fetched = await asyncio.gather(*(_fetch_one_limited(client, sym, sym) for sym in to_fetch))
         for sym, quote in zip(to_fetch.keys(), fetched):
             _ticker_quote_cache[sym] = (now, quote)
             if quote is not None:

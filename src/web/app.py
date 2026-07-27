@@ -12,8 +12,6 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 
 from __future__ import annotations
 
-import asyncio
-import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -47,8 +45,6 @@ from src.summarizer import (
 )
 from src.trend_report import get_dashboard_trend_summary
 from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers
-
-logger = logging.getLogger(__name__)
 
 # Önem skoru filtresi dropdown'ında sunulan eşik seçenekleri (min. skor).
 _IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
@@ -384,23 +380,14 @@ def detayli_inceleme_page(
                 }
             )
 
-    # Şirket sütunundaki haberlere (varsa) GERÇEK anlık fiyat/günlük değişim
-    # eklenir - bkz. src/web/market_data.py > get_quotes_for_company_tickers.
-    # Bonus/opsiyonel bir özellik: herhangi bir sembol çözülemez/Yahoo'dan
-    # veri alınamazsa o habere sessizce fiyat eklenmez (sayfa hata vermez).
-    sirket_column = next((c for c in columns if c["slug"] == "sirket"), None)
-    if sirket_column is not None:
-        tickers = {v["company_ticker"] for v in sirket_column["records"] if v["company_ticker"]}
-        if tickers:
-            try:
-                quotes = asyncio.run(get_quotes_for_company_tickers(list(tickers)))
-            except Exception:  # noqa: BLE001 - fiyat çekilemezse sayfa YİNE DE render edilsin
-                logger.warning("Şirket ticker fiyatları alınamadı.", exc_info=True)
-                quotes = {}
-            for v in sirket_column["records"]:
-                if v["company_ticker"]:
-                    v["ticker_quote"] = quotes.get(v["company_ticker"])
-
+    # NOT: Şirket ticker'larının GERÇEK fiyatı artık BURADA (sayfa render'ı
+    # SIRASINDA) çekilmiyor. GERÇEK Render testinde (2026-07) bu senkron/
+    # bloklayan yaklaşımın, Render'ın kısıtlı 0.1 vCPU'su altında 9 sembolden
+    # sadece ~1'inin timeout içinde tamamlanmasına yol açtığı ölçüldü. Bunun
+    # yerine sayfa tamamen yüklendikten SONRA, tarayıcıda arka planda
+    # `/api/ticker-quotes` endpoint'i çağrılır (bkz. detayli_inceleme.html
+    # <script>, ve aşağıdaki `ticker_quotes_endpoint` route'u) - sayfa
+    # render'ı hiçbir şekilde bloklanmaz.
     # Piyasa Duygusu, bu sayfada gösterilen 3 kategorinin BİRLEŞİMİNDEN
     # (union) hesaplanır - ana dashboard'daki gibi TEK bir filtrelenmiş
     # listeden değil, çünkü bu sayfada artık "tek liste" kavramı yok.
@@ -470,6 +457,25 @@ async def market_data() -> list[dict[str, Any]]:
     """Dashboard'daki canlı piyasa şeridinin periyodik (AJAX) olarak çektiği
     veri (bkz. src/web/market_data.py ve templates/dashboard.html)."""
     return await get_market_snapshot()
+
+
+@app.get("/api/ticker-quotes")
+async def ticker_quotes_endpoint(tickers: str = "") -> dict[str, Any]:
+    """"Detaylı İnceleme" > Şirket kartlarındaki borsa/ticker etiketleri için
+    GERÇEK anlık fiyat/günlük değişim - bkz. src/web/market_data.py >
+    get_quotes_for_company_tickers. `tickers` virgülle ayrılmış "BORSA: SEMBOL"
+    listesi (bkz. detayli_inceleme.html <script>, sayfa TAMAMEN yüklendikten
+    SONRA tarayıcıda çağrılır - sayfa render'ını HİÇ bloklamaz, bkz.
+    detayli_inceleme_page'teki not). `async def` olması ÖNEMLİ: sayfa
+    render'ının aksine burada asyncio.run() gerekmez, FastAPI'nin kendi
+    event loop'unda doğrudan çalışır.
+
+    Çözülemeyen/başarısız sembolller sessizce sonuçta YER ALMAZ (frontend
+    bu durumda o etikete sadece fiyat eklemeden bırakır, hata göstermez)."""
+    parsed = [t.strip() for t in tickers.split(",") if t.strip()]
+    if not parsed:
+        return {}
+    return await get_quotes_for_company_tickers(parsed)
 
 
 @app.get("/api/sector-heatmap")

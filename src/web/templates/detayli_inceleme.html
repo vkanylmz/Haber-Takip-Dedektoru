@@ -588,14 +588,13 @@
             </div>
 
             {% if r.company_ticker %}
-            <div class="ticker-badge">
+            {# Fiyat BURADA (render sırasında) çekilmez - sayfa tamamen
+               yüklendikten SONRA aşağıdaki <script> tarafından, ayrı bir
+               arka plan çağrısıyla dolduruluyor (bkz. src/web/app.py >
+               /api/ticker-quotes'taki not). #}
+            <div class="ticker-badge" data-ticker="{{ r.company_ticker }}">
               <span>🏢 {{ r.company_ticker }}</span>
-              {% if r.ticker_quote %}
-              <span class="ticker-price {% if r.ticker_quote.change_pct >= 0 %}ticker-up{% else %}ticker-down{% endif %}">
-                {{ "%.2f"|format(r.ticker_quote.price) }} {{ r.ticker_quote.currency }}
-                ({{ "%+.2f"|format(r.ticker_quote.change_pct) }}%)
-              </span>
-              {% endif %}
+              <span class="ticker-price-slot"></span>
             </div>
             {% endif %}
 
@@ -619,6 +618,57 @@
       {% endfor %}
     </div>
   </main>
+
+  <script>
+    // Şirket kartlarındaki borsa/ticker etiketlerine GERÇEK anlık fiyat
+    // ekler - ama sayfa render'ından TAMAMEN AYRI, sayfa tamamen
+    // yüklendikten SONRA çalışır (bkz. src/web/app.py > /api/ticker-quotes
+    // route'undaki not: bu, Render'ın kısıtlı CPU'su altında sayfa
+    // render'ını bloklayan eski senkron yaklaşımın yerini alıyor).
+    // Yalnızca İLK birkaç (en fazla 8) BENZERSİZ ticker için istek atılır -
+    // sayfadaki TÜM Şirket kartları için değil (gereksinim: sayfa başına
+    // eşzamanlı çekilen sembol sayısı sınırlansın).
+    document.addEventListener('DOMContentLoaded', function () {
+      var MAX_TICKERS = 8;
+      var badges = document.querySelectorAll('.ticker-badge[data-ticker]');
+      if (!badges.length) return;
+
+      var seen = {};
+      var tickers = [];
+      for (var i = 0; i < badges.length && tickers.length < MAX_TICKERS; i++) {
+        var t = badges[i].getAttribute('data-ticker');
+        if (t && !seen[t]) {
+          seen[t] = true;
+          tickers.push(t);
+        }
+      }
+      if (!tickers.length) return;
+
+      fetch('/api/ticker-quotes?tickers=' + encodeURIComponent(tickers.join(',')))
+        .then(function (res) { return res.ok ? res.json() : {}; })
+        .then(function (quotes) {
+          badges.forEach(function (badge) {
+            var ticker = badge.getAttribute('data-ticker');
+            var quote = quotes[ticker];
+            // Sembol çözülemediyse/Yahoo'dan veri alınamadıysa quote
+            // sözlükte YOKTUR - bu durumda etiket sadece "🏢 BORSA: SEMBOL"
+            // olarak kalır, hiçbir hata gösterilmez (gereksinim).
+            if (!quote) return;
+            var slot = badge.querySelector('.ticker-price-slot');
+            if (!slot) return;
+            var cls = quote.change_pct >= 0 ? 'ticker-up' : 'ticker-down';
+            var sign = quote.change_pct >= 0 ? '+' : '';
+            slot.textContent = quote.price.toFixed(2) + ' ' + quote.currency +
+              ' (' + sign + quote.change_pct.toFixed(2) + '%)';
+            slot.className = 'ticker-price-slot ticker-price ' + cls;
+          });
+        })
+        .catch(function () {
+          // Ağ hatası/timeout - sessizce yut, sayfa zaten tamamen
+          // yüklenmiş ve kullanılabilir durumda, sadece fiyatlar eksik kalır.
+        });
+    });
+  </script>
 </body>
 
 </html>
