@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -30,6 +31,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from src.models import NewsGroup
@@ -238,8 +240,44 @@ _SessionFactory: sessionmaker | None = None
 
 def init_db(db_path: str | Path) -> None:
     """Veritabanı motorunu ve tablolarını hazırlar. Uygulama başlarken (worker
-    ve web sunucusu tarafından ayrı ayrı) çağrılması güvenlidir/idempotenttir."""
+    ve web sunucusu tarafından ayrı ayrı) çağrılması güvenlidir/idempotenttir.
+
+    İKİ BACKEND DESTEKLENİR (bkz. README > "Vercel'e Deploy - Hibrit Mimari"):
+      1. VARSAYILAN: yerel SQLite dosyası (`db_path` argümanı, config.yaml >
+         database.path). Hiçbir env değişkeni ayarlamazsanız davranış BİREBİR
+         ÖNCEKİYLE AYNIDIR - geriye dönük tam uyumluluk.
+      2. `DATABASE_URL` ortam değişkeni TANIMLIYSA (ör. Neon/Supabase gibi bir
+         Postgres bağlantı dizesi): `db_path` TAMAMEN YOK SAYILIR, bunun
+         yerine o Postgres veritabanına bağlanılır. Bu, worker'ın/Telegram
+         bot'un yerel bilgisayarda çalışmaya devam ederken TÜM verilerini
+         paylaşımlı bir buluta yazmasını sağlar - Vercel'deki salt-okunur
+         dashboard AYNI `DATABASE_URL`'i kullanarak bu veriyi okur.
+    """
     global _engine, _SessionFactory
+
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url.startswith("postgres://"):
+        # Bazı sağlayıcılar (Heroku'nun eski stili, bazen Neon dahil bazı
+        # araçlarca üretilen bağlantı dizeleri) "postgres://" şemasını
+        # kullanır - SQLAlchemy 2.x bunu artık KABUL ETMEZ, "postgresql://"
+        # bekler. Kullanıcının .env'e hangi şemayla yapıştırdığından
+        # bağımsız çalışması için burada sessizce normalize ediliyor.
+        database_url = "postgresql://" + database_url[len("postgres://"):]
+
+    if database_url:
+        # pool_pre_ping=True: Neon'un ücretsiz katmanı 5 dakika hareketsizlik
+        # sonrası compute'u "uykuya" alır (scale-to-zero) - sonraki istekte
+        # otomatik uyanır ama ARADAKİ bağlantı SQLAlchemy'nin havuzunda "ölü"
+        # kalmış olabilir. pool_pre_ping, her bağlantıyı kullanmadan önce
+        # hafif bir "SELECT 1" ile test eder, ölüyse sessizce yeniden kurar -
+        # bu olmadan "SSL connection has been closed unexpectedly" gibi
+        # aralıklı hatalar alınabilirdi.
+        _engine = create_engine(database_url, pool_pre_ping=True, pool_recycle=300)
+        Base.metadata.create_all(_engine)
+        _migrate_add_missing_columns(_engine)
+        _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
+        logger.info("Veritabanı hazır (DATABASE_URL üzerinden, Postgres).")
+        return
 
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,11 +332,15 @@ def _migrate_add_missing_columns(engine) -> None:
     eksik tabloları oluşturur. Bu yüzden modele sonradan eklenen kolonlar
     (ör. `regions`, `sentiment`) daha önce oluşturulmuş bir veritabanı
     dosyasında elle eklenmelidir. Basit, idempotent bir "eksikse ADD COLUMN"
-    migrasyonu - var olan kayıtlar bozulmadan, yeni kolon(lar) NULL ile eklenir."""
+    migrasyonu - var olan kayıtlar bozulmadan, yeni kolon(lar) NULL ile eklenir.
+
+    `sqlalchemy.inspect()` kullanılır (ham `PRAGMA table_info(...)` YERİNE -
+    bu SQLite'a ÖZGÜDÜR, Postgres'te çalışmaz) - böylece bu fonksiyon HER İKİ
+    backend'de de (yerel SQLite VEYA DATABASE_URL üzerinden Postgres) aynı
+    şekilde çalışır (bkz. init_db)."""
+    inspector = sa_inspect(engine)
     with engine.begin() as conn:
-        existing_columns = {
-            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(news_records)").fetchall()
-        }
+        existing_columns = {col["name"] for col in inspector.get_columns("news_records")}
         if "regions" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN regions TEXT")
             logger.info("Veritabanı migrasyonu: news_records.regions kolonu eklendi.")
@@ -312,9 +354,7 @@ def _migrate_add_missing_columns(engine) -> None:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN sector TEXT")
             logger.info("Veritabanı migrasyonu: news_records.sector kolonu eklendi.")
 
-        existing_subscriber_columns = {
-            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(subscribers)").fetchall()
-        }
+        existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
             # Var olan aboneler için varsayılan olarak mevcut global eşik (4)
             # kullanılır - config.yaml > importance.threshold değişse bile bu

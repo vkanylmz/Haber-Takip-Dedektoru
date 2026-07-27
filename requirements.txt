@@ -22,6 +22,12 @@ eventregistry>=9.1
 # Veritabanı (haberler, özetler, önem skorları, bildirim durumu) - src/db.py
 SQLAlchemy>=2.0
 
+# Postgres sürücüsü - YALNIZCA DATABASE_URL ortam değişkeni tanımlıysa devreye
+# girer (bkz. src/db.py > init_db, README > "Vercel'e Deploy - Hibrit
+# Mimari"). DATABASE_URL tanımsızsa uygulama yerel SQLite kullanmaya devam
+# eder, bu paket hiç import edilmez - varlığı zararsızdır.
+psycopg2-binary>=2.9
+
 # Telegram bildirimleri - src/notifier.py
 python-telegram-bot>=21.0
 

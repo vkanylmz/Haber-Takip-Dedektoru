@@ -1,0 +1,22 @@
+# .env ve data/ Vercel'e YÜKLENMEMELİ - bu dashboard artık DATABASE_URL
+# (Neon Postgres, bkz. Vercel proje ayarlarındaki Environment Variables)
+# üzerinden çalışıyor; yerel .env dosyası gerçek API anahtarlarını/bot
+# token'ını içeriyor ve data/ klasörü eski SQLite dosyasını/logları
+# barındırıyor - hiçbiri bu salt-okunur dashboard'un çalışması için
+# gerekli değil, ikisi de yanlışlıkla yüklenirse bir sızıntı/israf olurdu.
+.env
+.env.example
+data/
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+.git/
+
+# Yerel Docker/Fly.io yapılandırmaları - bu Vercel deploy'u için gereksiz.
+Dockerfile
+docker-compose.yml
+.dockerignore
+fly.toml
