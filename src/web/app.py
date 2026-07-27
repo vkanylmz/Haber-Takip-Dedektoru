@@ -12,6 +12,7 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,6 +47,32 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # Sektör bazında ısı haritasında, yeterli sayıda haberi olmayan bir sektörü
 # "az hareketli" (gri) saymak için eşik - bkz. _build_sector_heatmap.
 _HEATMAP_MIN_COUNT_FOR_COLOR = 2
+
+# get_distinct_sources/get_distinct_sectors, dropdown seçeneklerini hesaplamak
+# için TÜM news_records tablosunu tarıyor (bkz. src/db.py - sources/sector
+# normalize edilmiş ayrı tablolar DEĞİL, aynı satırların içinde metin/JSON
+# olarak tutuluyor). Gerçek ölçümle doğrulandı (2026-07, bkz. README >
+# "Dashboard Performansı"): bu iki sorgu tek başına ~280ms'ye mal oluyordu -
+# HER dashboard isteğinde tekrar tekrar. Distinct kaynak/sektör listesi
+# saniyeler içinde değişmez (yeni bir kaynak/sektör ancak YENİ bir haber
+# türüyle ortaya çıkar) - bu yüzden 60 saniyelik basit bir TTL önbelleği,
+# gözle görülür bir gecikme (en fazla 60 sn eski bir liste) pahasına, HER
+# istekte bu iki tam-tablo taramasını tekrarlamayı önler.
+_FILTER_OPTIONS_CACHE_TTL_SECONDS = 60.0
+_filter_options_cache: dict[str, Any] = {"sources": None, "sectors": None, "fetched_at": 0.0}
+
+
+def _get_cached_filter_options(session) -> tuple[list[str], list[dict[str, str]]]:
+    now = time.monotonic()
+    if _filter_options_cache["sources"] is not None and (now - _filter_options_cache["fetched_at"]) < _FILTER_OPTIONS_CACHE_TTL_SECONDS:
+        return _filter_options_cache["sources"], _filter_options_cache["sectors"]
+
+    sources = get_distinct_sources(session)
+    sectors = [{"slug": s, "label": SECTOR_LABELS.get(s, s)} for s in get_distinct_sectors(session)]
+    _filter_options_cache["sources"] = sources
+    _filter_options_cache["sectors"] = sectors
+    _filter_options_cache["fetched_at"] = now
+    return sources, sectors
 
 
 @asynccontextmanager
@@ -194,6 +221,7 @@ def dashboard(
     # (boşsa None'a düşecek şekilde) int'e çevriliyor.
     min_importance: str | None = None,
     q: str | None = None,
+    sort: str = "newest",
 ) -> HTMLResponse:
     config = load_config()
     threshold = config.get("importance", {}).get("threshold", 4)
@@ -206,6 +234,8 @@ def dashboard(
         except ValueError:
             min_importance_value = None
 
+    sort_normalized = "oldest" if sort == "oldest" else "newest"
+
     with get_session() as session:
         records = get_recent_records(
             session,
@@ -216,9 +246,9 @@ def dashboard(
             sentiment_filter=sentiment or None,
             min_importance=min_importance_value,
             search_query=q or None,
+            sort_order=sort_normalized,
         )
-        sources = get_distinct_sources(session)
-        sectors = [{"slug": s, "label": SECTOR_LABELS.get(s, s)} for s in get_distinct_sectors(session)]
+        sources, sectors = _get_cached_filter_options(session)
 
     regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
     sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
@@ -259,6 +289,7 @@ def dashboard(
             "importance_options": _IMPORTANCE_FILTER_OPTIONS,
             "selected_min_importance": min_importance_value,
             "selected_query": q or "",
+            "selected_sort": sort_normalized,
             "threshold": threshold,
             "total_count": len(views),
             "fear_greed_index": fear_greed_index,

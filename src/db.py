@@ -275,6 +275,7 @@ def init_db(db_path: str | Path) -> None:
         _engine = create_engine(database_url, pool_pre_ping=True, pool_recycle=300)
         Base.metadata.create_all(_engine)
         _migrate_add_missing_columns(_engine)
+        _ensure_performance_indexes(_engine)
         _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
         logger.info("Veritabanı hazır (DATABASE_URL üzerinden, Postgres).")
         return
@@ -303,6 +304,7 @@ def init_db(db_path: str | Path) -> None:
     Base.metadata.create_all(_engine)
     _migrate_add_missing_columns(_engine)
     _configure_sqlite_for_concurrency(_engine)
+    _ensure_performance_indexes(_engine)
     # expire_on_commit=False: `with get_session() as s:` bloğundan döndürülen
     # nesnelerin (ör. dashboard'a aktarılan kayıtlar), session kapandıktan
     # sonra da alan değerleri okunabilir kalır (DetachedInstanceError almadan).
@@ -364,6 +366,47 @@ def _migrate_add_missing_columns(engine) -> None:
                 "ALTER TABLE subscribers ADD COLUMN importance_threshold INTEGER NOT NULL DEFAULT 4"
             )
             logger.info("Veritabanı migrasyonu: subscribers.importance_threshold kolonu eklendi.")
+
+
+def _ensure_performance_indexes(engine) -> None:
+    """Dashboard'un sık kullandığı filtre/sıralama alanlarına (bkz.
+    get_recent_records) index ekler - performans denetiminde (2026-07)
+    gerçek ölçümle doğrulandı: index'siz ana sorgu ~300ms sürüyordu (bkz.
+    README > "Dashboard Performansı"). `CREATE INDEX IF NOT EXISTS` HEM
+    SQLite HEM Postgres'te aynı sözdizimiyle çalışır - idempotent, var olan
+    bir index'e dokunmaz.
+
+    Metin alanlarındaki (`sources`, `sector`, `regions`, `title`, `summary`)
+    `.contains()`/`.ilike()` sorguları ("%x%" gibi baştan joker karakterli)
+    düz bir B-tree index'ten YARARLANAMAZ - Postgres'te bunun için
+    `pg_trgm` uzantısıyla GIN index eklenir (bkz. altta), ki bu SQLite'ta
+    karşılığı olmayan Postgres'e özgü bir özelliktir - bu yüzden SADECE
+    Postgres bağlantısında uygulanır.
+    """
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_first_seen_at ON news_records (first_seen_at)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_last_seen_at ON news_records (last_seen_at)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_published_at ON news_records (published_at)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_sentiment ON news_records (sentiment)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_news_records_importance_score ON news_records (importance_score)")
+
+        if engine.dialect.name == "postgresql":
+            try:
+                conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                for column in ("sources", "sector", "regions", "title", "summary"):
+                    conn.exec_driver_sql(
+                        f"CREATE INDEX IF NOT EXISTS idx_news_records_{column}_trgm "
+                        f"ON news_records USING gin ({column} gin_trgm_ops)"
+                    )
+                logger.info("Veritabanı: pg_trgm GIN index'leri hazır (metin filtreleri/arama için).")
+            except Exception:  # noqa: BLE001 - pg_trgm oluşturulamazsa (ör. yetki kısıtı) uygulama YİNE DE çalışsın
+                logger.warning(
+                    "pg_trgm uzantısı/GIN index'leri oluşturulamadı - metin filtreleri/arama yine de "
+                    "çalışır, sadece bu index'ler olmadan (daha yavaş) yürütülür.",
+                    exc_info=True,
+                )
+
+    logger.info("Veritabanı: performans index'leri hazır.")
 
 
 @contextmanager
@@ -489,6 +532,7 @@ def get_recent_records(
     min_importance: int | None = None,
     search_query: str | None = None,
     since: datetime | None = None,
+    sort_order: str = "newest",
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
     if since is not None:
@@ -519,10 +563,19 @@ def get_recent_records(
         query = query.filter(NewsRecord.sentiment == sentiment_filter)
     if min_importance is not None:
         query = query.filter(NewsRecord.importance_score >= min_importance)
-    query = query.order_by(
-        NewsRecord.published_at.desc().nullslast(),
-        NewsRecord.last_seen_at.desc(),
-    )
+
+    # `first_seen_at` (bizim sistemimizin haberi İLK KEZ yakaladığı/özetlediği
+    # an) kullanılır - `published_at` (kaynağın kendi bildirdiği yayın tarihi)
+    # DEĞİL. İkisi arasında gerçek bir fark var: kaynaklar published_at'i
+    # tutarsız/gecikmeli bildirebiliyor (ör. bir kaynak saatler önce
+    # yayınlanmış ama bizim sistemimizin AZ ÖNCE keşfettiği bir haberi farklı
+    # bir zaman damgasıyla verebiliyor) - bu yüzden "en son gelen/özetlenen
+    # haber en üstte" gereksinimi için doğru alan first_seen_at'tir (bkz.
+    # dashboard'daki sıralama dropdown'ı, src/web/app.py).
+    if sort_order == "oldest":
+        query = query.order_by(NewsRecord.first_seen_at.asc())
+    else:
+        query = query.order_by(NewsRecord.first_seen_at.desc())
     return query.limit(limit).all()
 
 

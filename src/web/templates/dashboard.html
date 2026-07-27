@@ -792,9 +792,14 @@
     <div>
       <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
       <div class="meta">
-        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif ·
-        <a href="/sirket-profili" style="color: var(--text-muted);">🏢 Şirket Profili</a> ·
-        <a href="/kaynak-sagligi" style="color: var(--text-muted);">🩺 Kaynak Sağlığı</a>
+        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif
+        <!-- "Şirket Profili" ve "Kaynak Sağlığı" linkleri kasıtlı olarak
+             navigasyondan kaldırıldı (kullanıcı isteği) - route'lar VE
+             backend kodu (src/web/app.py > company_profile_page,
+             source_health_page) HİÇ SİLİNMEDİ, sadece menüden erişim
+             yok. Doğrudan URL ile (/sirket-profili, /kaynak-sagligi)
+             hâlâ erişilebilir - istenirse buraya linkler kolayca geri
+             eklenebilir. -->
       </div>
     </div>
     <form class="filter" method="get" action="/">
@@ -828,6 +833,10 @@
         {% for opt in importance_options %}
         <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
         {% endfor %}
+      </select>
+      <select name="sort" onchange="this.form.submit()">
+        <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
+        <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
       </select>
       <button type="submit">Filtrele</button>
     </form>
