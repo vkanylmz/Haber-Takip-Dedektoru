@@ -9,7 +9,9 @@ Mimari":
     hâlâ yerel bilgisayarda `python main.py` ile çalışmaya devam ediyor.
   - Bu Vercel fonksiyonu SADECE okuma/görüntüleme rotalarını sunar: ana
     dashboard (filtreler + arama + piyasa şeridi + sektör ısı haritası +
-    trend özeti) ve kaynak sağlık paneli.
+    trend özeti), kaynak sağlık paneli ve "Detaylı İnceleme" (kategori
+    sekmeleri) sayfası - hiçbiri LLM çağrısı TETİKLEMEZ, bu yüzden
+    kimlik doğrulaması olmadan herkese açık olmaları güvenlidir.
   - Route HANDLER FONKSİYONLARININ KENDİSİ `src/web/app.py`'den import
     edilip YENİDEN KULLANILIR (kod tekrarı yok, tek bir kaynak-of-truth).
   - BİLEREK route olarak KAYDEDİLMEYEN tek şey `/sirket-profili`'dir: o
@@ -34,6 +36,7 @@ from src.config import load_config
 from src.db import init_db
 from src.web.app import (
     dashboard as _dashboard_view,
+    detayli_inceleme_page as _detayli_inceleme_view,
     health as _health_view,
     market_data as _market_data_view,
     sector_heatmap as _sector_heatmap_view,
@@ -56,6 +59,7 @@ init_db(_config.get("database", {}).get("path", "data/finans_haber.db"))
 app = FastAPI(title="Finansal Haber Dashboard (Salt-Okunur / Vercel)")
 
 app.get("/", response_class=HTMLResponse)(_dashboard_view)
+app.get("/detayli-inceleme", response_class=HTMLResponse)(_detayli_inceleme_view)
 app.get("/kaynak-sagligi", response_class=HTMLResponse)(_source_health_view)
 app.get("/api/market-data")(_market_data_view)
 app.get("/api/sector-heatmap")(_sector_heatmap_view)
