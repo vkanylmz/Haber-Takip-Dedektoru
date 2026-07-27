@@ -570,6 +570,87 @@ alternatifleri kalıcı bir çözüm için) veri akmaya devam eder; Vercel
 dashboard'u yalnızca bu veriyi GÖRÜNTÜLEMEK için var, kendi başına hiçbir
 veri toplamaz.
 
+## Render'a Deploy (Vercel Alternatifi - Aynı Hibrit Mimari)
+
+Vercel hesabında ikinci bir proje ücretli çıktığı için **Render.com**
+kullanılıyor - AYNI hibrit mimari (worker/bot yerelde, salt-okunur dashboard
+bulutta, ikisi de aynı Neon Postgres'i paylaşır), sadece barındırma platformu
+farklı.
+
+### Neden Render? (araştırma özeti - 2026-07)
+
+Üç platform karşılaştırıldı, resmi dokümantasyonlardan doğrulandı:
+
+| Platform | Sonuç | Neden |
+|---|---|---|
+| **Netlify** | ❌ Elendi | Netlify Functions Python'u HİÇ desteklemiyor - ne standart Functions API'de ne de Lambda-uyumlu API'de. Resmi dokümantasyonda (`docs.netlify.com`) yalnızca TypeScript/JavaScript/Go listeleniyor. Python desteği eklemek, tüm dashboard'u JS/Go'ya yeniden yazmak anlamına gelirdi - bu, bir barındırma platformuna uydurmak için mantıklı bir bedel değil. |
+| **Cloudflare Workers (Python)** | ⚠️ Riskli, elendi | Python desteği var ama **hâlâ beta** ve Pyodide/WASM tabanlı - `psycopg2` gibi C-uzantılı paketlerin (bizim Postgres sürücümüz) bu ortamda çalışıp çalışmayacağı resmi dokümanlarda bile net değil. Kanıtlanmamış/deneysel bir temel üzerine gerçek bir servis kurmak riskli. |
+| **Railway** | ⚠️ Belirsiz | Gerçek Python desteği var (container tabanlı) ama ücretsiz kalıcı katman belirsiz: yeni hesaplara $5'lık BİR KEZLİK deneme kredisi veriliyor (kart istemiyor), credit bitince veya süre dolunca (birkaç gün-hafta) durduruluyor; "Free" plan var ama kaynakları (0.5GB RAM) çok kısıtlı ve kart gerekip gerekmediği dokümanlarda belirtilmemiş. |
+| **Render** | ✅ Seçildi | Python'u GERÇEK, sürekli çalışan bir web servisi olarak (kısıtlı bir "serverless fonksiyon" ortamı DEĞİL) native destekliyor - `api/index.py` (Vercel için hazırlanmıştı) **hiçbir kod değişikliği olmadan** burada da çalışıyor (yerelde `uvicorn api.index:app --host 0.0.0.0 --port $PORT` ile gerçek Neon Postgres verisiyle test edildi, tüm rotalar 200 döndü). Ücretsiz katman: ayda 750 instance-saati (tek bir servis için 7/24 yeterli), kart gerektirmiyor (çoğunluk kaynak doğrulaması - bkz. altta not). |
+
+**Kabul edilen tek gerçek kısıt:** Render'ın ücretsiz web servisleri, 15
+dakika istek almazsa "uykuya" geçer (spin down) - bir sonraki istekte
+uyanması ~1 dakika sürer. Bu, kişisel ölçekli bir dashboard için kabul
+edilebilir bir değiş tokuş (ilk ziyaretçi ~1 dakika bekler, sonrasında hızlı).
+Kalıcı veri (Neon Postgres) bu uyku durumundan ETKİLENMEZ - sadece web
+sunucusu süreci durur, veritabanı bağlantısı her zaman ayrı ve kalıcıdır.
+
+**Kart gereksinimi hakkında dürüstlük notu:** Çoğunluk kaynak (2026 itibarıyla)
+kart istenmediğini doğruluyor, ama birkaç kullanıcı raporu ("beklenmedik
+ücretlendirme" şikayetleri, muhtemelen bant genişliği aşımı gibi kenar
+durumlardan) karışıklık yaratıyor. Kayıt sırasında kart istenirse (bu projenin
+kapsamı dışında bir sürpriz olur) durdurup bana bildirin.
+
+### Kod hazır mı?
+
+Evet - `render.yaml` projede zaten mevcut ve `api/index.py`'nin AYNEN Vercel
+için hazırlanan haliyle çalıştığı yerel olarak doğrulandı (gerçek Neon
+Postgres verisiyle, Render'ın kullanacağı TAM komutla:
+`uvicorn api.index:app --host 0.0.0.0 --port $PORT`).
+
+### 1) GitHub'a push edin (henüz etmediyseniz)
+
+Yukarıdaki **"GitHub'a Yükleme"** bölümüne bakın - kod zaten GitHub'da
+olmalı (Vercel denemesi için zaten push edilmişti).
+
+### 2) Render hesabı açın
+
+[dashboard.render.com/register](https://dashboard.render.com/register) -
+GitHub hesabınızla giriş yapmanız repo erişimini otomatik yetkilendirir.
+
+### 3) "Blueprint" ile deploy edin (render.yaml'ı otomatik kullanır)
+
+1. Render panelinde **"New +"** → **"Blueprint"** seçin.
+2. GitHub reposunu (`Haber-Takip-Dedektoru`) seçin - Render otomatik olarak
+   proje kökündeki `render.yaml`'ı algılayıp servis ayarlarını (Python
+   runtime, build/start komutları) otomatik dolduracaktır.
+3. `DATABASE_URL` alanı BOŞ görünecektir (`sync: false` olarak işaretli,
+   bkz. `render.yaml`) - buraya Neon bağlantı dizenizi (yerel `.env`'deki AYNI
+   değer) elle yapıştırın.
+4. **"Apply"** / **"Deploy"** butonuna basın.
+
+**Alternatif (Blueprint kullanmadan, elle):**
+1. **"New +"** → **"Web Service"** → reponuzu seçin.
+2. **Runtime:** Python 3 | **Build Command:** `pip install -r requirements.txt`
+   | **Start Command:** `uvicorn api.index:app --host 0.0.0.0 --port $PORT`
+3. **Environment** sekmesinden `DATABASE_URL` değişkenini ekleyin.
+4. **"Create Web Service"**.
+
+### 4) Deploy sonrası kontrol
+
+Render size `https://<servis-adi>.onrender.com` gibi bir URL verecektir.
+
+1. `/health` adresini açın - `{"status":"ok"}` bekleniyor (ilk istekte
+   servis "uykudaysa" ~1 dakika sürebilir).
+2. Ana sayfayı (`/`) açın - yerel worker'ınızın topladığı GERÇEK haberleri
+   görmeniz gerekir.
+3. Kalıcılığı doğrulamak için: yerel worker yeni bir haber ekledikten
+   (~1 dakikada bir tarıyor) birkaç dakika sonra sayfayı yenileyin - aynı
+   yeni haberi orada da görmelisiniz.
+
+Sorun giderme: Render panelinin **"Logs"** sekmesinden build/runtime
+loglarına bakabilirsiniz.
+
 ## Yapılandırma (`config.yaml`)
 
 - `app`: zaman aşımı, rate-limit, User-Agent, tekilleştirme (dedup) eşiği gibi genel ayarlar

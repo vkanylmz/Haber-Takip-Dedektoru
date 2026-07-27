@@ -1,0 +1,26 @@
+# Render.com "Blueprint" yapılandırması (bkz. README > "Render'a Deploy").
+#
+# ÖNEMLİ MİMARİ NOT: Vercel'in aksine, Render bu uygulamayı GERÇEK, SÜREKLİ
+# çalışan bir Python süreci olarak (serverless fonksiyon DEĞİL) barındırır -
+# bu yüzden `api/index.py` (Vercel için hazırlanmıştı) HİÇBİR KOD DEĞİŞİKLİĞİ
+# OLMADAN burada da çalışır: aynı dosya, yerelde zaten `uvicorn api.index:app`
+# ile test edildi ve gerçek Neon Postgres verisiyle doğrulandı.
+#
+# Bu da SALT-OKUNUR dashboard'dur - worker (RSS taraması) ve Telegram bot
+# dinleyicisi burada YOK, onlar hâlâ yerel bilgisayarda `python main.py` ile
+# çalışmaya devam ediyor, AYNI DATABASE_URL (Neon Postgres) üzerinden veri
+# paylaşıyor (bkz. README > Hibrit Mimari).
+services:
+  - type: web
+    name: finans-haber-dashboard
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn api.index:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # DATABASE_URL BİLEREK burada YOK - gerçek değeri Render panelinden
+      # elle gireceksiniz (bkz. README), asla bu dosyaya/repoya gömülmez.
+      - key: DATABASE_URL
+        sync: false
