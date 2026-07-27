@@ -16,6 +16,22 @@ services:
     runtime: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
+    # KASITLI OLARAK TEK worker (--workers belirtilmedi, uvicorn varsayılanı
+    # 1'dir - plain `uvicorn` zaten WEB_CONCURRENCY'yi OKUMAZ, o yalnızca
+    # gunicorn'un okuduğu bir konvansiyondur; Render loglarında görülen
+    # "Setting WEB_CONCURRENCY=1" satırı Render'ın genel Python build
+    # aracının bilgilendirici çıktısıdır, BİZİM uvicorn çağrımızı ETKİLEMEZ).
+    #
+    # BİRDEN FAZLA worker EKLEMEYİN (2026-07'de araştırıldı/ölçüldü, bkz.
+    # README > "Çoklu Kullanıcı Performansı"): Free plan yalnızca 0.1 vCPU +
+    # 512MB RAM veriyor - zaten kıt olan CPU'yu birden fazla worker'a
+    # bölmek YARDIMCI OLMAZ (her worker daha da az CPU payı alır), ÜSTELİK
+    # her worker AYRI bir Python süreci olduğundan piyasa verisi önbelleği/
+    # kilidi (bkz. src/web/market_data.py > _cache, _refresh_lock) SÜREÇ
+    # BAŞINA ayrı olur - N worker, N kat Yahoo Finance isteği anlamına
+    # gelir, tam da düzeltilen "thundering herd" sorununu WORKER'LAR ARASI
+    # olarak GERİ GETİRİR. Tek worker + asyncio kilidi, mevcut trafik
+    # ölçeği için doğru çözüm.
     startCommand: "uvicorn api.index:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION

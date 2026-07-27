@@ -89,6 +89,22 @@ MARKET_SYMBOLS: list[tuple[str, str]] = [
 _CACHE_TTL_SECONDS = 10.0
 _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
 
+# "Thundering herd" koruması: dashboard'daki her açık sekme/kullanıcı, ticker'ı
+# TAM OLARAK aynı `_CACHE_TTL_SECONDS` (10 sn) aralığıyla yeniliyor (bkz.
+# dashboard.html > setInterval(refreshMarketTicker, 10000)) - önbellek TAM
+# tükendiği anda birden fazla kullanıcının isteği çakışırsa, kilit OLMADAN
+# HEPSİ bağımsız olarak Yahoo Finance'e 12 sembol için istek atardı (2
+# kullanıcı = 24, 10 kullanıcı = 120 EŞZAMANLI istek). Bu, GERÇEK bir yükte
+# doğrulandı (2026-07): 10 eşzamanlı istek Render'ın kısıtlı (0.1 vCPU)
+# ücretsiz katmanında ~8 saniyeye kadar sürdü - httpx client timeout'una
+# (8.0 sn) neredeyse çarpıyordu, biraz daha yük/ağ gecikmesiyle gerçek
+# zaman aşımlarına (ve dolayısıyla "veri çekilemedi" hatasına) yol açması
+# an meselesiydi. Bu kilit, önbellek tazelemesini TEK BİR eşzamanlı
+# çağrıyla sınırlar - diğerleri kilidi bekleyip TAZE önbellekten okur,
+# gerçek Yahoo Finance istek sayısı kullanıcı sayısından BAĞIMSIZ olarak
+# her zaman en fazla 12'de kalır.
+_refresh_lock = asyncio.Lock()
+
 
 async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict[str, Any] | None:
     try:
@@ -163,15 +179,45 @@ async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict
 async def get_market_snapshot() -> list[dict[str, Any]]:
     """İzlenen tüm sembollerin güncel fiyat/günlük değişim yüzdesini,
     dashboard'daki gösterim sırasına göre döner. Başarısız olan semboller
-    sessizce listeden çıkarılır (bkz. _fetch_one)."""
+    sessizce listeden çıkarılır (bkz. _fetch_one).
+
+    Eşzamanlı çağrılara karşı İKİ katmanlı koruma:
+      1. `_refresh_lock` - önbellek tazelemesi aynı anda yalnızca TEK bir
+         çağrı tarafından yapılır (bkz. modül seviyesindeki not).
+      2. Tazeleme TAMAMEN başarısız olursa (ör. geçici bir ağ sorunu - TÜM
+         sembollerin isteği başarısız olur) önbellekteki ESKİ ama GERÇEK
+         veri SİLİNMEZ - kullanıcıya aniden boş/hata göstermek yerine biraz
+         eski ama gerçek veri gösterilmeye devam edilir, bir sonraki
+         tazeleme denemesi (10 sn sonra) başarılı olursa güncellenir.
+    """
     now = time.monotonic()
     if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
         return _cache["data"]
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
+    async with _refresh_lock:
+        # Kilit ALINANA KADAR başka bir eşzamanlı çağrı önbelleği zaten
+        # tazelemiş olabilir - tekrar kontrol et (double-checked locking).
+        now = time.monotonic()
+        if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
+            return _cache["data"]
 
-    data = [r for r in results if r is not None]
-    _cache["data"] = data
-    _cache["fetched_at"] = now
-    return data
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
+
+        data = [r for r in results if r is not None]
+        if data:
+            _cache["data"] = data
+            _cache["fetched_at"] = now
+        elif _cache["data"] is not None:
+            logger.warning(
+                "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (%d/%d sembol) - "
+                "önbellekteki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
+                0, len(MARKET_SYMBOLS),
+            )
+        else:
+            # İlk çalıştırmadan beri hiç başarılı veri yok - gösterilecek
+            # "eski" bir veri da yok, boş liste dönmek zorundayız.
+            _cache["data"] = data
+            _cache["fetched_at"] = now
+
+        return _cache["data"]

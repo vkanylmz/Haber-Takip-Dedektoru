@@ -272,7 +272,21 @@ def init_db(db_path: str | Path) -> None:
         # hafif bir "SELECT 1" ile test eder, ölüyse sessizce yeniden kurar -
         # bu olmadan "SSL connection has been closed unexpectedly" gibi
         # aralıklı hatalar alınabilirdi.
-        _engine = create_engine(database_url, pool_pre_ping=True, pool_recycle=300)
+        # pool_size/max_overflow AÇIKÇA sınırlandırıldı (5 + 5 = en fazla 10
+        # eşzamanlı bağlantı) - Render'ın ücretsiz katmanı yalnızca 512MB RAM
+        # veriyor (bkz. README > "Çoklu Kullanıcı Performansı"), her açık
+        # Postgres bağlantısı hem bu tarafta hem Neon tarafında bellek
+        # tüketir. Bu ölçekte (kişisel/az sayıda eşzamanlı kullanıcı) 10
+        # bağlantı fazlasıyla yeterli - varsayılan (belirtilmemiş) davranış
+        # zaten 5+10=15'e denk geliyordu, burada sadece kasıtlı/açık hale
+        # getirildi.
+        _engine = create_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=5,
+            max_overflow=5,
+        )
         Base.metadata.create_all(_engine)
         _migrate_add_missing_columns(_engine)
         _ensure_performance_indexes(_engine)

@@ -950,11 +950,19 @@
   <script>
     async function refreshMarketTicker() {
       const container = document.getElementById('ticker-items');
+      // `hasData`: konteynerde daha önce GERÇEK/başarılı bir veri gösterilip
+      // gösterilmediğini işaretler - bkz. aşağıdaki hata/boş-veri dalları:
+      // eğer daha önce başarılı bir veri gösterildiyse, geçici bir hata
+      // ONU SİLMEZ (sessizce eski veri ekranda kalır, 10 sn sonraki periyodik
+      // deneme otomatik tekrar dener - bkz. setInterval altta). Yalnızca HİÇ
+      // başarılı veri gösterilmemişse "alınamadı" mesajı gösterilir.
       try {
         const res = await fetch('/api/market-data');
         const data = await res.json();
         if (!data.length) {
-          container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+          if (container.dataset.hasData !== '1') {
+            container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+          }
           return;
         }
         const itemsHtml = data.map(function (item) {
@@ -972,8 +980,11 @@
         // %50 sola kaydırıyor, iki kopya olduğundan bu nokta görsel olarak
         // başlangıçla birebir aynı - böylece sonsuz döngü dikişsiz akar.
         container.innerHTML = itemsHtml + itemsHtml;
+        container.dataset.hasData = '1';
       } catch (e) {
-        container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+        if (container.dataset.hasData !== '1') {
+          container.innerHTML = '<span class="ticker-empty">Piyasa verisi alınamadı</span>';
+        }
       }
     }
 
