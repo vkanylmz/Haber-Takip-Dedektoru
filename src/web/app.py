@@ -316,67 +316,80 @@ def dashboard(
 @app.get("/detayli-inceleme", response_class=HTMLResponse)
 def detayli_inceleme_page(
     request: Request,
-    category: str = "makro",
     sort: str = "newest",
 ) -> HTMLResponse:
-    """"Detaylı İnceleme" sayfası: ana dashboard'dan TAMAMEN AYRI, kendi
-    kategori sekmeleri (makro/şirket/siyasi, bkz. src/summarizer.py >
-    VALID_TOP_CATEGORIES) olan bir görünüm. Ana dashboard'un HİÇBİR
-    özelliğine (filtreler, arama, piyasa şeridi, ısı haritası) dokunmaz -
-    tamamen ayrı bir route, kendi template'i.
+    """"Detaylı İnceleme" sayfası: ana dashboard'dan TAMAMEN AYRI, 3 kategoriyi
+    (makro/şirket/siyasi, bkz. src/summarizer.py > VALID_TOP_CATEGORIES) AYNI
+    ANDA, yan yana 3 sütun halinde gösteren bir görünüm - sekme/tıklama YOK,
+    kullanıcı üçünü de tek ekranda karşılaştırır (bkz. gereksinim). Ana
+    dashboard'un HİÇBİR özelliğine (filtreler, arama, piyasa şeridi, ısı
+    haritası) dokunmaz - tamamen ayrı bir route, kendi template'i.
 
     NOT: `top_category` YENİ bir alan olduğundan, bu özellik eklenmeden
     ÖNCE özetlenmiş eski haberlerde bu alan boştur (None) - dedup/group_key
     önbelleği zaten özetlenmiş haberleri yeniden özetlemediğinden (bkz.
     src/main.py > _reuse_or_mark_for_summarization), geçmiş haberler
     otomatik olarak GERİYE DÖNÜK sınıflandırılmaz. Yalnızca bu değişiklikten
-    SONRA yeni özetlenen haberler sekmelerde görünür - zamanla artar.
+    SONRA yeni özetlenen haberler sütunlarda görünür - zamanla artar.
     """
     config = load_config()
     threshold = config.get("importance", {}).get("threshold", 4)
-    max_items = config.get("web", {}).get("max_items", 100)
+    # Sütun başına makul bir üst sınır - 3 sütun AYNI ANDA render edildiğinden
+    # (ana dashboard'daki TEK liste yerine), ana dashboard'un max_items'ı
+    # (100) burada 3 KERE uygulanırsa sayfa gereksiz ağırlaşır; her sütun
+    # kendi içinde zaten bağımsız kaydırılabilir olduğundan 30 fazlasıyla
+    # yeterli.
+    per_column_limit = 30
 
-    category_normalized = category if category in VALID_TOP_CATEGORIES else "makro"
     sort_normalized = "oldest" if sort == "oldest" else "newest"
 
+    # Yalnızca 3 ana sütun gösterilir (bkz. gereksinim) - "diger" bilerek
+    # bir sütun olarak sunulmaz.
+    category_slugs = [c for c in VALID_TOP_CATEGORIES if c != "diger"]
+
+    columns: list[dict[str, Any]] = []
+    all_records: list[NewsRecord] = []
     with get_session() as session:
-        records = get_recent_records(
-            session,
-            limit=max_items,
-            category_filter=category_normalized,
-            sort_order=sort_normalized,
-        )
+        for slug in category_slugs:
+            records = get_recent_records(
+                session,
+                limit=per_column_limit,
+                category_filter=slug,
+                sort_order=sort_normalized,
+            )
+            all_records.extend(records)
+            views = [_record_to_view(r, threshold) for r in records]
+            # Sütun önizlemesi: o kategorideki EN ÖNEMLİ birkaç haber başlığı
+            # (zaten çekilmiş `views`'tan, EK bir sorgu YAPILMADAN) -
+            # kullanıcının seçtiği sıralamadan (en yeni/en eski) BAĞIMSIZ
+            # olarak önem skoruna göre.
+            preview = sorted(
+                views,
+                key=lambda v: v["importance_score"] if v["importance_score"] is not None else 0,
+                reverse=True,
+            )[:5]
+            columns.append(
+                {
+                    "slug": slug,
+                    "label": TOP_CATEGORY_LABELS.get(slug, slug),
+                    "records": views,
+                    "preview": preview,
+                    "count": len(views),
+                }
+            )
 
-    fear_greed_index = _compute_fear_greed_index(records)
-
-    # Yalnızca 3 ana sekme gösterilir (bkz. gereksinim) - "diger" bilerek
-    # bir sekme olarak sunulmaz.
-    categories = [
-        {"slug": c, "label": TOP_CATEGORY_LABELS.get(c, c)}
-        for c in VALID_TOP_CATEGORIES
-        if c != "diger"
-    ]
-
-    views = [_record_to_view(r, threshold) for r in records]
-
-    # Sekme önizlemesi: aktif kategorideki EN ÖNEMLİ birkaç haber başlığı
-    # (zaten çekilmiş `views` listesinden, EK bir sorgu YAPILMADAN) - kullanıcının
-    # seçtiği sıralamadan (en yeni/en eski) BAĞIMSIZ olarak önem skoruna göre.
-    preview_views = sorted(
-        views, key=lambda v: v["importance_score"] if v["importance_score"] is not None else 0, reverse=True
-    )[:5]
+    # Piyasa Duygusu, bu sayfada gösterilen 3 kategorinin BİRLEŞİMİNDEN
+    # (union) hesaplanır - ana dashboard'daki gibi TEK bir filtrelenmiş
+    # listeden değil, çünkü bu sayfada artık "tek liste" kavramı yok.
+    fear_greed_index = _compute_fear_greed_index(all_records)
 
     return templates.TemplateResponse(
         request,
         "detayli_inceleme.html",
         {
-            "records": views,
-            "preview_records": preview_views,
-            "categories": categories,
-            "selected_category": category_normalized,
+            "columns": columns,
             "selected_sort": sort_normalized,
             "threshold": threshold,
-            "total_count": len(views),
             "fear_greed_index": fear_greed_index,
         },
     )

@@ -87,7 +87,7 @@
     }
 
     main {
-      max-width: 900px;
+      max-width: 1400px;
       margin: 1.5rem auto;
       padding: 0 1rem;
       display: flex;
@@ -169,83 +169,7 @@
       color: #22c55e;
     }
 
-    /* --- Kategori sekmeleri --- */
-    .tabs-section {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1rem 1.25rem;
-      backdrop-filter: blur(16px);
-    }
-
-    .tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.55rem 1rem;
-      border-radius: 8px;
-      border: 1px solid var(--card-border);
-      background: rgba(255, 255, 255, 0.03);
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 0.9rem;
-      font-weight: 600;
-      transition: all 0.2s;
-    }
-
-    .tab:hover {
-      color: var(--text-main);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    .tab.active {
-      background: var(--accent);
-      color: white;
-      border-color: var(--accent);
-      box-shadow: 0 0 15px var(--accent-glow);
-    }
-
-    /* --- Önizleme etiketleri (aktif kategorideki öne çıkan haberler) --- */
-    .preview-pills {
-      margin-top: 0.9rem;
-      padding-top: 0.9rem;
-      border-top: 1px solid var(--card-border);
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .preview-label {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-    }
-
-    .preview-pill {
-      display: inline-block;
-      padding: 0.25rem 0.6rem;
-      border-radius: 999px;
-      background: rgba(167, 139, 250, 0.12);
-      color: #c4b5fd;
-      border: 1px solid rgba(167, 139, 250, 0.2);
-      font-size: 0.76rem;
-      max-width: 260px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* --- Sıralama --- */
+    /* --- Sıralama (3 sütunun HEPSİNE aynı anda uygulanır) --- */
     .sort-section {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -278,13 +202,109 @@
       cursor: pointer;
     }
 
-    /* --- Haber kartları (ana dashboard'daki AYNI görsel dil) --- */
-    .card {
+    /* --- 3 sütunlu yan yana görünüm (masaüstü) --- */
+    .columns-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.1rem;
+      align-items: start;
+    }
+
+    .column {
       background: var(--card-bg);
       backdrop-filter: blur(16px);
       border: 1px solid var(--card-border);
       border-radius: 12px;
-      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .column-header {
+      flex-shrink: 0;
+      padding: 1rem 1.15rem 0.75rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .column-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+
+    .column-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .column-preview {
+      flex-shrink: 0;
+      padding: 0.75rem 1.15rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .preview-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      width: 100%;
+      margin-bottom: 0.15rem;
+    }
+
+    .preview-pill {
+      display: inline-block;
+      padding: 0.22rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.72rem;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Her sütun BAĞIMSIZ olarak kaydırılabilir - bkz. gereksinim: kullanıcı
+       bir sütunu kaydırırken diğer ikisi yerinde kalır (page-level scroll
+       DEĞİL, column-level scroll). */
+    .column-body {
+      flex: 1;
+      overflow-y: auto;
+      max-height: 70vh;
+      padding: 1rem 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .column-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .column-body::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    /* --- Haber kartları (ana dashboard'daki AYNI görsel dil) --- */
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
       position: relative;
     }
 
@@ -292,25 +312,25 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 1rem;
+      gap: 0.75rem;
     }
 
     .card-title {
-      font-size: 1.05rem;
+      font-size: 0.92rem;
       font-weight: 600;
-      margin: 0 0 0.4rem 0;
-      line-height: 1.4;
+      margin: 0 0 0.35rem 0;
+      line-height: 1.35;
       color: #e2e8f0;
     }
 
     .card-meta {
       color: var(--text-muted);
-      font-size: 0.8rem;
-      margin-bottom: 0.85rem;
+      font-size: 0.74rem;
+      margin-bottom: 0.6rem;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
 
     .meta-divider {
@@ -321,10 +341,10 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.3rem 0.7rem;
+      padding: 0.22rem 0.55rem;
       border-radius: 6px;
       font-weight: 700;
-      font-size: 0.82rem;
+      font-size: 0.74rem;
       flex-shrink: 0;
     }
 
@@ -358,9 +378,9 @@
       display: inline-flex;
       align-items: center;
       gap: 0.3rem;
-      padding: 0.2rem 0.6rem;
+      padding: 0.15rem 0.5rem;
       border-radius: 4px;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 600;
     }
 
@@ -380,36 +400,36 @@
     }
 
     .summary {
-      margin: 0 0 0.5rem 0;
-      line-height: 1.6;
+      margin: 0 0 0.4rem 0;
+      line-height: 1.5;
       color: #cbd5e1;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
     }
 
     .sector-tag {
       display: inline-block;
-      padding: 0.1rem 0.45rem;
+      padding: 0.08rem 0.4rem;
       border-radius: 4px;
       background: rgba(167, 139, 250, 0.12);
       color: #c4b5fd;
       border: 1px solid rgba(167, 139, 250, 0.2);
-      font-size: 0.7rem;
+      font-size: 0.66rem;
     }
 
     .links {
       display: flex;
-      gap: 0.6rem;
+      gap: 0.5rem;
       flex-wrap: wrap;
-      margin-top: 0.75rem;
-      padding-top: 0.75rem;
+      margin-top: 0.6rem;
+      padding-top: 0.6rem;
       border-top: 1px solid var(--card-border);
     }
 
     .links a {
       color: #60a5fa;
       text-decoration: none;
-      font-size: 0.8rem;
-      padding: 0.25rem 0.5rem;
+      font-size: 0.74rem;
+      padding: 0.2rem 0.45rem;
       background: rgba(96, 165, 250, 0.1);
       border-radius: 4px;
     }
@@ -418,17 +438,15 @@
       background: rgba(96, 165, 250, 0.2);
     }
 
-    .empty {
+    .column-empty {
       text-align: center;
       color: var(--text-muted);
-      padding: 3rem 1rem;
-      background: var(--card-bg);
-      border: 1px dashed var(--card-border);
-      border-radius: 12px;
+      padding: 2rem 1rem;
+      font-size: 0.82rem;
     }
 
-    /* --- Mobil --- */
-    @media (max-width: 600px) {
+    /* --- Mobil: 3 sütun sığmaz, alt alta sırala --- */
+    @media (max-width: 900px) {
       header {
         padding: 1rem;
       }
@@ -437,19 +455,16 @@
         margin: 1rem auto;
       }
 
-      .tab {
-        flex: 1 1 auto;
-        justify-content: center;
-        font-size: 0.82rem;
-        padding: 0.5rem 0.6rem;
+      .columns-grid {
+        grid-template-columns: 1fr;
       }
 
-      .preview-pill {
-        max-width: 160px;
+      .column-body {
+        max-height: 60vh;
       }
 
       .card {
-        padding: 1rem;
+        padding: 0.8rem;
       }
 
       .card-top {
@@ -482,75 +497,79 @@
       </div>
     </div>
 
-    <div class="tabs-section">
-      <div class="tabs">
-        {% for cat in categories %}
-        <a href="/detayli-inceleme?category={{ cat.slug }}&sort={{ selected_sort }}"
-          class="tab {% if cat.slug == selected_category %}active{% endif %}">{{ cat.label }}</a>
-        {% endfor %}
-      </div>
-
-      {% if preview_records %}
-      <div class="preview-pills">
-        <span class="preview-label">Öne Çıkanlar:</span>
-        {% for p in preview_records %}
-        <span class="preview-pill" title="{{ p.title }}">{{ p.title|truncate(45) }}</span>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </div>
-
     <div class="sort-section">
       <span class="sort-heading">Sıralama</span>
       <form method="get" action="/detayli-inceleme" style="display: contents;">
-        <input type="hidden" name="category" value="{{ selected_category }}">
         <select name="sort" onchange="this.form.submit()">
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
           <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
         </select>
       </form>
+      <span style="color: var(--text-muted); font-size: 0.78rem;">(3 sütunun tamamına uygulanır)</span>
     </div>
 
-    {% if not records %}
-    <div class="empty">
-      <div style="font-size: 2rem; margin-bottom: 1rem;">📭</div>
-      Bu kategoride henüz haber yok. Bu yeni bir sınıflandırma alanı olduğundan
-      yalnızca bu özellik eklendikten SONRA özetlenen haberler burada görünür -
-      zamanla artacaktır.
-    </div>
-    {% endif %}
-
-    {% for r in records %}
-    <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
-      <div class="card-top">
-        <div>
-          <h2 class="card-title">{{ r.title }}</h2>
-          <div class="card-meta">
-            <span>{{ r.published_at }}</span>
-            <span class="meta-divider">|</span>
-            <span>Kaynak: {{ r.sources }}</span>
-            {% if r.sentiment_label %}
-            <span class="meta-divider">|</span>
-            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
-            {% endif %}
-            {% if r.sector_labels %}
-            <span class="meta-divider">|</span>
-            {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
-            {% endif %}
-          </div>
+    <div class="columns-grid">
+      {% for col in columns %}
+      <div class="column">
+        <div class="column-header">
+          <span class="column-title">{{ col.label }}</span>
+          <span class="column-count">{{ col.count }} haber</span>
         </div>
-        <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-      </div>
 
-      <div class="summary">{{ r.summary }}</div>
+        {% if col.preview %}
+        <div class="column-preview">
+          <span class="preview-label">Öne Çıkanlar</span>
+          {% for p in col.preview %}
+          <span class="preview-pill" title="{{ p.title }}">{{ p.title|truncate(40) }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
 
-      <div class="links">
-        {% for link in r.links %}
-        <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
-        {% endfor %}
+        <div class="column-body">
+          {% if not col.records %}
+          <div class="column-empty">
+            📭 Bu kategoride henüz haber yok. Yalnızca bu özellik eklendikten
+            sonra özetlenen haberler burada görünür - zamanla artacaktır.
+          </div>
+          {% endif %}
+
+          {% for r in col.records %}
+          <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">{{ r.title }}</h2>
+                <div class="card-meta">
+                  <span>{{ r.published_at }}</span>
+                  <span class="meta-divider">|</span>
+                  <span>{{ r.sources }}</span>
+                  {% if r.sentiment_label %}
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+            </div>
+
+            <div class="summary">{{ r.summary }}</div>
+
+            {% if r.sector_labels %}
+            <div style="margin-bottom: 0.5rem;">
+              {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="links">
+              {% for link in r.links %}
+              <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
       </div>
+      {% endfor %}
     </div>
-    {% endfor %}
   </main>
 </body>
 
