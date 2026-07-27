@@ -477,17 +477,20 @@ async def ticker_quotes_endpoint(tickers: str = "") -> dict[str, Any]:
         # GEÇİCİ TEŞHİS (bkz. sohbet notu) - Render'da neden 0 sonuç
         # döndüğünü anlamak için ham adımları gösterir. Kalıcı değil,
         # sorun çözülünce kaldırılacak.
-        from src.web.market_data import _resolve_yahoo_symbol, _fetch_one
+        from src.web.market_data import _resolve_yahoo_symbol, _CHART_URL, _HEADERS
         import httpx as _httpx
         debug: dict[str, Any] = {"raw_tickers_param": tickers, "python_parsed": parsed}
         resolved = _resolve_yahoo_symbol("X: ^GSPC")
         debug["resolved_symbol"] = resolved
+        url = _CHART_URL.format(symbol=resolved)
+        debug["url"] = url
         async with _httpx.AsyncClient(timeout=12.0) as client:
             try:
-                direct = await _fetch_one(client, resolved, resolved)
-                debug["direct_fetch_one_result"] = direct
+                response = await client.get(url, params={"interval": "1d", "range": "1d"}, headers=_HEADERS)
+                debug["status_code"] = response.status_code
+                debug["response_text"] = response.text[:500]
             except Exception as exc:  # noqa: BLE001
-                debug["direct_fetch_one_exception"] = repr(exc)
+                debug["raw_exception"] = repr(exc)
         return debug
     if not parsed:
         return {}
