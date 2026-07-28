@@ -30,6 +30,7 @@ Mimari":
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from src.config import load_config
@@ -58,6 +59,27 @@ _config = load_config()
 init_db(_config.get("database", {}).get("path", "data/finans_haber.db"))
 
 app = FastAPI(title="Finansal Haber Dashboard (Salt-Okunur / Vercel)")
+
+# Render free tier'da servis 15 dk inaktivite sonrası spin-down oluyor;
+# kullanıcıya Render'ın kendi varsayılan "spinning up" ekranı yerine kendi
+# marka/logolu bir splash sayfası göstermek için (bkz. splash-page/index.html,
+# GitHub Pages/Cloudflare Pages gibi AYRI bir origin'de barındırılır) o
+# sayfanın JS'i buradaki /health'i periyodik olarak fetch() ile yoklar.
+# Farklı bir origin'den (GitHub Pages/Cloudflare Pages) yapılan bu fetch()
+# çağrısının GERÇEK bir Response (status/ok) okuyabilmesi için CORS
+# gerekiyor - GERÇEK bir test (curl -H "Origin: ...") bunun eksik olduğunu
+# doğruladı, `mode: "no-cors"` ile de bu sorun ÇÖZÜLEMEZ (opak yanıt,
+# status okunamaz). Bu uygulama zaten kimlik doğrulaması olmadan herkese
+# açık, SADECE GET rotaları sunuyor (bkz. modül docstring'i) ve hiçbir
+# hassas/kişisel veri döndürmüyor - bu yüzden tüm origin'lere izin vermek
+# güvenlik riski taşımıyor (aynı veriye zaten doğrudan tarayıcıdan da
+# erişilebiliyor).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 app.get("/", response_class=HTMLResponse)(_dashboard_view)
 app.get("/detayli-inceleme", response_class=HTMLResponse)(_detayli_inceleme_view)
