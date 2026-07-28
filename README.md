@@ -728,19 +728,25 @@ uygulamanın kendi robots.txt kontrolüyle) doğrulandı:
 | **Euronews (Business)** | ✅ RSS çalışıyor | `euronews.com/rss?level=theme&name=business` resmi tema bazlı feed, kanal başlığı "Business \| Euronews RSS" olarak doğrulandı |
 | **Ekonomim.com (Ekonomi)** | ✅ RSS çalışıyor | `ekonomim.com/robots.txt` `User-agent: *` için `Allow: /` diyor (sadece `/ara` ve `/video-embed` hariç). Kategori bazlı resmi RSS servisleri var (`/rss/ekonomi.xml`, `/rss/finans.xml`, `/rss/sirketler.xml` vb.); projenin finans odağına en uygun olan **Ekonomi** kategorisi seçildi (genel `/rss` feed'i gündem/magazin haberleri de içerdiğinden tercih edilmedi). Test edildi (2026-07): 200 OK, `feedparser` `bozo=False`, 25 güncel haber. |
 | **Channel News Asia (CNA)** | ✅ RSS çalışıyor | `channelnewsasia.com/robots.txt` genel `Disallow: /api/*` kuralına rağmen `/api/v1/rss-outbound-feed` yolunu özel olarak `Allow` ediyor (daha spesifik kural kazanır, RFC 9309) — hem `curl` hem `urllib.robotparser` (projenin kullandığı kütüphane) ile doğrulandı. Business/Asia'ya özel bir feed varyantı **yok** (`?category=business` 0 öğe döndürüyor, `?type=business` genel feed'in aynısı, `/business/rss.xml` 404) — bu yüzden resmi genel "Latest News" feed'i kullanılıyor, projenin LLM sınıflandırması finans/iş ile ilgisiz öğeleri otomatik olarak filtreliyor (tıpkı Yahoo Finance gibi diğer genel feed'lerde olduğu gibi). Test edildi (2026-07): 200 OK, `feedparser` `bozo=False`, gerçek `fetch_rss()` çağrısıyla 15 güncel haber (Endonezya merkez bankası başkanının istifası, iş anlaşmaları vb.). |
+| **Business Insider** | ✅ RSS çalışıyor | Finansa özel bir varyant yok, resmi genel `/rss` feed'i kullanılıyor; robots.txt bu yolu genel User-Agent için yasaklamıyor. Test edildi (2026-07): 200 OK, `feedparser` `bozo=False`. |
+| **City A.M.** | ✅ RSS çalışıyor | "London's Business Newspaper" — tüm site zaten finans/iş odaklı olduğundan genel `/feed/` kullanılıyor (Bloomberg HT/CNBC-e ile aynı desen). robots.txt tamamen açık (`Disallow:` boş, isim isim AI bot yasağı yok). Test edildi (2026-07): 200 OK, geçerli WordPress RSS. |
+| **South China Morning Post (Business)** | ✅ RSS çalışıyor | robots.txt genel User-Agent için açık (isim isim AI bot yasağı yok). Resmi RSS listeleme sayfasındaki (`scmp.com/rss`) "Business" bölüm feed'i (`/rss/92/feed`) kullanılıyor. Test edildi (2026-07): 200 OK, kanal başlığı "Business - South China Morning Post", 50 güncel haber. |
+| **The Straits Times (Business)** | ✅ RSS çalışıyor | robots.txt genel User-Agent için açık (isim isim AI bot yasağı yok). Resmi business kategori feed'i (`/news/business/rss.xml`) kullanılıyor. Test edildi (2026-07): 200 OK, 50 güncel haber (kanal başlığı şablon nedeniyle genel görünse de içerik net şekilde business). |
 | **MarketWatch** | ❌ Varsayılan olarak kapalı | RSS teknik olarak veri döndürüyor (200 OK) ancak robots.txt `User-agent: *` için siteyi **tamamen** yasaklıyor (`Disallow: /`) ve yalnızca Google/Bing/ChatGPT-User gibi adı geçen botlara izin veriyor; ayrıca dosyanın başında "otomatik toplama, Dow Jones'tan yazılı izin olmadan yasaktır" şeklinde açık bir hukuki uyarı var. Reuters ile aynı gerekçeyle **kasıtlı olarak kapalı** tutuldu (kullanıcı kararıyla `enabled: false`). |
 | **Reuters** | ✅ Sadece lisanslı yolla dahil | Reuters'ın genel erişime açık, izinsiz kullanılabilecek resmi bir RSS feed'i yok ve robots.txt'i genel botları tamamen kapatıyor. Google hesabıyla login olup scraping yapmak hem güvenlik riski (kimlik bilgilerinin bir otomasyona verilmesi) hem de kullanım şartları ihlali olacağından **bu yol projede hiç kullanılmadı**. Bunun yerine, Reuters içeriğine **NewsAPI.ai (Event Registry)** adlı lisanslı bir aracı API üzerinden erişiliyor — ayrıntılar için aşağıdaki "Lisanslı Kaynak" bölümüne bakın. |
 | **Bloomberg (global)** | ⚠️ Doğrudan kapalı, lisanslı yolla açık | `bloomberg.com` robots.txt'i genel bir bot için çoğu sayfaya izin verse de, site tamamen JavaScript ile render ediliyor (React SPA) ve içerik büyük ölçüde paywall arkasında; bu yüzden doğrudan scrape girişi (`bloomberg` kaynağı) varsayılan olarak kapalı. Bloomberg içeriğine asıl erişim yolu da, Reuters gibi, aynı lisanslı NewsAPI.ai kaynağıdır. |
 
-Şu anda **8 kaynak aktif (`enabled: true`)**: Bloomberg HT, CNBC-e, Foreks (ara sıra bot
-korumasına takılabilir), Yahoo Finance, New York Times (Business), Euronews
-(Business), Ekonomim.com (Ekonomi), ve tek bir lisanslı kaynak (NewsAPI.ai
-üzerinden Reuters, Bloomberg, Investing.com, CNBC, Forbes, MarketWatch,
-Financial Times, WSJ, Business Insider, Barron's, Fortune, Economist — 12 site,
-tek `sourceUri` sorgusunda birleşik, bkz. aşağıdaki "Lisanslı Kaynaklar"
-bölümü). MarketWatch (doğrudan RSS/scrape) ve Bloomberg (doğrudan scrape)
-`enabled: false` ile projede duruyor; robots.txt izin verecek şekilde
-değişirse veya resmi izin alırsanız tek satır değiştirip açabilirsiniz.
+Şu anda **12 doğrudan RSS kaynağı aktif (`enabled: true`)**: Bloomberg HT, CNBC-e,
+Foreks (ara sıra bot korumasına takılabilir), Yahoo Finance, New York Times
+(Business), Euronews (Business), Ekonomim.com (Ekonomi), Channel News Asia
+(CNA), Business Insider, City A.M., South China Morning Post (Business), The
+Straits Times (Business) — artı tek bir lisanslı kaynak (NewsAPI.ai üzerinden
+Reuters, Bloomberg, Investing.com, CNBC, Forbes, MarketWatch, Financial Times,
+WSJ, Business Insider, Barron's, Fortune, Economist — 12 site, tek `sourceUri`
+sorgusunda birleşik, bkz. aşağıdaki "Lisanslı Kaynaklar" bölümü). MarketWatch
+(doğrudan RSS/scrape) ve Bloomberg (doğrudan scrape) `enabled: false` ile
+projede duruyor; robots.txt izin verecek şekilde değişirse veya resmi izin
+alırsanız tek satır değiştirip açabilirsiniz.
 
 ### Eklenmeyen Kaynaklar
 
@@ -749,6 +755,8 @@ Aşağıdaki kaynaklar **hiç eklenmedi** (config.yaml'da hiçbir satırları yo
 | Kaynak | Neden eklenmedi |
 |---|---|
 | **Investing.com** (`investing.com`, `tr.investing.com`) | Kullanıcının belirttiği resmi RSS duyuru sayfası (`tr.investing.com/webmaster-tools/rss`) kontrol edildi ve kendisi erişilebilir olsa da, **robots.txt'in kendisi projenin bot User-Agent'ına 403 Forbidden döndürdü** — hatta standart bir tarayıcı User-Agent'ı ile bile aynı sonuç alındı (`www.investing.com` ayrıca Cloudflare JS bot-koruma sayfası gösteriyor). `src/fetchers/base.py`'nin kendi politikası gereği (401/403 → "tamamen yasak" olarak yorumlanır, bkz. kod içi yorum), bu kaynak robots.txt seviyesinde net şekilde engellenmiş sayılır. Bu yüzden **eklenmedi**. Site ileride bot erişimine izin verecek şekilde değişirse (veya resmi bir API/lisanslı erişim yolu bulunursa) yeniden değerlendirilebilir.
+| **Handelsblatt** (`handelsblatt.com`) | Resmi RSS feed'leri var (`feeds.cms.handelsblatt.com/finanzen` — 200 OK, çalışıyor) ve o alt alan adının kendi robots.txt'i bile yok. Ancak ana domainin (`www.handelsblatt.com`) robots.txt'i, `anthropic-ai`, `ClaudeBot`, `Claude-Web`, `Claude-SearchBot` gibi AI botlarını **isim isim** `Disallow: /` ile tüm siteden yasaklıyor. Teknik olarak farklı bir alt alan adı/User-Agent üzerinden erişim mümkün olsa da, yayıncının AI botlarına karşı **açık niyeti** göz önünde bulundurularak (kullanıcı kararıyla) bu kaynak **eklenmedi**. |
+| **The Telegraph (Business)** (`telegraph.co.uk`) | robots.txt, `ClaudeBot`, `Claude-Web`, `Claude-SearchBot`, `Claude-User`, `anthropic-ai` gibi AI botlarını **her biri ayrı bir grupta** `Disallow: /` ile tüm siteden yasaklıyor — Handelsblatt'takinden de açık bir engelleme. Aynı gerekçeyle (kullanıcı kararıyla) **eklenmedi**. |
 
 ## Lisanslı Kaynaklar (NewsAPI.ai)
 

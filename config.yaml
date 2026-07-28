@@ -182,6 +182,48 @@ sources:
     # 15 güncel haber (Endonezya merkez bankası istifası, iş anlaşmaları vb.).
     url: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml"
 
+  - name: "Business Insider"
+    id: businessinsider
+    type: rss
+    enabled: true
+    # Business Insider'a özel bir finans varyantı yok (yalnızca genel /rss
+    # mevcut); robots.txt bu yolu genel User-Agent için yasaklamıyor. Test
+    # edildi (2026-07): 200 OK, feedparser bozo=False, geçerli/güncel haberler.
+    url: "https://www.businessinsider.com/rss"
+
+  - name: "City A.M."
+    id: cityam
+    type: rss
+    enabled: true
+    # "London's Business Newspaper" - tüm site zaten finans/iş odaklı, tıpkı
+    # Bloomberg HT/CNBC-e gibi genel feed kullanılıyor. robots.txt genel
+    # User-Agent için tamamen açık (isim isim AI bot yasağı yok). Test edildi
+    # (2026-07): 200 OK, geçerli/güncel RSS (WordPress feed).
+    url: "https://www.cityam.com/feed/"
+
+  - name: "South China Morning Post (Business)"
+    id: scmp_business
+    type: rss
+    enabled: true
+    # robots.txt genel User-Agent için açık (isim isim AI bot yasağı yok).
+    # Resmi RSS listeleme sayfasındaki (scmp.com/rss) "Business" bölümü feed'i
+    # kullanılıyor (id=92, alt kategoriler: Companies/Property/Investor
+    # Relations/Global Economy ayrı feed'ler ama üst "Business" feed'i hepsini
+    # kapsıyor). Test edildi (2026-07): 200 OK, kanal başlığı "Business -
+    # South China Morning Post", 50 güncel haber.
+    url: "https://www.scmp.com/rss/92/feed"
+
+  - name: "The Straits Times (Business)"
+    id: straitstimes_business
+    type: rss
+    enabled: true
+    # robots.txt genel User-Agent için açık (isim isim AI bot yasağı yok).
+    # Resmi business kategori feed'i kullanılıyor. Kanal başlığı şablon
+    # nedeniyle "The Straits Times World News" görünse de içerik net şekilde
+    # business (Visa, Boeing, SIA, Singapur AUM vb.). Test edildi (2026-07):
+    # 200 OK, 50 güncel haber.
+    url: "https://www.straitstimes.com/news/business/rss.xml"
+
   # Reuters ve Bloomberg'in genel erişime açık, izinsiz kullanılabilecek resmi
   # bir RSS feed'i yok (bkz. aşağıdaki "Bloomberg (Finans/Piyasalar)" notu ve
   # README). Bu kaynağı doğrudan scrape ETMEK YERİNE, bu iki kaynağı resmi
