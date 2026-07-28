@@ -36,6 +36,15 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 jinja2>=3.1
 
+# IANA zaman dilimi veritabanı - haber saatlerini Türkiye saatine çevirmek
+# için (bkz. src/timezone_utils.py > to_turkey_time, zoneinfo.ZoneInfo
+# kullanır). Şu ana kadar (muhtemelen pandas gibi başka bir bağımlılık
+# üzerinden) DOLAYLI olarak kurulu olsa da, doğrudan/açık bir bağımlılık
+# OLARAK burada listelenmesi, gelecekte bağımlılık zinciri değişse bile
+# (ör. requirements.txt yeniden üretilirse) zoneinfo'nun Linux/Render
+# ortamında güvenilir çalışmasını garanti eder.
+tzdata>=2024.1
+
 # Opsiyonel: JS ile render edilen siteler için (config.yaml'da render_js: true
 # yapılırsa gereklidir). Varsayılan olarak kurulu değildir.
 # playwright>=1.45

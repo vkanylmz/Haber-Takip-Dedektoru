@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from src.company_profile import get_company_profile
+from src.timezone_utils import format_turkey_time
 from src.config import load_config
 from src.db import (
     NewsRecord,
@@ -189,7 +190,7 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
     return {
         "title": record.title,
         "sources": record.sources,
-        "published_at": record.published_at.strftime("%Y-%m-%d %H:%M UTC") if record.published_at else "tarih bilinmiyor",
+        "published_at": format_turkey_time(record.published_at) if record.published_at else "tarih bilinmiyor",
         "summary": record.summary or "(özet yok)",
         "key_points": record.key_points_list(),
         "importance_score": score,
@@ -478,7 +479,7 @@ def source_health_page(request: Request) -> HTMLResponse:
     raw_rows = get_source_health_summary(since)
 
     def _fmt(dt: datetime | None) -> str:
-        return dt.strftime("%Y-%m-%d %H:%M UTC") if dt else "—"
+        return format_turkey_time(dt) if dt else "—"
 
     rows = [
         {

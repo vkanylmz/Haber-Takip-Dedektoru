@@ -66,6 +66,7 @@ from src.db import (
 )
 from src.summarizer import SECTOR_LABELS
 from src.telegram_format import chunk_messages, format_news_block
+from src.timezone_utils import format_turkey_time
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +454,7 @@ async def _source_health_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -
         return
 
     def _fmt(dt: datetime | None) -> str:
-        return dt.strftime("%Y-%m-%d %H:%M UTC") if dt else "—"
+        return format_turkey_time(dt) if dt else "—"
 
     lines = ["<b>🩺 Kaynak Sağlığı — Son 24 Saat</b>\n"]
     for row in rows:
