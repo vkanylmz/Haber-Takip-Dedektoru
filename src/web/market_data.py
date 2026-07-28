@@ -117,6 +117,41 @@ _refresh_lock = asyncio.Lock()
 _background_task: "asyncio.Task[None] | None" = None
 
 
+async def fetch_symbol_history(
+    client: httpx.AsyncClient, symbol: str, interval: str, range_: str
+) -> list[dict[str, Any]]:
+    """Verilen sembol için Yahoo chart endpoint'inden GÜNLÜK/HAFTALIK fiyat
+    GEÇMİŞİ çeker (bkz. src/commodities.py > Faz 1: haftalık emtia raporu
+    trend grafiği + geçen haftaki değişim hesabı bunu kullanır). `_fetch_one`
+    ile AYNI endpoint'i (`_CHART_URL`) kullanır ama farklı bir yanıt şeklini
+    (`meta` yerine `timestamp[]`/`indicators.quote[0].close[]` dizileri)
+    ayrıştırır - o yüzden ayrı bir fonksiyon.
+
+    `interval`: "1d" (günlük) veya "1wk" (haftalık) gibi Yahoo'nun kabul
+    ettiği değerler. `range_`: "1mo", "6mo" gibi. Hata durumunda (sembol
+    geçersiz, ağ hatası, veri yok) boş liste döner - exception fırlatmaz,
+    çağıran taraf tek bir emtianın geçmişinin çekilememesi yüzünden tüm
+    raporun durmasını istemez."""
+    try:
+        response = await client.get(
+            _CHART_URL.format(symbol=symbol),
+            params={"interval": interval, "range": range_},
+            headers=_HEADERS,
+        )
+        response.raise_for_status()
+        result = response.json()["chart"]["result"][0]
+        timestamps = result.get("timestamp") or []
+        closes = result["indicators"]["quote"][0].get("close") or []
+        return [
+            {"timestamp": ts, "close": close}
+            for ts, close in zip(timestamps, closes)
+            if close is not None
+        ]
+    except Exception:  # noqa: BLE001 - tek bir sembolün geçmiş verisi başarısız olursa çağıran tarafı durdurmaz
+        logger.warning("Fiyat geçmişi alınamadı: %s (interval=%s, range=%s)", symbol, interval, range_, exc_info=True)
+        return []
+
+
 async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict[str, Any] | None:
     try:
         response = await client.get(
