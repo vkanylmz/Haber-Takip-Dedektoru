@@ -47,8 +47,11 @@ summarizer:
   # Gemini için bunun bir kısmı (bkz. summarizer.py > _call_gemini,
   # thinking_budget=400) modelin iç "düşünme" adımına ayrılır; kalanı görünür
   # JSON yanıtına gider. 900, testte gözlenen JSON kesilmesi (MAX_TOKENS)
-  # sorununu önlemek için 1200'e çıkarıldı.
-  max_output_tokens: 1200
+  # sorununu önlemek için 1200'e çıkarıldı. Özetleme kalitesi iyileştirmesiyle
+  # (2026-07) yüksek önem skorlu haberler için özetler 4-6 cümleye kadar
+  # uzayabildiğinden, kesilme riskini önlemek için 1600'e çıkarıldı - gerçek
+  # testte (bkz. sohbet) bu bütçeyle hiçbir kesilme gözlenmedi.
+  max_output_tokens: 1600
   language: tr
   # Kısa özetleme görevleri için düşük efor -> daha hızlı ve daha ucuz
   effort: low

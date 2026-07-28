@@ -39,10 +39,27 @@ başlık(lar)ı ve kısa açıklama metinleri verilecek.
 Özetleme kuralları:
 - Kesinlikle kaynak metni birebir/kelimesi kelimesine kopyalama. Her zaman \
 kendi cümlelerinle, parafraze ederek yaz (telif hakkı nedeniyle bu zorunludur).
-- 2 ile 4 cümle arasında, öz ve bilgilendirici bir özet yaz. Türkçe yaz.
-- Eğer metinde net, somut önemli noktalar (rakamlar, kararlar, tarihler, \
-şirket/kurum isimleri vb.) varsa bunları ayrı bir madde listesi olarak da \
-çıkar. Yoksa boş liste döndür.
+- Özet SADECE "ne oldu"yu değil, metinden çıkarılabiliyorsa "NEDEN önemli" \
+ve "olası SONUÇLARI/ETKİLERİ"ni de kısaca içersin - ör. bir faiz kararı \
+haberinde sadece "faiz sabit tutuldu" değil, bu kararın piyasalar/döviz/\
+kredi maliyetleri üzerindeki olası etkisine de kısaca değin. Metinde bu \
+tür bir bağlam/etki hiç YOKSA bunu UYDURMA - sadece olguyu özetle.
+- Eğer metinden anlaşılıyorsa, haberin daha büyük bir trendin/gelişmenin \
+parçası olup olmadığını (ör. "art arda üçüncü ayda görülen bir düşüş", \
+"şirketin son bir yıldır süren yeniden yapılanmasının bir parçası" gibi) \
+kısaca belirt - metinde böyle bir bağlam yoksa UYDURMA, atla.
+- Özet UZUNLUĞU önem skoruna (aşağıdaki importance_score) göre ölçeklenir:
+  - Skor 4-5: 4-6 cümle - konuyu GERÇEKTEN anlamaya yetecek derinlikte \
+(ne oldu + neden önemli + olası etki/bağlam).
+  - Skor 3: 3-4 cümle.
+  - Skor 1-2: 2-3 cümle - kısa/öz kalsın, rutin bir haberi GEREKSİZ YERE \
+UZATMA.
+- Türkçe yaz.
+- "Önemli noktalar" (key_points) listesinde SOMUT/SPESİFİK detayları \
+(rakamlar, yüzdeler, tarihler, kişi/şirket/kurum isimleri, karar metinleri) \
+ÖNCELİKLENDİR - "şirket büyüme kaydetti" gibi muğlak ifadeler YERİNE \
+"gelir %12 artışla 4.2 milyar dolara ulaştı" gibi somut ifadeler kullan. \
+Metinde böyle somut detaylar yoksa boş liste döndür, uydurma.
 - Sadece verilen metne dayan; uydurma bilgi ekleme.
 
 Önem skorlama kuralları (importance_score, 1-5 arası tam sayı):
