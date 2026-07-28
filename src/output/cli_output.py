@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.models import NewsGroup
+from src.timezone_utils import format_turkey_time
 
 _WIDTH = 78
 
@@ -11,7 +12,7 @@ def _format_date(group: NewsGroup) -> str:
     dt = group.latest_published_at
     if dt is None:
         return "tarih bilinmiyor"
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    return format_turkey_time(dt)
 
 
 def print_report(groups: list[NewsGroup]) -> None:

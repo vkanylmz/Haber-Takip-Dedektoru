@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.models import NewsGroup
+from src.timezone_utils import format_turkey_time
 
 
 def _format_date(group: NewsGroup) -> str:
     dt = group.latest_published_at
     if dt is None:
         return "_tarih bilinmiyor_"
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    return format_turkey_time(dt)
 
 
 def write_markdown(groups: list[NewsGroup], output_dir: str | Path) -> Path:
@@ -20,10 +21,13 @@ def write_markdown(groups: list[NewsGroup], output_dir: str | Path) -> Path:
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc)
+    # Dosya adı BİLEREK UTC kalıyor (sıralanabilir/çakışmasız bir isimlendirme
+    # kuralı, kullanıcıya "gösterilen" bir değer değil) - sadece rapor
+    # İÇERİĞİNDEKİ başlık Türkiye saatine çevriliyor (bkz. altta).
     report_path = reports_dir / f"{now.strftime('%Y%m%d_%H%M%S')}.md"
 
     lines: list[str] = []
-    lines.append(f"# Finansal Haber Özeti — {now.strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(f"# Finansal Haber Özeti — {format_turkey_time(now)}")
     lines.append("")
     lines.append(f"Toplam {len(groups)} konu bulundu.")
     lines.append("")
