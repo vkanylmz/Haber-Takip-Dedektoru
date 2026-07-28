@@ -188,6 +188,12 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
     source_comparison = record.source_comparison_list()
 
     return {
+        # "Detaylı İnceleme" sayfasındaki "Öne Çıkanlar" etiketlerinin
+        # tıklanınca doğru karta kaydırılabilmesi için kararlı bir DOM
+        # kimliği (bkz. detayli_inceleme.html) - group_key zaten benzersiz/
+        # alfanumerik (bkz. src/db.py > compute_group_key), başka bir yerde
+        # kullanılmıyorsa hiçbir şeyi bozmaz.
+        "record_id": record.group_key,
         "title": record.title,
         "sources": record.sources,
         "published_at": format_turkey_time(record.published_at) if record.published_at else "tarih bilinmiyor",

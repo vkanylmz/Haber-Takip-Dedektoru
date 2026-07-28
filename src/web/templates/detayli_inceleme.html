@@ -296,6 +296,37 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      /* Tıklanabilir hale getirildi (bkz. gereksinim: Öne Çıkanlar'a tıklayınca
+         ilgili karta kaydır+vurgula) - <button> olarak render edildiği için
+         varsayılan buton görünümü sıfırlanıyor, .preview-pill'in span
+         iken sahip olduğu görsel stille birebir aynı kalması için. */
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .preview-pill:hover,
+    .preview-pill:focus-visible {
+      background: rgba(167, 139, 250, 0.25);
+      border-color: rgba(167, 139, 250, 0.4);
+      outline: none;
+    }
+
+    /* --- Öne Çıkanlar'a tıklayınca hedef karta kısa süreli vurgu (bkz.
+       aşağıdaki <script>) - 1.6 sn sonra otomatik kaybolur. --- */
+    .card.jump-highlight {
+      animation: jump-highlight-flash 1.6s ease-out;
+    }
+
+    @keyframes jump-highlight-flash {
+      0% {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px var(--accent-glow);
+      }
+      100% {
+        border-color: var(--card-border);
+        box-shadow: none;
+      }
     }
 
     /* Her sütun BAĞIMSIZ olarak kaydırılabilir - bkz. gereksinim: kullanıcı
@@ -610,7 +641,12 @@
         <div class="column-preview">
           <span class="preview-label">Öne Çıkanlar</span>
           {% for p in col.preview %}
-          <span class="preview-pill" title="{{ p.title }}">{{ p.title|truncate(40) }}</span>
+          {# Öne Çıkanlar her zaman AYNI sütunun col.records'undan (zaten
+             render edilmiş) türetildiği için (bkz. src/web/app.py >
+             detayli_inceleme_page > preview = sorted(views, ...)), hedef
+             kart bu sayfada HER ZAMAN mevcuttur - "aktif filtrelerle
+             uyuşmuyor" senaryosu burada yapısal olarak oluşamaz. #}
+          <button type="button" class="preview-pill" title="{{ p.title }}" data-target="news-{{ p.record_id }}">{{ p.title|truncate(40) }}</button>
           {% endfor %}
         </div>
         {% endif %}
@@ -624,7 +660,7 @@
           {% endif %}
 
           {% for r in col.records %}
-          <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
+          <div id="news-{{ r.record_id }}" class="card {% if r.is_highlighted %}highlighted{% endif %}">
             <div class="card-top">
               <div>
                 <h2 class="card-title">{{ r.title }}</h2>
@@ -721,6 +757,36 @@
           // Ağ hatası/timeout - sessizce yut, sayfa zaten tamamen
           // yüklenmiş ve kullanılabilir durumda, sadece fiyatlar eksik kalır.
         });
+    });
+
+    // "Öne Çıkanlar" etiketine tıklayınca/dokununca (mobilde click event
+    // dokunmada da doğal olarak tetiklenir - ayrı bir touch handler'a
+    // gerek yok) ilgili karta düzgün kaydır + kısa süreliğine vurgula
+    // (bkz. gereksinim). Event delegation kullanılıyor (tek dinleyici,
+    // document üzerinde) - sütun sayısı/kart sayısı değişse de kod
+    // değişmez. Hedef kart HER ZAMAN aynı sayfada zaten render edilmiş
+    // durumdadır (bkz. yukarıdaki Jinja yorumu) - bu yüzden "filtreyle
+    // uyuşmuyor" dalı yapısal olarak gerekmez, yine de element bulunamazsa
+    // (ör. ileride bir değişiklikle bu varsayım bozulursa) sessizce hiçbir
+    // şey yapılmaz, hata fırlatılmaz.
+    document.addEventListener('click', function (event) {
+      var pill = event.target.closest('.preview-pill[data-target]');
+      if (!pill) return;
+      var target = document.getElementById(pill.getAttribute('data-target'));
+      if (!target) return;
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Bir önceki vurgu hâlâ sürüyorsa animasyonu yeniden tetiklemek için
+      // sınıfı kaldırıp bir sonraki frame'de tekrar ekliyoruz (aksi halde
+      // CSS animasyonu art arda tıklamalarda tekrar oynatılmaz).
+      target.classList.remove('jump-highlight');
+      // eslint-disable-next-line no-unused-expressions
+      void target.offsetWidth; // reflow zorla - animasyonun yeniden başlamasını sağlar
+      target.classList.add('jump-highlight');
+      window.setTimeout(function () {
+        target.classList.remove('jump-highlight');
+      }, 1600);
     });
   </script>
 </body>
