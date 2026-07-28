@@ -651,6 +651,41 @@ Render size `https://<servis-adi>.onrender.com` gibi bir URL verecektir.
 Sorun giderme: Render panelinin **"Logs"** sekmesinden build/runtime
 loglarına bakabilirsiniz.
 
+### 5) Render'ın uykuya dalmasını engelleme (UptimeRobot ile)
+
+Render'ın ücretsiz katmanı, servis **15 dakika** boyunca hiç istek almazsa
+"uykuya" dalar; bir sonraki ziyaretçi geldiğinde servis yeniden
+başlatılırken Render'ın kendi genel "spinning up" ekranını görür (bu
+projenin kendi marka/logolu splash sayfası - bkz. `splash-page/index.html`
+- bunu daha kullanıcı dostu hale getiriyor ama servisi UYKUYA
+GİRMEKTEN alıkoymuyor). Servisi tamamen uyanık tutmanın ücretsiz yolu,
+düzenli aralıklarla `/health` adresine ping atan bir "uptime pinger"
+kullanmaktır - `/health` KASITLI OLARAK çok hafiftir (veritabanı sorgusu
+YAPMAZ, sadece sabit bir `{"status": "ok"}` döner, bkz. `src/web/app.py`),
+bu yüzden sık ping atmak Render'ın kısıtlı ücretsiz kaynaklarını
+tüketmez.
+
+**UptimeRobot ile adım adım kurulum** (ücretsiz, ~5 dakika sürer):
+
+1. [uptimerobot.com](https://uptimerobot.com) adresine gidip ücretsiz bir
+   hesap açın (e-posta ile kayıt yeterli, kredi kartı istenmez).
+2. Panelde **"Add New Monitor"** butonuna tıklayın.
+3. Monitor ayarlarını şu şekilde doldurun:
+   - **Monitor Type**: `HTTP(s)`
+   - **Friendly Name**: istediğiniz bir isim (ör. "Finans Haber Dashboard")
+   - **URL (or IP)**: `https://finans-haber-dashboard.onrender.com/health`
+   - **Monitoring Interval**: `5 minutes` (Render'ın 15 dakikalık uyku
+     eşiğinin oldukça altında - servis asla uykuya dalacak kadar boş
+     kalmaz; ücretsiz UptimeRobot planı zaten en sık bu aralığı sunar)
+4. **"Create Monitor"** (veya "Save") ile kaydedin.
+
+Bu kadar - UptimeRobot artık her 5 dakikada bir `/health`'i ziyaret
+edecek, servis hiçbir zaman 15 dakikalık inaktivite eşiğine ulaşmayacak
+ve gerçek kullanıcılar HİÇBİR ZAMAN "uyanma" gecikmesiyle
+karşılaşmayacaktır. Ek bir bonus: UptimeRobot, servis gerçekten çökerse
+(health check başarısız olursa) size e-posta/bildirim de gönderebilir
+(monitor ayarlarındaki "Alert Contacts" kısmından açılır).
+
 ## Yapılandırma (`config.yaml`)
 
 - `app`: zaman aşımı, rate-limit, User-Agent, tekilleştirme (dedup) eşiği gibi genel ayarlar
