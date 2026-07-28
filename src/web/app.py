@@ -24,6 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from src.commodity_report import get_commodity_dashboard_data
 from src.company_profile import get_company_profile
 from src.timezone_utils import format_turkey_time
 from src.config import load_config
@@ -584,6 +585,19 @@ async def ticker_quotes_endpoint(tickers: str = "") -> dict[str, Any]:
     if not parsed:
         return {}
     return await get_quotes_for_company_tickers(parsed)
+
+
+@app.get("/api/commodity-weekly-report")
+def commodity_weekly_report_endpoint() -> dict[str, Any]:
+    """Dashboard'daki "Haftalık Emtia Raporu" panelinin (bkz. Faz 2)
+    çektiği veri - bkz. src/commodity_report.py > get_commodity_dashboard_data
+    (önbellekten, LLM analizi/şirket isimleri DAHİL - ek bir LLM çağrısı
+    YAPMAZ; önbellek boşsa tek seferlik LLM'siz fiyat-only fallback).
+
+    `def` (senkron) - iç kısımda `asyncio.run()` çağrılabiliyor (fallback
+    yolunda), bu yüzden `async def` OLAMAZ (FastAPI zaten senkron route'ları
+    kendi thread pool'unda çalıştırır, event loop çakışması olmaz)."""
+    return get_commodity_dashboard_data()
 
 
 def _sector_heatmap_background_loop() -> None:

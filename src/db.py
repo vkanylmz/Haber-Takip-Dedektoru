@@ -243,6 +243,30 @@ class KeywordNotification(Base):
     __table_args__ = (UniqueConstraint("chat_id", "group_key", name="uq_keyword_notification_chat_group"),)
 
 
+class AppState(Base):
+    """Genel amaçlı, tek satırlık key-value durum saklama tablosu. İLK
+    kullanım amacı: haftalık emtia raporunun (bkz. src/commodity_report.py >
+    Faz 2) son hesaplanmış sonucunu (LLM analizi DAHİL) önbelleğe almak -
+    dashboard paneli her AJAX isteğinde 9 ayrı LLM çağrısı YAPMADAN, Telegram
+    raporuyla AYNI (şirket isimleri dahil) veriyi gösterebilsin diye.
+
+    Render'ın DOSYA SİSTEMİ deploy'lar arası KALICI DEĞİLDİR (bkz. Postgres/
+    DATABASE_URL notu, init_db) - bu yüzden bir data/state/*.json dosyası
+    yerine BİLİNÇLİ OLARAK veritabanı (SQLite yerelde / Postgres Render'da)
+    kullanıldı, ikisinde de aynı şekilde çalışır.
+
+    İleride (bkz. Faz 3 - ani emtia hareketi bildirimi) aynı tablo, hangi
+    emtianın en son ne zaman/hangi fiyattan bildirim gönderdiğini (soğuma
+    süresi takibi) saklamak için de kullanılabilir - yeni bir tablo/migrasyon
+    gerekmeden, sadece yeni bir `key` ile."""
+
+    __tablename__ = "app_state"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)  # JSON string
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
 # --------------------------------------------------------------------------
 # Engine / session yönetimi
 # --------------------------------------------------------------------------
@@ -736,6 +760,37 @@ def remove_subscriber(chat_id: str | int) -> bool:
         session.delete(existing)
         logger.info("Telegram abonesi silindi: %s", chat_id_str)
         return True
+
+
+def get_app_state(key: str) -> Any | None:
+    """`AppState` tablosundan verilen anahtarın JSON-çözülmüş değerini döner
+    (bkz. AppState modeli). Anahtar yoksa veya değer bozuksa (JSON
+    ayrıştırma hatası) None döner - çağıran taraf bunu "önbellek boş/henüz
+    hesaplanmadı" olarak yorumlar, exception fırlatmaz."""
+    with get_session() as session:
+        row = session.query(AppState).filter_by(key=key).one_or_none()
+        if row is None:
+            return None
+        try:
+            return json.loads(row.value)
+        except (TypeError, ValueError):
+            logger.warning("AppState[%s] JSON olarak ayrıştırılamadı, None dönülüyor.", key)
+            return None
+
+
+def set_app_state(key: str, value: Any) -> None:
+    """`AppState` tablosuna verilen anahtar için JSON-serileştirilmiş
+    değeri yazar (varsa günceller, yoksa oluşturur - upsert)."""
+    with get_session() as session:
+        row = session.query(AppState).filter_by(key=key).one_or_none()
+        payload = json.dumps(value, ensure_ascii=False)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            session.add(AppState(key=key, value=payload, updated_at=now))
+        else:
+            row.value = payload
+            row.updated_at = now
+        session.commit()
 
 
 def get_all_subscriber_chat_ids(session: Session | None = None) -> list[str]:

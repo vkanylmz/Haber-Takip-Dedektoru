@@ -249,6 +249,25 @@ olmadan döndür:
 {"summary": "..."}
 """
 
+COMMODITY_WEEKLY_SYSTEM_PROMPT = """\
+Sen bir emtia piyasaları ve hisse senedi etki analistisin. Sana bir emtianın \
+adı, geçen haftaki fiyat değişimi (% ve mutlak) verilecek.
+
+Görevin: bu fiyat hareketinin, YALNIZCA ABD borsalarında (NYSE/NASDAQ) işlem \
+gören şirket/sektör türlerini nasıl etkileyebileceğini, SOMUT ÖRNEK ŞİRKET \
+İSİMLERİYLE (ör. bakır için "Freeport-McMoRan, Southern Copper" gibi gerçek \
+ABD borsa şirketleri) 2-4 cümlede (Türkçe) açıklamak. Hangi sektörlerin \
+maliyet baskısı/fayda görebileceğini somutlaştır (ör. "girdi maliyeti \
+artan üreticiler" vs "üretici/madenci şirketler için gelir artışı"). \
+Kesinlik iddia etme, "olabilir/muhtemelen" gibi temkinli bir üslup kullan - \
+yatırım tavsiyesi verme.
+
+Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
+olmadan döndür:
+
+{"analysis": "..."}
+"""
+
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 _RETRY_DELAY_RE = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
 
@@ -695,6 +714,32 @@ class Summarizer:
             return ""
 
         return parsed["summary"].strip()
+
+    def analyze_commodity_weekly(self, label: str, pct_change: float, abs_change: float, unit: str) -> str:
+        """Haftalık emtia raporu (bkz. src/commodity_report.py) için TEK bir
+        ek çağrı ile "bu fiyat hareketi hangi ABD borsası şirket/sektörlerini
+        nasıl etkiler" analizi ürettirir (bkz. COMMODITY_WEEKLY_SYSTEM_PROMPT).
+        `summarize_company_profile` ile AYNI desen: hata/ayrıştırma
+        sorununda boş string döner (exception fırlatmaz) - çağıran taraf bu
+        durumda o emtia için LLM analizi olmadan devam eder."""
+        direction = "yükseldi" if pct_change >= 0 else "düştü"
+        user_prompt = (
+            f"Emtia: {label}\n"
+            f"Geçen haftaki değişim: %{pct_change:+.2f} ({direction})\n"
+            f"Mutlak değişim: {abs_change:+.4f} {unit}"
+        )
+        try:
+            raw_text = self._call_model_with_retry(user_prompt, system_prompt=COMMODITY_WEEKLY_SYSTEM_PROMPT)
+        except Exception:  # noqa: BLE001 - bir emtianın analizi başarısız olursa raporun geri kalanını durdurmasın
+            logger.exception("Emtia haftalık analizi (LLM çağrısı) başarısız oldu: %s", label)
+            return ""
+
+        parsed = _extract_json(raw_text)
+        if not parsed or not isinstance(parsed.get("analysis"), str):
+            logger.warning("Emtia haftalık analizi yanıtı beklenen JSON formatında değildi: %s", label)
+            return ""
+
+        return parsed["analysis"].strip()
 
     def _apply_fallback(self, group: NewsGroup) -> None:
         rep = group.representative

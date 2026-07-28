@@ -717,6 +717,105 @@
       font-size: 0.85rem;
     }
 
+    /* --- Haftalık Emtia Raporu paneli (bkz. src/commodity_report.py > Faz 2)
+       Trend paneliyle AYNI kart/kapsayıcı stili - burada da Chart.js YERİNE
+       basit bir inline SVG polyline sparkline kullanılıyor (yukarıdaki
+       trend-panel yorumundaki AYNI "hafif/self-contained" gerekçeyle). --- */
+    .commodity-panel {
+      background: rgba(24, 24, 27, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .commodity-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .commodity-panel-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #f8fafc;
+    }
+
+    .commodity-panel-updated {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .commodity-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .commodity-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.75rem 0.85rem;
+    }
+
+    .commodity-card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .commodity-label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+    }
+
+    .commodity-change {
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .commodity-change.up {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+    }
+
+    .commodity-change.down {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+    }
+
+    .commodity-price {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .commodity-sparkline {
+      display: block;
+      width: 100%;
+      height: 32px;
+      margin-bottom: 0.4rem;
+    }
+
+    .commodity-analysis {
+      font-size: 0.72rem;
+      color: #cbd5e1;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
     /* --- Çapraz kaynak karşılaştırma (bir haber grubunda >1 kaynak varsa) --- */
     .compare-details {
       margin-top: 1rem;
@@ -866,6 +965,16 @@
           </span>
         </div>
         <div id="trend-panel-body">
+          <span class="trend-empty">Yükleniyor…</span>
+        </div>
+      </div>
+
+      <div class="commodity-panel">
+        <div class="commodity-panel-header">
+          <span class="commodity-panel-title">🛒 Haftalık Emtia Raporu</span>
+          <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
+        </div>
+        <div id="commodity-panel-body">
           <span class="trend-empty">Yükleniyor…</span>
         </div>
       </div>
@@ -1078,9 +1187,72 @@
       }
     }
 
+    // Bir fiyat geçmişi dizisinden ([{timestamp, close}, ...]) basit bir
+    // inline SVG polyline sparkline üretir - harici bir kütüphane (Chart.js
+    // vb.) KASITLI OLARAK kullanılmıyor (bkz. yukarıdaki .commodity-panel
+    // CSS yorumu - dashboard'un geri kalanı da hep self-contained).
+    function buildSparklinePoints(history, width, height) {
+      if (!history || history.length < 2) return '';
+      const closes = history.map(function (h) { return h.close; });
+      const min = Math.min.apply(null, closes);
+      const max = Math.max.apply(null, closes);
+      const range = (max - min) || 1;
+      const stepX = width / (closes.length - 1);
+      return closes.map(function (c, i) {
+        const x = (i * stepX).toFixed(1);
+        const y = (height - ((c - min) / range) * height).toFixed(1);
+        return x + ',' + y;
+      }).join(' ');
+    }
+
+    async function loadCommodityPanel() {
+      const body = document.getElementById('commodity-panel-body');
+      const updatedEl = document.getElementById('commodity-panel-updated');
+      try {
+        const res = await fetch('/api/commodity-weekly-report');
+        const data = await res.json();
+        const items = data.commodities || [];
+
+        if (!items.length) {
+          body.innerHTML = '<span class="trend-empty">Emtia verisi henüz yok.</span>';
+          return;
+        }
+
+        updatedEl.textContent = data.generated_at
+          ? 'Son güncelleme: ' + new Date(data.generated_at).toLocaleString('tr-TR')
+          : '(fiyat-only önizleme - ilk haftalık rapor henüz çalışmadı)';
+
+        body.innerHTML = '<div class="commodity-grid">' + items.map(function (item) {
+          const up = item.pct_change >= 0;
+          const sign = up ? '+' : '';
+          const points = buildSparklinePoints(item.history, 200, 32);
+          const strokeColor = up ? '#4ade80' : '#f87171';
+          const sparklineSvg = points
+            ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
+              '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="2"/></svg>'
+            : '';
+          const analysisHtml = item.analysis
+            ? '<div class="commodity-analysis" title="' + escapeHtml(item.analysis) + '">' + escapeHtml(item.analysis) + '</div>'
+            : '';
+          return '<div class="commodity-card">' +
+            '<div class="commodity-card-top">' +
+            '<span class="commodity-label">' + item.emoji + ' ' + escapeHtml(item.label) + '</span>' +
+            '<span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + item.pct_change + '%</span>' +
+            '</div>' +
+            '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
+            sparklineSvg +
+            analysisHtml +
+            '</div>';
+        }).join('') + '</div>';
+      } catch (e) {
+        body.innerHTML = '<span class="trend-empty">Emtia verisi alınamadı.</span>';
+      }
+    }
+
     refreshMarketTicker();
     refreshSectorHeatmap();
     loadTrendSummary('weekly');
+    loadCommodityPanel();
     // Piyasa şeridi: sunucu tarafı önbellek süresiyle (bkz.
     // src/web/market_data.py > _CACHE_TTL_SECONDS) BİLEREK aynı tutuluyor.
     // 10 sn, gerçek bir ölçümle belirlendi. Sektör ısı haritası haber

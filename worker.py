@@ -24,6 +24,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.backup import run_backup
+from src.commodity_report import send_weekly_commodity_report
 from src.config import load_config
 from src.daily_digest import send_daily_digest
 from src.db import add_subscriber, init_db
@@ -55,6 +56,15 @@ WEEKLY_TREND_MINUTE = 30
 MONTHLY_TREND_DAY = "1-7"
 MONTHLY_TREND_HOUR = 9
 MONTHLY_TREND_MINUTE = 45
+
+# Haftalık Emtia Raporu (bkz. src/commodity_report.py > Faz 2): her
+# Pazartesi, diğer haftalık/aylık raporlardan (09:30/09:45) sonra 10:00'da -
+# aynı gerekçeyle (art arda Telegram mesaj patlaması olmasın) farklı bir
+# saat seçildi. Ayrıca bu rapor 9 ayrı LLM çağrısı içerdiğinden (rate-limit
+# koruması nedeniyle ~2 dk sürebilir) diğer görevlerle ÇAKIŞMAMASI için de
+# yeterli boşluk bırakıldı.
+WEEKLY_COMMODITY_HOUR = 10
+WEEKLY_COMMODITY_MINUTE = 0
 
 # Haftalık veritabanı yedeği: Pazar 03:00 - diğer haftalık/aylık görevlerden
 # (hepsi Pazartesi sabahı) farklı bir gün/düşük trafikli bir saat, çakışma
@@ -141,6 +151,21 @@ def _monthly_trend_job() -> None:
         logger.exception("Aylık trend raporu gönderilirken beklenmeyen bir hata oluştu.")
 
 
+def _weekly_commodity_report_job() -> None:
+    """Haftalık Emtia Raporu (bkz. src/commodity_report.py > Faz 2) -
+    haftalık/aylık trend raporlarından ve diğer tüm zamanlanmış görevlerden
+    TAMAMEN bağımsız, ayrı bir zamanlanmış görev. Kendi hatası diğer
+    görevleri etkilemesin diye izole edilir (send_weekly_commodity_report
+    zaten kendi içinde de exception yutuyor - bu try/except ekstra bir
+    güvenlik katmanı, worker.py'deki DİĞER TÜM job fonksiyonlarıyla
+    tutarlılık için)."""
+    try:
+        config = load_config()
+        send_weekly_commodity_report(config)
+    except Exception:  # noqa: BLE001
+        logger.exception("Haftalık Emtia Raporu gönderilirken beklenmeyen bir hata oluştu.")
+
+
 def _db_backup_job() -> None:
     """Haftalık veritabanı yedeği (bkz. src/backup.py) - diğer tüm zamanlanmış
     görevlerden bağımsız, kendi hatası diğerlerini etkilemesin diye izole
@@ -186,6 +211,16 @@ def _add_trend_report_jobs(scheduler) -> None:
             timezone=DAILY_DIGEST_TIMEZONE,
         ),
         id="aylik_trend",
+    )
+    scheduler.add_job(
+        _weekly_commodity_report_job,
+        CronTrigger(
+            day_of_week="mon",
+            hour=WEEKLY_COMMODITY_HOUR,
+            minute=WEEKLY_COMMODITY_MINUTE,
+            timezone=DAILY_DIGEST_TIMEZONE,
+        ),
+        id="haftalik_emtia_raporu",
     )
 
 
