@@ -572,6 +572,7 @@ def get_recent_records(
     since: datetime | None = None,
     sort_order: str = "newest",
     category_filter: str | None = None,
+    additional_sector_filter: str | None = None,
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
     if category_filter:
@@ -601,6 +602,14 @@ def get_recent_records(
         # tırnaklarla birlikte arama ("finans" gibi tam eşleşme), "finansal"
         # gibi kısmi bir kelimeyle yanlışlıkla eşleşmeyi önler.
         query = query.filter(NewsRecord.sector.contains(f'"{sector_filter}"'))
+    if additional_sector_filter:
+        # "Detaylı İnceleme" sayfasındaki sütun bazlı çapraz sektör alt
+        # filtresi için (bkz. src/web/app.py > detayli_inceleme_page) - genel
+        # `sector_filter` ile AYNI ANDA verilirse (ör. genel filtre "enerji",
+        # sütun alt filtresi "teknoloji") ikisi de AYRI birer AND koşulu
+        # olarak eklenir, yani haberin sector listesinde HER İKİSİ de olmalı
+        # (kesişim boşsa sonuç da boş döner - bu istenen/doğru davranıştır).
+        query = query.filter(NewsRecord.sector.contains(f'"{additional_sector_filter}"'))
     if region_filter:
         # `regions` da aynı şekilde JSON string listesi (bkz. yukarıdaki not).
         query = query.filter(NewsRecord.regions.contains(f'"{region_filter}"'))

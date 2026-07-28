@@ -173,7 +173,7 @@
       color: #22c55e;
     }
 
-    /* --- Sıralama (3 sütunun HEPSİNE aynı anda uygulanır) --- */
+    /* --- Genel filtreler + sıralama (3 sütunun HEPSİNE aynı anda uygulanır) --- */
     .sort-section {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -193,6 +193,20 @@
       text-transform: uppercase;
       letter-spacing: 0.4px;
       white-space: nowrap;
+    }
+
+    .filter-form {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* --- Sütun başlığındaki bağımsız çapraz-sektör alt filtresi --- */
+    .sub-filter select {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
     }
 
     select {
@@ -534,8 +548,38 @@
     </div>
 
     <div class="sort-section">
-      <span class="sort-heading">Sıralama</span>
-      <form method="get" action="/detayli-inceleme" style="display: contents;">
+      <span class="sort-heading">Filtreler</span>
+      <form id="filterForm" class="filter-form" method="get" action="/detayli-inceleme">
+        <select name="source" onchange="this.form.submit()">
+          <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
+          {% for s in sources %}
+          <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select name="sector" onchange="this.form.submit()">
+          <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
+          {% for sec in sectors %}
+          <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
+          {% endfor %}
+        </select>
+        <select name="region" onchange="this.form.submit()">
+          <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
+          {% for reg in regions %}
+          <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
+          {% endfor %}
+        </select>
+        <select name="sentiment" onchange="this.form.submit()">
+          <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
+          {% for sent in sentiments %}
+          <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
+          {% endfor %}
+        </select>
+        <select name="min_importance" onchange="this.form.submit()">
+          <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
+          {% for opt in importance_options %}
+          <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
+          {% endfor %}
+        </select>
         <select name="sort" onchange="this.form.submit()">
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
           <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
@@ -549,7 +593,17 @@
       <div class="column">
         <div class="column-header">
           <span class="column-title">{{ col.label }}</span>
-          <span class="column-count">{{ col.count }} haber</span>
+          <span style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="column-count">{{ col.count }} haber</span>
+            <span class="sub-filter" title="Bu sütunu ek olarak bir sektörle kesiştir">
+              <select name="{{ col.sub_filter_param }}" form="filterForm" onchange="this.form.submit()">
+                <option value="" {% if not col.selected_sub_sector %}selected{% endif %}>+ Sektör</option>
+                {% for sec in sectors %}
+                <option value="{{ sec.slug }}" {% if sec.slug==col.selected_sub_sector %}selected{% endif %}>{{ sec.label }}</option>
+                {% endfor %}
+              </select>
+            </span>
+          </span>
         </div>
 
         {% if col.preview %}

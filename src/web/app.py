@@ -355,17 +355,41 @@ def dashboard(
     )
 
 
+#  Her sütun (makro/şirket/siyasi) için bağımsız çapraz-sektör alt filtresi
+#  query param adı - kullanıcı gereksiniminde önerilen isimlendirme (bkz.
+#  sohbet): "makro_sector", "sirket_sector", "siyasi_sector".
+_COLUMN_SECTOR_PARAM = {slug: f"{slug}_sector" for slug in VALID_TOP_CATEGORIES if slug != "diger"}
+
+
 @app.get("/detayli-inceleme", response_class=HTMLResponse)
 def detayli_inceleme_page(
     request: Request,
     sort: str = "newest",
+    source: str | None = None,
+    sector: str | None = None,
+    region: str | None = None,
+    sentiment: str | None = None,
+    # str olarak alınıyor - bkz. dashboard() route'undaki AYNI notun gerekçesi
+    # (boş "Tüm Önem Skorları" seçeneği int alana 422 hatası verir).
+    min_importance: str | None = None,
+    makro_sector: str | None = None,
+    sirket_sector: str | None = None,
+    siyasi_sector: str | None = None,
 ) -> HTMLResponse:
-    """"Detaylı İnceleme" sayfası: ana dashboard'dan TAMAMEN AYRI, 3 kategoriyi
-    (makro/şirket/siyasi, bkz. src/summarizer.py > VALID_TOP_CATEGORIES) AYNI
-    ANDA, yan yana 3 sütun halinde gösteren bir görünüm - sekme/tıklama YOK,
-    kullanıcı üçünü de tek ekranda karşılaştırır (bkz. gereksinim). Ana
-    dashboard'un HİÇBİR özelliğine (filtreler, arama, piyasa şeridi, ısı
-    haritası) dokunmaz - tamamen ayrı bir route, kendi template'i.
+    """"Detaylı İnceleme" sayfası: 3 kategoriyi (makro/şirket/siyasi, bkz.
+    src/summarizer.py > VALID_TOP_CATEGORIES) AYNI ANDA, yan yana 3 sütun
+    halinde gösteren bir görünüm - sekme/tıklama YOK, kullanıcı üçünü de tek
+    ekranda karşılaştırır (bkz. gereksinim).
+
+    Ana dashboard'daki TÜM genel filtreler (kaynak/sektör/bölge/duygu/önem
+    skoru) burada da mevcuttur ve verildiğinde ÜÇ SÜTUNA DA AYNI ANDA
+    uygulanır (bkz. kullanıcı gereksinimi, 2026-07). Bunun ÜSTÜNE, her sütun
+    kendi BAĞIMSIZ "çapraz sektör" alt filtresine sahiptir (`makro_sector`,
+    `sirket_sector`, `siyasi_sector` query param'ları) - ör. "Siyasi"
+    sütununda `siyasi_sector=teknoloji` verilirse, o sütunda YALNIZCA
+    top_category=siyasi VE sector listesinde "teknoloji" olan haberler
+    görünür; diğer iki sütun bundan ETKİLENMEZ (bkz. get_recent_records >
+    additional_sector_filter, src/db.py).
 
     NOT: `top_category` YENİ bir alan olduğundan, bu özellik eklenmeden
     ÖNCE özetlenmiş eski haberlerde bu alan boştur (None) - dedup/group_key
@@ -383,20 +407,43 @@ def detayli_inceleme_page(
     # yeterli.
     per_column_limit = 30
 
+    min_importance_value: int | None = None
+    if min_importance:
+        try:
+            min_importance_value = int(min_importance)
+        except ValueError:
+            min_importance_value = None
+
     sort_normalized = "oldest" if sort == "oldest" else "newest"
 
     # Yalnızca 3 ana sütun gösterilir (bkz. gereksinim) - "diger" bilerek
     # bir sütun olarak sunulmaz.
     category_slugs = [c for c in VALID_TOP_CATEGORIES if c != "diger"]
 
+    # Sütun bazlı alt filtre değerleri - hangi query param'ın hangi sütuna
+    # ait olduğu _COLUMN_SECTOR_PARAM'da tanımlı, burada gelen değerlerle
+    # eşleniyor (her sütun BAĞIMSIZ, birbirini etkilemez - bkz. gereksinim).
+    column_sub_sector = {
+        "makro": makro_sector or None,
+        "sirket": sirket_sector or None,
+        "siyasi": siyasi_sector or None,
+    }
+
     columns: list[dict[str, Any]] = []
     all_records: list[NewsRecord] = []
     with get_session() as session:
+        sources, sectors = _get_cached_filter_options(session)
         for slug in category_slugs:
             records = get_recent_records(
                 session,
                 limit=per_column_limit,
                 category_filter=slug,
+                source_filter=source or None,
+                sector_filter=sector or None,
+                region_filter=region or None,
+                sentiment_filter=sentiment or None,
+                min_importance=min_importance_value,
+                additional_sector_filter=column_sub_sector[slug],
                 sort_order=sort_normalized,
             )
             all_records.extend(records)
@@ -417,6 +464,8 @@ def detayli_inceleme_page(
                     "records": views,
                     "preview": preview,
                     "count": len(views),
+                    "sub_filter_param": _COLUMN_SECTOR_PARAM[slug],
+                    "selected_sub_sector": column_sub_sector[slug] or "",
                 }
             )
 
@@ -433,6 +482,9 @@ def detayli_inceleme_page(
     # listeden değil, çünkü bu sayfada artık "tek liste" kavramı yok.
     fear_greed_index = _compute_fear_greed_index(all_records)
 
+    regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
+    sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
+
     return templates.TemplateResponse(
         request,
         "detayli_inceleme.html",
@@ -441,6 +493,16 @@ def detayli_inceleme_page(
             "selected_sort": sort_normalized,
             "threshold": threshold,
             "fear_greed_index": fear_greed_index,
+            "sources": sources,
+            "selected_source": source or "",
+            "sectors": sectors,
+            "selected_sector": sector or "",
+            "regions": regions,
+            "selected_region": region or "",
+            "sentiments": sentiments,
+            "selected_sentiment": sentiment or "",
+            "importance_options": _IMPORTANCE_FILTER_OPTIONS,
+            "selected_min_importance": min_importance_value,
         },
     )
 
