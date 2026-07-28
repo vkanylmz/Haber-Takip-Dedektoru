@@ -38,6 +38,7 @@ from fastapi.responses import HTMLResponse
 from src.config import load_config
 from src.db import init_db
 from src.web.app import (
+    commodity_weekly_report_endpoint as _commodity_weekly_report_view,
     dashboard as _dashboard_view,
     detayli_inceleme_page as _detayli_inceleme_view,
     health as _health_view,
@@ -116,4 +117,5 @@ app.get("/api/market-data")(_market_data_view)
 app.get("/api/ticker-quotes")(_ticker_quotes_view)
 app.get("/api/sector-heatmap")(_sector_heatmap_view)
 app.get("/api/trend-summary")(_trend_summary_view)
+app.get("/api/commodity-weekly-report")(_commodity_weekly_report_view)
 app.get("/health")(_health_view)
