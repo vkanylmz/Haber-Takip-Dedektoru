@@ -426,11 +426,35 @@
       border-left: 3px solid var(--negative);
     }
 
+    /* Kart gövdesi VARSAYILAN OLARAK KAPALI - ana dashboard'daki (bkz.
+       dashboard.html) AYNI davranış/gerekçe: liste sadece başlık/meta/
+       rozet gösterir, başlığa tıklayınca özet açılır. */
     .card-top {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       gap: 0.75rem;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .card-top::-webkit-details-marker {
+      display: none;
+    }
+
+    .card-chevron {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      flex-shrink: 0;
+      transition: transform 0.15s;
+    }
+
+    details[open] > .card-top .card-chevron {
+      transform: rotate(90deg);
+    }
+
+    .card-body {
+      margin-top: 0.55rem;
     }
 
     .card-title {
@@ -714,8 +738,8 @@
           {% endif %}
 
           {% for r in col.records %}
-          <div id="news-{{ r.record_id }}" class="card {% if r.is_highlighted %}highlighted{% endif %}">
-            <div class="card-top">
+          <details id="news-{{ r.record_id }}" class="card {% if r.is_highlighted %}highlighted{% endif %}">
+            <summary class="card-top">
               <div>
                 <h2 class="card-title">{{ r.title }}</h2>
                 <div class="card-meta">
@@ -728,34 +752,39 @@
                   {% endif %}
                 </div>
               </div>
-              <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-            </div>
+              <span style="display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0;">
+                <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+                <span class="card-chevron">▸</span>
+              </span>
+            </summary>
 
-            {% if r.company_ticker %}
-            {# Fiyat BURADA (render sırasında) çekilmez - sayfa tamamen
-               yüklendikten SONRA aşağıdaki <script> tarafından, ayrı bir
-               arka plan çağrısıyla dolduruluyor (bkz. src/web/app.py >
-               /api/ticker-quotes'taki not). #}
-            <div class="ticker-badge" data-ticker="{{ r.company_ticker }}">
-              <span>{{ r.company_ticker }}</span>
-              <span class="ticker-price-slot"></span>
-            </div>
-            {% endif %}
+            <div class="card-body">
+              {% if r.company_ticker %}
+              {# Fiyat BURADA (render sırasında) çekilmez - sayfa tamamen
+                 yüklendikten SONRA aşağıdaki <script> tarafından, ayrı bir
+                 arka plan çağrısıyla dolduruluyor (bkz. src/web/app.py >
+                 /api/ticker-quotes'taki not). #}
+              <div class="ticker-badge" data-ticker="{{ r.company_ticker }}">
+                <span>{{ r.company_ticker }}</span>
+                <span class="ticker-price-slot"></span>
+              </div>
+              {% endif %}
 
-            <div class="summary">{{ r.summary }}</div>
+              <div class="summary">{{ r.summary }}</div>
 
-            {% if r.sector_labels %}
-            <div style="margin-bottom: 0.5rem;">
-              {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
-            </div>
-            {% endif %}
+              {% if r.sector_labels %}
+              <div style="margin-bottom: 0.5rem;">
+                {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+              </div>
+              {% endif %}
 
-            <div class="links">
-              {% for link in r.links %}
-              <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
-              {% endfor %}
+              <div class="links">
+                {% for link in r.links %}
+                <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+                {% endfor %}
+              </div>
             </div>
-          </div>
+          </details>
           {% endfor %}
         </div>
       </div>
@@ -847,6 +876,11 @@
       var target = document.getElementById(pill.getAttribute('data-target'));
       if (!target) return;
 
+      // Kartlar artık VARSAYILAN OLARAK KAPALI (bkz. kullanıcı kararı,
+      // 2026-07: liste sadece başlık gösterir, tıklayınca özet açılır) -
+      // "Öne Çıkanlar"dan gelen kullanıcı kartı zaten açık görmeli,
+      // aksi halde sadece kapalı bir başlığa kaydırılmış olur.
+      target.open = true;
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
       // Bir önceki vurgu hâlâ sürüyorsa animasyonu yeniden tetiklemek için

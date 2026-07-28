@@ -253,11 +253,39 @@
       border-left: 3px solid var(--negative);
     }
 
+    /* Kart gövdesi (özet + tüm ikincil bilgiler) VARSAYILAN OLARAK
+       KAPALI - liste yalnızca başlık/meta/rozet gösterir, kullanıcı
+       başlığa tıklayınca özet açılır (bkz. kullanıcı kararı, 2026-07).
+       `.card-top` artık bir <summary> - önceki görsel dili (flex
+       justify-between vb.) BİREBİR korunuyor, sadece varsayılan
+       üçgen işaretçi kaldırılıp yerine bir chevron kondu. */
     .card-top {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       gap: 1rem;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .card-top::-webkit-details-marker {
+      display: none;
+    }
+
+    .card-chevron {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      margin-left: 0.25rem;
+      transition: transform 0.15s;
+    }
+
+    details[open] > .card-top .card-chevron {
+      transform: rotate(90deg);
+    }
+
+    .card-body {
+      margin-top: 0.85rem;
     }
 
     .card-title {
@@ -986,8 +1014,8 @@
       {% endif %}
 
       {% for r in records %}
-      <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
-        <div class="card-top">
+      <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
+        <summary class="card-top">
           <div>
             <h2 class="card-title">{{ r.title }}</h2>
             <div class="card-meta">
@@ -1008,51 +1036,56 @@
               {% endif %}
             </div>
           </div>
-          <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-        </div>
+          <span style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+            <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+            <span class="card-chevron">▸</span>
+          </span>
+        </summary>
 
-        {% if r.importance_reason %}
-        <div class="reason">{{ r.importance_reason }}</div>
-        {% endif %}
+        <div class="card-body">
+          {% if r.importance_reason %}
+          <div class="reason">{{ r.importance_reason }}</div>
+          {% endif %}
 
-        <div class="summary">{{ r.summary }}</div>
+          <div class="summary">{{ r.summary }}</div>
 
-        {% if r.market_impact %}
-        <div class="market-impact">
-          <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
-        </div>
-        {% endif %}
+          {% if r.market_impact %}
+          <div class="market-impact">
+            <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
+          </div>
+          {% endif %}
 
-        {% if r.key_points %}
-        <ul class="key-points">
-          {% for point in r.key_points %}
-          <li>{{ point }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
+          {% if r.key_points %}
+          <ul class="key-points">
+            {% for point in r.key_points %}
+            <li>{{ point }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
 
-        <div class="links">
-          {% for link in r.links %}
-          <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
-          {% endfor %}
-        </div>
-
-        {% if r.source_comparison %}
-        <details class="compare-details">
-          <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
-          <div class="compare-grid">
-            {% for c in r.source_comparison %}
-            <div class="compare-item">
-              <div class="compare-source">{{ c.source }}</div>
-              {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
-              {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
-              {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
-            </div>
+          <div class="links">
+            {% for link in r.links %}
+            <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
             {% endfor %}
           </div>
-        </details>
-        {% endif %}
-      </div>
+
+          {% if r.source_comparison %}
+          <details class="compare-details">
+            <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
+            <div class="compare-grid">
+              {% for c in r.source_comparison %}
+              <div class="compare-item">
+                <div class="compare-source">{{ c.source }}</div>
+                {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
+                {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
+                {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+        </div>
+      </details>
       {% endfor %}
   </main>
 
