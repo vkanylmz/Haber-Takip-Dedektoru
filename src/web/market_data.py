@@ -288,8 +288,15 @@ async def _fetch_one_limited(client: httpx.AsyncClient, symbol: str, label: str)
     çok sayıda eşzamanlı isteği aynı anda göndermek CPU zamanlaması
     yüzünden çoğunun timeout'a düşmesine yol açıyordu; bu, aynı anda
     en fazla _TICKER_QUOTE_MAX_CONCURRENT isteğin gerçekten "uçuşta"
-    olmasını garanti eder."""
+    olmasını garanti eder.
+
+    GEÇİCİ TEŞHİS (2026-07): semaphore'un ne kadar KUYRUKLAMA yarattığını
+    gerçek ölçümle görmek için acquire öncesi/sonrası süre loglanıyor."""
+    wait_start = time.monotonic()
     async with _ticker_quote_semaphore:
+        waited_ms = (time.monotonic() - wait_start) * 1000
+        if waited_ms > 5:
+            logger.info("PERF ticker_quote semaphore bekleme: %s için %.1f ms", symbol, waited_ms)
         return await _fetch_one(client, symbol, label)
 
 
@@ -347,7 +354,13 @@ async def get_market_snapshot() -> list[dict[str, Any]]:
     if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
         return _cache["data"]
 
+    # GEÇİCİ TEŞHİS (2026-07): _refresh_lock için de gerçek bekleme süresi
+    # ölçülüyor (bkz. _fetch_one_limited'teki aynı yaklaşım).
+    _lock_wait_start = time.monotonic()
     async with _refresh_lock:
+        _lock_waited_ms = (time.monotonic() - _lock_wait_start) * 1000
+        if _lock_waited_ms > 5:
+            logger.info("PERF market_snapshot _refresh_lock bekleme: %.1f ms", _lock_waited_ms)
         # Kilit ALINANA KADAR başka bir eşzamanlı çağrı önbelleği zaten
         # tazelemiş olabilir - tekrar kontrol et (double-checked locking).
         now = time.monotonic()

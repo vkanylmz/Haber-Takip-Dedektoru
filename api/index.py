@@ -29,7 +29,10 @@ Mimari":
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
@@ -80,6 +83,30 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+# GEÇİCİ TEŞHİS (2026-07, çoklu kullanıcı performans soruşturması) - HER
+# isteğin gerçek uçtan uca süresini loglar, böylece 2-3 kullanıcı eşzamanlı
+# geldiğinde Render'ın tek worker'ında (bkz. render.yaml) ne kadar kuyruklama
+# oluştuğu VARSAYIMLA DEĞİL gerçek ölçümle görülebilir. Sorun teşhis
+# edildikten sonra kaldırılacak - kalıcı bir özellik değil.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+_perf_logger = logging.getLogger("perf")
+
+
+@app.middleware("http")
+async def _log_request_timing(request: Request, call_next):
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - start) * 1000
+    _perf_logger.info(
+        "PERF %s %s -> %d (%.1f ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
 
 app.get("/", response_class=HTMLResponse)(_dashboard_view)
 app.get("/detayli-inceleme", response_class=HTMLResponse)(_detayli_inceleme_view)
