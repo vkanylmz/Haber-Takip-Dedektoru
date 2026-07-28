@@ -12,6 +12,8 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -46,6 +48,8 @@ from src.summarizer import (
 from src.trend_report import get_dashboard_trend_summary
 from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers, start_background_refresh
 
+logger = logging.getLogger(__name__)
+
 # Önem skoru filtresi dropdown'ında sunulan eşik seçenekleri (min. skor).
 _IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
 
@@ -68,6 +72,32 @@ _HEATMAP_MIN_COUNT_FOR_COLOR = 2
 # istekte bu iki tam-tablo taramasını tekrarlamayı önler.
 _FILTER_OPTIONS_CACHE_TTL_SECONDS = 60.0
 _filter_options_cache: dict[str, Any] = {"sources": None, "sectors": None, "fetched_at": 0.0}
+
+# --- Sektör ısı haritası önbelleği ---
+# GERÇEK teşhisle bulundu (2026-07, çoklu kullanıcı performans soruşturması
+# devamı): bu sorgunun Neon Postgres SUNUCUSUNDAKİ çalışma süresi sadece
+# ~1.8ms (EXPLAIN ANALYZE ile doğrulandı, index eksikliği YOK, sorgu zaten
+# hızlı) - asıl maliyet Render (Oregon) ile Neon (eu-central-1/Frankfurt)
+# arasındaki KITALARARASI ağ gecikmesi (her istekte ~200ms+ round-trip,
+# ölçülen toplam süre 350ms-2000ms arası değişken). Isı haritasının altında
+# yatan veri worker'ın tarama döngüsüyle (dakikada bir) değişiyor, saniyede
+# bir DEĞİL - bu yüzden market_data.py'deki piyasa verisiyle AYNI mimari
+# uygulanıyor: kullanıcı isteğinden TAMAMEN BAĞIMSIZ bir arka plan görevi
+# önbelleği proaktif tazeler, `sector_heatmap()` normalde HİÇ DB round-trip
+# BEKLEMEZ. (İLK denemede basit bir reaktif TTL-cache kullanılmıştı, ama
+# GERÇEK testte TTL süresi dolduğunda 2-3 eşzamanlı isteğin AYNI kilit
+# bekleme sorununu - ~2 sn - yeniden yarattığı ölçüldü; bu yüzden piyasa
+# verisindekiyle TUTARLI olacak şekilde proaktif modele yükseltildi.)
+#
+# Burada `threading` kullanılıyor (asyncio DEĞİL): _build_sector_heatmap
+# senkron/bloklayan bir SQLAlchemy oturumu açıyor - market_data.py'nin
+# aksine (o httpx ile native async), bu iş asyncio event loop'unu
+# BLOKLARDI; bir arka plan THREAD'i bu riski taşımaz.
+_SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS = 20.0
+_sector_heatmap_cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+_sector_heatmap_lock = threading.Lock()
+_sector_heatmap_background_thread: threading.Thread | None = None
+_sector_heatmap_background_stop = threading.Event()
 
 
 def _compute_fear_greed_index(records: list[NewsRecord]) -> int:
@@ -118,6 +148,9 @@ async def lifespan(app: FastAPI):
     # kendiliğinden yenilenmez (TTL kontrolü kaldırıldı, bkz. o modüldeki
     # not), yalnızca ilk isteğin döndürdüğü veride sonsuza kadar kalırdı.
     start_background_refresh()
+    # Sektör ısı haritası için de AYNI mimari (bkz. yukarıdaki
+    # _SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS notu).
+    start_sector_heatmap_background_refresh()
     yield
 
 
@@ -484,11 +517,59 @@ async def ticker_quotes_endpoint(tickers: str = "") -> dict[str, Any]:
     return await get_quotes_for_company_tickers(parsed)
 
 
+def _sector_heatmap_background_loop() -> None:
+    """Süreç boyunca sürekli çalışır: kullanıcı isteklerinden BAĞIMSIZ olarak
+    her _SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS (20 sn) bir önbelleği
+    proaktif tazeler (bkz. modül başındaki mimari not - market_data.py'deki
+    _background_refresh_loop ile AYNI desen, sync/threading versiyonu)."""
+    while not _sector_heatmap_background_stop.is_set():
+        try:
+            data = _build_sector_heatmap()
+            with _sector_heatmap_lock:
+                _sector_heatmap_cache["data"] = data
+                _sector_heatmap_cache["fetched_at"] = time.monotonic()
+        except Exception:  # noqa: BLE001 - bir tur başarısız olursa döngü YİNE DE devam etsin
+            logger.exception("Arka plan sektör ısı haritası tazeleme döngüsünde beklenmeyen hata.")
+        _sector_heatmap_background_stop.wait(_SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS)
+
+
+def start_sector_heatmap_background_refresh() -> None:
+    """Arka plan tazeleme thread'ini başlatır - uygulama lifespan'ından TEK
+    sefer çağrılır. İdempotenttir (zaten çalışan bir thread varsa tekrar
+    başlatmaz)."""
+    global _sector_heatmap_background_thread
+    if _sector_heatmap_background_thread is not None and _sector_heatmap_background_thread.is_alive():
+        return
+    _sector_heatmap_background_thread = threading.Thread(
+        target=_sector_heatmap_background_loop, daemon=True, name="sector-heatmap-refresh"
+    )
+    _sector_heatmap_background_thread.start()
+
+
+def _get_cached_sector_heatmap() -> list[dict[str, Any]]:
+    """NORMAL DURUMDA hiçbir DB round-trip'i BEKLEMEZ - arka plan görevinin
+    az önce yazdığı hazır önbellekten okur. Tek istisna: süreç yeni
+    başladıysa ve arka plan görevi henüz ilk tazelemesini yapmadıysa, o TEK
+    seferlik soğuk başlangıç anında burada senkron bir fallback yapılır
+    (`_sector_heatmap_lock` thundering-herd korumasıyla, market_data.py'deki
+    get_market_snapshot ile AYNI desen)."""
+    if _sector_heatmap_cache["data"] is not None:
+        return _sector_heatmap_cache["data"]
+
+    with _sector_heatmap_lock:
+        if _sector_heatmap_cache["data"] is not None:
+            return _sector_heatmap_cache["data"]
+        data = _build_sector_heatmap()
+        _sector_heatmap_cache["data"] = data
+        _sector_heatmap_cache["fetched_at"] = time.monotonic()
+        return data
+
+
 @app.get("/api/sector-heatmap")
 def sector_heatmap() -> list[dict[str, Any]]:
     """Dashboard'daki sektör ısı haritasının periyodik (AJAX) olarak çektiği
-    veri (bkz. _build_sector_heatmap)."""
-    return _build_sector_heatmap()
+    veri (bkz. _build_sector_heatmap, _get_cached_sector_heatmap)."""
+    return _get_cached_sector_heatmap()
 
 
 @app.get("/api/trend-summary")

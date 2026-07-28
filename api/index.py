@@ -44,6 +44,7 @@ from src.web.app import (
     market_data as _market_data_view,
     sector_heatmap as _sector_heatmap_view,
     source_health_page as _source_health_view,
+    start_sector_heatmap_background_refresh,
     ticker_quotes_endpoint as _ticker_quotes_view,
     trend_summary as _trend_summary_view,
 )
@@ -76,6 +77,12 @@ async def lifespan(app: FastAPI):
     # bir persistent process olduğundan (serverless DEĞİL), background
     # task'ı burada başlatmak güvenli ve doğru yer.
     start_background_refresh()
+    # Sektör ısı haritası için de AYNI mimari (bkz. src/web/app.py >
+    # _SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS notu) - GERÇEK teşhisle
+    # bulundu: asıl maliyet Render (Oregon) <-> Neon (Frankfurt) ağ
+    # gecikmesi, DB sorgusunun kendisi ~1.8ms (EXPLAIN ANALYZE ile
+    # doğrulandı).
+    start_sector_heatmap_background_refresh()
     yield
 
 
