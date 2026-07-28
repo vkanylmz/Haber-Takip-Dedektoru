@@ -44,7 +44,7 @@ from src.summarizer import (
     VALID_TOP_CATEGORIES,
 )
 from src.trend_report import get_dashboard_trend_summary
-from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers
+from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers, start_background_refresh
 
 # Önem skoru filtresi dropdown'ında sunulan eşik seçenekleri (min. skor).
 _IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
@@ -112,6 +112,12 @@ async def lifespan(app: FastAPI):
     config = load_config()
     db_path = config.get("database", {}).get("path", "data/finans_haber.db")
     init_db(db_path)
+    # Piyasa verisi önbelleğini kullanıcı isteklerinden bağımsız arka planda
+    # proaktif tutan görevi başlat (bkz. src/web/market_data.py >
+    # start_background_refresh) - bu olmadan get_market_snapshot() artık
+    # kendiliğinden yenilenmez (TTL kontrolü kaldırıldı, bkz. o modüldeki
+    # not), yalnızca ilk isteğin döndürdüğü veride sonsuza kadar kalırdı.
+    start_background_refresh()
     yield
 
 

@@ -84,27 +84,37 @@ MARKET_SYMBOLS: list[tuple[str, str]] = [
 #      ilerlediği gözlendi. Yani 10 sn'lik bir aralık, kaynağın kendi tik
 #      hızına yakın durarak neredeyse her gerçek güncellemeyi yakalar - daha
 #      sık sormanın (rate-limit güvenli olsa da) somut bir faydası olmaz.
-# Sonuç: 10 sn seçildi - kaynağın gerçek tik hızına en yakın, güvenlik payı
-# hâlâ çok yüksek (test edilen en agresif aralığın [2 sn] 5 katı kadar
+# Sonuç: 12 sn seçildi - kaynağın gerçek tik hızına en yakın, güvenlik payı
+# hâlâ çok yüksek (test edilen en agresif aralığın [2 sn] 6 katı kadar
 # gevşek) bir değer.
-_CACHE_TTL_SECONDS = 10.0
+#
+# MİMARİ NOT (2026-07, çoklu kullanıcı performans düzeltmesi): bu değer
+# ARTIK bir "TTL" (kullanıcı isteği geldiğinde ne kadar eski veri kabul
+# edilir) DEĞİL - bir arka plan görevinin (bkz. _background_refresh_loop)
+# önbelleği ne sıklıkla PROAKTİF olarak tazelediğini belirler. Öncesinde
+# (reaktif model) bir kullanıcı isteği önbellek "bayatladığında" Yahoo'ya
+# GERÇEK ZAMANLI olarak gidip _refresh_lock'u BEKLEMEK zorunda kalıyordu -
+# gerçek testte bu, 2-3 eşzamanlı kullanıcıda 900-1200ms'lik gerçek kilit
+# bekleme süresine yol açtığı ÖLÇÜLDÜ. Şimdi arka plan görevi önbelleği
+# kullanıcıdan TAMAMEN BAĞIMSIZ olarak sürekli taze tutuyor -
+# `get_market_snapshot()` artık hiçbir zaman kilit BEKLEMİYOR, sadece
+# hazır veriyi okuyor (soğuk başlangıç anındaki TEK seferlik istisna
+# hariç, bkz. get_market_snapshot).
+_BACKGROUND_REFRESH_INTERVAL_SECONDS = 12.0
 _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
 
-# "Thundering herd" koruması: dashboard'daki her açık sekme/kullanıcı, ticker'ı
-# TAM OLARAK aynı `_CACHE_TTL_SECONDS` (10 sn) aralığıyla yeniliyor (bkz.
-# dashboard.html > setInterval(refreshMarketTicker, 10000)) - önbellek TAM
-# tükendiği anda birden fazla kullanıcının isteği çakışırsa, kilit OLMADAN
-# HEPSİ bağımsız olarak Yahoo Finance'e 12 sembol için istek atardı (2
-# kullanıcı = 24, 10 kullanıcı = 120 EŞZAMANLI istek). Bu, GERÇEK bir yükte
-# doğrulandı (2026-07): 10 eşzamanlı istek Render'ın kısıtlı (0.1 vCPU)
-# ücretsiz katmanında ~8 saniyeye kadar sürdü - httpx client timeout'una
-# (8.0 sn) neredeyse çarpıyordu, biraz daha yük/ağ gecikmesiyle gerçek
-# zaman aşımlarına (ve dolayısıyla "veri çekilemedi" hatasına) yol açması
-# an meselesiydi. Bu kilit, önbellek tazelemesini TEK BİR eşzamanlı
-# çağrıyla sınırlar - diğerleri kilidi bekleyip TAZE önbellekten okur,
-# gerçek Yahoo Finance istek sayısı kullanıcı sayısından BAĞIMSIZ olarak
-# her zaman en fazla 12'de kalır.
+# "Thundering herd" koruması: HEM arka plan görevinin kendi periyodik
+# tazelemesi HEM DE soğuk başlangıç anında (süreç yeni başladığında, arka
+# plan görevi henüz ilk tazelemesini yapmamışken) birden fazla kullanıcının
+# isteği çakışırsa, bu kilit ikisinin AYNI ANDA Yahoo'ya gitmesini engeller
+# (bkz. get_market_snapshot'taki soğuk başlangıç fallback'i). Normal
+# (soğuk olmayan) durumda kullanıcı istekleri bu kilide HİÇ dokunmaz.
 _refresh_lock = asyncio.Lock()
+
+# Arka plan tazeleme görevinin kendi referansı - start_background_refresh()
+# idempotent olsun diye (ör. yeniden import/reload durumunda ikinci bir
+# döngü başlatılmasın) tutulur.
+_background_task: "asyncio.Task[None] | None" = None
 
 
 async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict[str, Any] | None:
@@ -329,72 +339,116 @@ async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str
     return results
 
 
+async def _refresh_market_data_cache() -> None:
+    """Yahoo'dan GERÇEK veriyi çekip önbelleği yazar - hem arka plan görevi
+    (bkz. _background_refresh_loop) hem de soğuk başlangıç fallback'i (bkz.
+    get_market_snapshot) TEK bir kaynak-of-truth olarak bu fonksiyonu
+    kullanır. Çağıran taraf `_refresh_lock`'u tutmakla YÜKÜMLÜDÜR - bu
+    fonksiyonun kendisi kilit almaz (tekrar-giriş/deadlock riski olmasın).
+
+    Tazeleme TAMAMEN başarısız olursa (ör. geçici bir ağ sorunu - TÜM
+    sembollerin isteği başarısız olur) önbellekteki ESKİ ama GERÇEK veri
+    SİLİNMEZ - kullanıcıya aniden boş/hata göstermek yerine biraz eski ama
+    gerçek veri gösterilmeye devam edilir, bir sonraki tazeleme denemesi
+    başarılı olursa güncellenir."""
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
+
+    data = [r for r in results if r is not None]
+    now = time.monotonic()
+
+    if len(data) == len(MARKET_SYMBOLS):
+        # Tam başarı - önbelleği doğrudan güncelle.
+        _cache["data"] = data
+        _cache["fetched_at"] = now
+    elif data:
+        # KISMİ başarı (ör. 12 semboldan sadece birkaçı) - bu turda
+        # BAŞARISIZ olan sembollerin ESKİ (varsa) değerlerini KORUYARAK
+        # birleştir, ham `data`'yı doğrudan önbelleğe YAZMA. Aksi halde
+        # kısmi bir başarı, önceki TAM (ör. 12/12) önbelleği aniden
+        # sparse bir veriyle EZERDİ - bu, GERÇEK production'da (Render'da,
+        # 2026-07) gözlemlendi: Yahoo Finance bazı sembolleri geçici
+        # olarak reddederken, önbellek her turda 1-2 sembole düşüyor,
+        # kullanıcı önceden gördüğü diğer 10-11 sembolü KAYBEDİYORDU.
+        previous_by_symbol = {item["symbol"]: item for item in (_cache["data"] or [])}
+        new_by_symbol = {item["symbol"]: item for item in data}
+        merged = [
+            new_by_symbol.get(symbol) or previous_by_symbol.get(symbol)
+            for symbol, _label in MARKET_SYMBOLS
+        ]
+        _cache["data"] = [item for item in merged if item is not None]
+        _cache["fetched_at"] = now
+        logger.warning(
+            "Piyasa verisi tazeleme denemesi KISMİ başarılı (%d/%d sembol) - "
+            "eksik semboller için önbellekteki eski değerler korundu.",
+            len(data), len(MARKET_SYMBOLS),
+        )
+    elif _cache["data"] is not None:
+        logger.warning(
+            "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (0/%d sembol) - "
+            "önbellekteki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
+            len(MARKET_SYMBOLS),
+        )
+    else:
+        # İlk çalıştırmadan beri hiç başarılı veri yok - gösterilecek
+        # "eski" bir veri da yok, boş liste dönmek zorundayız.
+        _cache["data"] = data
+        _cache["fetched_at"] = now
+
+
+async def _background_refresh_loop() -> None:
+    """Süreç boyunca sürekli çalışır: kullanıcı isteklerinden TAMAMEN
+    BAĞIMSIZ olarak her _BACKGROUND_REFRESH_INTERVAL_SECONDS (12 sn) bir
+    önbelleği proaktif olarak tazeler. Bu sayede `get_market_snapshot()`
+    çağıran normal istekler HİÇBİR ZAMAN Yahoo'nun yanıt vermesini
+    BEKLEMEZ - her zaman az önce yazılmış, hazır bir önbellekten okur.
+
+    Tek bir Render worker'ında TEK bir bu döngü çalışır (bkz.
+    start_background_refresh - idempotent) - render.yaml'da BİLİNÇLİ
+    olarak tek worker kullanıldığından (bkz. render.yaml yorumu), N
+    worker'da N kat Yahoo isteği riski burada da YOK."""
+    while True:
+        try:
+            async with _refresh_lock:
+                await _refresh_market_data_cache()
+        except Exception:  # noqa: BLE001 - bir tur başarısız olursa döngü YİNE DE devam etsin
+            logger.exception("Arka plan piyasa verisi tazeleme döngüsünde beklenmeyen hata.")
+        await asyncio.sleep(_BACKGROUND_REFRESH_INTERVAL_SECONDS)
+
+
+def start_background_refresh() -> None:
+    """Arka plan tazeleme görevini başlatır - `api/index.py`'nin FastAPI
+    `lifespan`'ından (uygulama başlarken TEK sefer) çağrılır. İdempotenttir:
+    zaten çalışan bir görev varsa tekrar başlatmaz (ör. testlerde/olası bir
+    yeniden çağrıda ikinci bir döngünün sessizce birikmesini önler)."""
+    global _background_task
+    if _background_task is not None and not _background_task.done():
+        return
+    _background_task = asyncio.create_task(_background_refresh_loop())
+
+
 async def get_market_snapshot() -> list[dict[str, Any]]:
     """İzlenen tüm sembollerin güncel fiyat/günlük değişim yüzdesini,
     dashboard'daki gösterim sırasına göre döner. Başarısız olan semboller
     sessizce listeden çıkarılır (bkz. _fetch_one).
 
-    Eşzamanlı çağrılara karşı İKİ katmanlı koruma:
-      1. `_refresh_lock` - önbellek tazelemesi aynı anda yalnızca TEK bir
-         çağrı tarafından yapılır (bkz. modül seviyesindeki not).
-      2. Tazeleme TAMAMEN başarısız olursa (ör. geçici bir ağ sorunu - TÜM
-         sembollerin isteği başarısız olur) önbellekteki ESKİ ama GERÇEK
-         veri SİLİNMEZ - kullanıcıya aniden boş/hata göstermek yerine biraz
-         eski ama gerçek veri gösterilmeye devam edilir, bir sonraki
-         tazeleme denemesi (10 sn sonra) başarılı olursa güncellenir.
-    """
-    now = time.monotonic()
-    if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
+    NORMAL DURUMDA bu fonksiyon HİÇBİR AĞ İSTEĞİ YAPMAZ / HİÇBİR KİLİT
+    BEKLEMEZ - sadece arka plan görevinin (bkz. _background_refresh_loop)
+    az önce yazdığı hazır önbellekten okur. Tek istisna: SÜREÇ YENİ
+    BAŞLADIYSA ve arka plan görevi henüz ilk tazelemesini yapmadıysa
+    (`_cache["data"] is None`), o TEK seferlik soğuk başlangıç anında
+    burada senkron bir fallback tazeleme yapılır - `_refresh_lock` sayesinde
+    bu sırada birden fazla kullanıcı gelirse yine TEK bir Yahoo isteği
+    grubu atılır (thundering herd koruması bu istisnai durumda da geçerli)."""
+    if _cache["data"] is not None:
         return _cache["data"]
 
     async with _refresh_lock:
-        # Kilit ALINANA KADAR başka bir eşzamanlı çağrı önbelleği zaten
-        # tazelemiş olabilir - tekrar kontrol et (double-checked locking).
-        now = time.monotonic()
-        if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
+        # Kilit ALINANA KADAR başka bir eşzamanlı çağrı (veya arka plan
+        # görevinin kendisi) önbelleği zaten doldurmuş olabilir - tekrar
+        # kontrol et (double-checked locking).
+        if _cache["data"] is not None:
             return _cache["data"]
+        await _refresh_market_data_cache()
 
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
-
-        data = [r for r in results if r is not None]
-
-        if len(data) == len(MARKET_SYMBOLS):
-            # Tam başarı - önbelleği doğrudan güncelle.
-            _cache["data"] = data
-            _cache["fetched_at"] = now
-        elif data:
-            # KISMİ başarı (ör. 12 semboldan sadece birkaçı) - bu turda
-            # BAŞARISIZ olan sembollerin ESKİ (varsa) değerlerini KORUYARAK
-            # birleştir, ham `data`'yı doğrudan önbelleğe YAZMA. Aksi halde
-            # kısmi bir başarı, önceki TAM (ör. 12/12) önbelleği aniden
-            # sparse bir veriyle EZERDİ - bu, GERÇEK production'da (Render'da,
-            # 2026-07) gözlemlendi: Yahoo Finance bazı sembolleri geçici
-            # olarak reddederken, önbellek her turda 1-2 sembole düşüyor,
-            # kullanıcı önceden gördüğü diğer 10-11 sembolü KAYBEDİYORDU.
-            previous_by_symbol = {item["symbol"]: item for item in (_cache["data"] or [])}
-            new_by_symbol = {item["symbol"]: item for item in data}
-            merged = [
-                new_by_symbol.get(symbol) or previous_by_symbol.get(symbol)
-                for symbol, _label in MARKET_SYMBOLS
-            ]
-            _cache["data"] = [item for item in merged if item is not None]
-            _cache["fetched_at"] = now
-            logger.warning(
-                "Piyasa verisi tazeleme denemesi KISMİ başarılı (%d/%d sembol) - "
-                "eksik semboller için önbellekteki eski değerler korundu.",
-                len(data), len(MARKET_SYMBOLS),
-            )
-        elif _cache["data"] is not None:
-            logger.warning(
-                "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (0/%d sembol) - "
-                "önbellekteki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
-                len(MARKET_SYMBOLS),
-            )
-        else:
-            # İlk çalıştırmadan beri hiç başarılı veri yok - gösterilecek
-            # "eski" bir veri da yok, boş liste dönmek zorundayız.
-            _cache["data"] = data
-            _cache["fetched_at"] = now
-
-        return _cache["data"]
+    return _cache["data"]

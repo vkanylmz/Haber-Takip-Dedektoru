@@ -29,6 +29,8 @@ Mimari":
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -45,6 +47,7 @@ from src.web.app import (
     ticker_quotes_endpoint as _ticker_quotes_view,
     trend_summary as _trend_summary_view,
 )
+from src.web.market_data import start_background_refresh
 
 # Vercel'in serverless ("soğuk başlangıç" olabilen) ortamında FastAPI'nin
 # `lifespan` (startup/shutdown) event'lerinin HER platformda güvenilir
@@ -58,7 +61,25 @@ from src.web.app import (
 _config = load_config()
 init_db(_config.get("database", {}).get("path", "data/finans_haber.db"))
 
-app = FastAPI(title="Finansal Haber Dashboard (Salt-Okunur / Vercel)")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Piyasa verisi önbelleğini kullanıcı isteklerinden TAMAMEN BAĞIMSIZ
+    # olarak arka planda proaktif tutan görevi başlatır (bkz.
+    # src/web/market_data.py > start_background_refresh) - çoklu kullanıcı
+    # performans düzeltmesi (2026-07): önceden bir kullanıcı isteği önbellek
+    # bayatladığında Yahoo'nun yanıt vermesini/kilidi BEKLEMEK zorundaydı
+    # (gerçek testte 2-3 eşzamanlı kullanıcıda 900-1200ms ölçüldü); artık
+    # istekler HER ZAMAN hazır bir önbellekten okuyor. `init_db()` (yukarıda)
+    # BİLEREK import-time'da kalıyor (Vercel'in serverless ortamında
+    # lifespan'ın güvenilir tetiklenmemesi riskine karşı) - ama Render GERÇEK
+    # bir persistent process olduğundan (serverless DEĞİL), background
+    # task'ı burada başlatmak güvenli ve doğru yer.
+    start_background_refresh()
+    yield
+
+
+app = FastAPI(title="Finansal Haber Dashboard (Salt-Okunur / Vercel)", lifespan=lifespan)
 
 # Render free tier'da servis 15 dk inaktivite sonrası spin-down oluyor;
 # kullanıcıya Render'ın kendi varsayılan "spinning up" ekranı yerine kendi
