@@ -11,48 +11,84 @@
        listesi artık otomatik yenilenmiyor (yalnızca manuel sayfa yenileme
        veya filtre değiştirme ile güncellenir) - bu kasıtlı bir değiş tokuş. -->
   <title>Finansal Haber Dashboard</title>
+  <script>
+    // Tema tercihini SAYFA BOYANMADAN ÖNCE uygula (FOUC/yanlış-tema
+    // yanıp sönmesini önlemek için <head>'in en başında, senkron çalışır).
+    // Varsayılan AÇIK tema (bkz. kullanıcı kararı, 2026-07) - yalnızca
+    // localStorage'da açıkça "dark" kaydedilmişse koyu temaya geçilir.
+    (function () {
+      try {
+        if (localStorage.getItem('theme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) { /* localStorage kapalı/erişilemez olabilir - sessizce yut, açık tema kalır */ }
+    })();
+  </script>
   <style>
+    /* ==========================================================
+       Tasarım dili (2026-07 sadeleştirme): Bloomberg HT'nin GERÇEK
+       CSS'i incelenerek (bkz. sohbet) çıkarılan ilkeler bu paletteki
+       DEĞERLERE değil, DİSİPLİNE uygulandı - marka rengi/logosu taklit
+       EDİLMEDİ, kendi vurgu rengimiz (mavi) korundu:
+         - Açık tema VARSAYILAN (kullanıcı kararı) + koyu tema anahtarı
+         - Düz tasarım: box-shadow/backdrop-filter/glow neredeyse yok
+         - Küçük border-radius (6-10px, önceki 12-16px yerine)
+         - TEK vurgu rengi + yalnızca pozitif/negatif için yeşil/kırmızı
+           (önceki 5 renkli rozet sistemi yerine)
+         - Serif başlık + sans-serif gövde ikilisi (harici font YOK,
+           sistem fontları - self-contained kalınır)
+       ========================================================== */
     :root {
-      /* Bloomberg-ish Dark Cyber Theme */
-      --bg: #09090b;
-      --card-bg: rgba(24, 24, 27, 0.65);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --accent: #2563eb;
-      --accent-glow: rgba(37, 99, 235, 0.4);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
+      --bg: #f6f6f7;
+      --surface: #ffffff;
+      --surface-alt: #f0f0f2;
+      --border: #e1e1e4;
+      --text-primary: #16181d;
+      --text-secondary: #4b4d55;
+      --text-muted: #85878f;
+      --accent: #1d4ed8;
+      --accent-contrast: #ffffff;
+      --positive: #0a7a4c;
+      --negative: #b91c1c;
+      --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06);
 
-      --critical: #ef4444;
-      --critical-glow: rgba(239, 68, 68, 0.4);
-      --important: #f59e0b;
-      --medium: #eab308;
-      --low: #64748b;
+      --font-sans: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      --font-serif: Georgia, "Times New Roman", Times, serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
 
-      --pos-bg: rgba(34, 197, 94, 0.15);
-      --pos-txt: #4ade80;
-      --neg-bg: rgba(239, 68, 68, 0.15);
-      --neg-txt: #f87171;
+    :root[data-theme="dark"] {
+      --bg: #0b0b0d;
+      --surface: #18181b;
+      --surface-alt: #131316;
+      --border: #2a2a2e;
+      --text-primary: #f1f1f3;
+      --text-secondary: #b4b6bd;
+      --text-muted: #7c7e86;
+      --accent: #3b82f6;
+      --accent-contrast: #ffffff;
+      --positive: #22c55e;
+      --negative: #ef4444;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body {
-      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family: var(--font-sans);
       background: var(--bg);
-      background-image:
-        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
-      background-attachment: fixed;
-      color: var(--text-main);
+      color: var(--text-primary);
       margin: 0;
       padding: 0 0 3rem 0;
       min-height: 100vh;
     }
 
     header {
-      background: rgba(9, 9, 11, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--card-border);
-      padding: 1.25rem 2rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -64,13 +100,11 @@
     }
 
     header h1 {
+      font-family: var(--font-serif);
       font-size: 1.4rem;
       font-weight: 700;
       margin: 0;
-      background: linear-gradient(to right, #60a5fa, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
+      color: var(--text-primary);
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -78,111 +112,145 @@
 
     header .meta {
       color: var(--text-muted);
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       margin-top: 0.25rem;
+    }
+
+    header .meta a {
+      color: var(--text-secondary);
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+    }
+
+    #theme-toggle {
+      background: var(--surface-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+
+    #theme-toggle:hover {
+      border-color: var(--accent);
     }
 
     form.filter {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.5rem;
-      align-items: center;
+      align-items: flex-start;
     }
 
     select,
     input[type="search"],
     button {
       font-family: inherit;
-      font-size: 0.9rem;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      border: 1px solid var(--card-border);
-      color: var(--text-main);
-      transition: all 0.2s;
+      font-size: 0.88rem;
+      padding: 0.5rem 0.8rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
     }
 
     select {
-      background: #18181b;
-      /* Avoid transparent backgrounds which break native option rendering */
+      background: var(--surface);
       cursor: pointer;
     }
 
     input[type="search"] {
-      background: #18181b;
-      min-width: 220px;
+      background: var(--surface);
+      min-width: 200px;
     }
 
-    input[type="search"]:focus {
+    input[type="search"]:focus,
+    select:focus {
       outline: none;
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-glow);
     }
 
     select option {
-      background: #18181b;
-      color: #f8fafc;
+      background: var(--surface);
+      color: var(--text-primary);
     }
 
     button {
       background: var(--accent);
-      color: white;
-      border: none;
-      font-weight: 500;
+      color: var(--accent-contrast);
+      border: 1px solid var(--accent);
+      font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 0 15px var(--accent-glow);
     }
 
     button:hover {
-      background: #3b82f6;
-      box-shadow: 0 0 20px var(--accent-glow);
-      transform: translateY(-1px);
+      opacity: 0.9;
+    }
+
+    /* --- Katlanır "Filtreler" paneli: gereksinim, en sık kullanılan iki
+       kontrolü (arama, sıralama) her zaman görünür bırakırken kalan 5
+       dropdown'u (kaynak/sektör/bölge/duygu/önem) varsayılan olarak
+       gizler - aktif bir filtre varsa Jinja tarafında `open` eklenir
+       (bkz. HTML), kullanıcı ne uyguladığını kaybetmez. --- */
+    .filter-more {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .filter-more summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.5rem 0.8rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .filter-more summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .filter-more summary::before {
+      content: '▸ ';
+    }
+
+    .filter-more[open] summary::before {
+      content: '▾ ';
+    }
+
+    .filter-more-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0 0.8rem 0.7rem;
     }
 
     main {
-      max-width: 1000px;
-      margin: 2rem auto;
+      max-width: 980px;
+      margin: 1.5rem auto;
       padding: 0 1rem;
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 1.25rem;
     }
 
     .card {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-      opacity: 0.5;
-    }
-
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-      border-color: rgba(255, 255, 255, 0.15);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: var(--shadow-sm);
     }
 
     .card.highlighted {
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      background: linear-gradient(145deg, rgba(24, 24, 27, 0.8) 0%, rgba(239, 68, 68, 0.03) 100%);
-    }
-
-    .card.highlighted::before {
-      background: linear-gradient(90deg, transparent, var(--critical), transparent);
-      opacity: 1;
+      border-left: 3px solid var(--negative);
     }
 
     .card-top {
@@ -193,240 +261,195 @@
     }
 
     .card-title {
-      font-size: 1.15rem;
-      font-weight: 600;
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      font-weight: 700;
       margin: 0 0 0.4rem 0;
       line-height: 1.4;
-      color: #e2e8f0;
+      color: var(--text-primary);
     }
 
     .card-meta {
       color: var(--text-muted);
-      font-size: 0.82rem;
-      margin-bottom: 1rem;
+      font-size: 0.8rem;
+      margin-bottom: 0.85rem;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
 
     .meta-divider {
-      color: #334155;
+      color: var(--border);
     }
 
+    /* --- Önem skoru rozeti: önceki 5-renkli (critical/important/medium/
+       low/unknown) sistem YERİNE tek bir ayırt edici durum bırakıldı -
+       "dikkat çekmesi gereken" (critical) VURGULU, geri kalan HEPSİ aynı
+       nötr rozet. Sınıf adları (badge-critical vb.) DEĞİŞMEDİ - bkz.
+       src/web/app.py > _record_to_view; yalnızca CSS'leri yakınsatıldı. --- */
     .badge {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.3rem 0.75rem;
+      padding: 0.25rem 0.6rem;
       border-radius: 6px;
       font-weight: 700;
-      font-size: 0.85rem;
-      letter-spacing: 0.5px;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
     }
 
     .badge-critical {
-      background: var(--critical);
-      color: #fff;
-      box-shadow: 0 0 15px var(--critical-glow);
-    }
-
-    .badge-important {
-      background: var(--important);
+      background: var(--negative);
       color: #fff;
     }
 
-    .badge-medium {
-      background: var(--medium);
-      color: #000;
-    }
-
-    .badge-low {
-      background: var(--low);
-      color: #fff;
-    }
-
+    .badge-important,
+    .badge-medium,
+    .badge-low,
     .badge-unknown {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: var(--surface-alt);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
     }
 
     .sentiment {
       display: inline-flex;
       align-items: center;
-      gap: 0.3rem;
-      padding: 0.2rem 0.6rem;
-      border-radius: 4px;
-      font-size: 0.75rem;
+      gap: 0.25rem;
+      font-size: 0.78rem;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
 
     .sentiment-positive {
-      background: var(--pos-bg);
-      color: var(--pos-txt);
-      border: 1px solid rgba(74, 222, 128, 0.2);
+      color: var(--positive);
     }
 
     .sentiment-negative {
-      background: var(--neg-bg);
-      color: var(--neg-txt);
-      border: 1px solid rgba(248, 113, 113, 0.2);
+      color: var(--negative);
     }
 
-    .sentiment-neutral {
-      background: rgba(148, 163, 184, 0.1);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.2);
+    .sentiment-neutral,
+    .sentiment-unknown {
+      color: var(--text-muted);
     }
 
     .reason {
-      font-size: 0.88rem;
-      color: #cbd5e1;
-      margin-bottom: 1rem;
-      padding-left: 1rem;
-      border-left: 2px solid #334155;
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.85rem;
+      padding-left: 0.85rem;
+      border-left: 2px solid var(--border);
     }
 
     .summary {
-      margin: 0 0 1rem 0;
+      margin: 0 0 0.85rem 0;
       line-height: 1.6;
-      color: #cbd5e1;
-      font-size: 0.95rem;
+      color: var(--text-secondary);
+      font-size: 0.94rem;
     }
 
     .market-impact {
-      margin: 1rem 0;
-      padding: 0.75rem 1rem;
-      background: rgba(56, 189, 248, 0.05);
-      border: 1px solid rgba(56, 189, 248, 0.15);
-      border-radius: 8px;
-      font-size: 0.92rem;
-      color: #7dd3fc;
-      display: flex;
-      align-items: flex-start;
-      gap: 0.5rem;
-    }
-
-    .market-impact::before {
-      content: '💡';
-      font-size: 1.1rem;
+      margin: 0.85rem 0;
+      padding: 0.65rem 0.85rem;
+      background: var(--surface-alt);
+      border-left: 2px solid var(--accent);
+      border-radius: 4px;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
     }
 
     .key-points {
-      margin: 0 0 1rem 1.2rem;
+      margin: 0 0 0.85rem 1.1rem;
       padding: 0;
-      font-size: 0.9rem;
-      color: #94a3b8;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
     }
 
     .key-points li {
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.35rem;
     }
 
     .links {
       display: flex;
-      gap: 0.75rem;
+      gap: 0.6rem;
       flex-wrap: wrap;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--card-border);
+      margin-top: 0.85rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--border);
     }
 
     .links a {
-      color: #60a5fa;
+      color: var(--accent);
       text-decoration: none;
-      font-size: 0.82rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      padding: 0.25rem 0.5rem;
-      background: rgba(96, 165, 250, 0.1);
-      border-radius: 4px;
-      transition: all 0.2s;
+      font-size: 0.8rem;
+      padding: 0.15rem 0.4rem;
     }
 
     .links a:hover {
-      background: rgba(96, 165, 250, 0.2);
-      color: #93c5fd;
+      text-decoration: underline;
+    }
+
+    /* --- Sektör etiketleri: önceki mor dolgu-renkli pill'ler YERİNE düz,
+       nötr metin (gereksinim: "renkli rozet çeşitliliğini azalt"). --- */
+    .sector-tag {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    .sector-tag:not(:last-child)::after {
+      content: ', ';
     }
 
     .notified-flag {
       font-size: 0.75rem;
-      color: #fbbf24;
+      color: var(--text-muted);
       font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.2rem;
     }
 
     .empty {
       text-align: center;
       color: var(--text-muted);
-      padding: 4rem 1rem;
-      background: var(--card-bg);
-      border: 1px dashed var(--card-border);
-      border-radius: 12px;
-    }
-
-    @keyframes pulseFlash {
-      0% {
-        opacity: 1;
-      }
-
-      50% {
-        opacity: 0.6;
-      }
-
-      100% {
-        opacity: 1;
-      }
+      padding: 3rem 1rem;
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
     }
 
     .live-indicator {
       display: inline-block;
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background-color: #22c55e;
-      box-shadow: 0 0 8px #22c55e;
-      animation: pulseFlash 2s infinite ease-in-out;
+      background-color: var(--positive);
     }
 
     .fear-greed-container {
-      background: rgba(24, 24, 27, 0.65);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1rem 1.5rem;
-      margin-bottom: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1.5rem;
-      backdrop-filter: blur(16px);
-      transition: transform 0.25s;
-    }
-
-    .fear-greed-container:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      gap: 1rem;
     }
 
     .fear-greed-title {
       font-weight: 600;
-      font-size: 1.1rem;
-      color: #f8fafc;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      white-space: nowrap;
     }
 
     .fear-greed-bar {
       flex: 1;
-      height: 12px;
-      background: #18181b;
-      border-radius: 6px;
+      min-width: 120px;
+      height: 8px;
+      background: var(--surface-alt);
+      border-radius: 4px;
       position: relative;
       overflow: hidden;
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
     }
 
     .fear-greed-gradient {
@@ -435,60 +458,52 @@
       left: 0;
       bottom: 0;
       right: 0;
-      background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 50%, #84cc16 75%, #22c55e 100%);
-      opacity: 0.8;
+      background: linear-gradient(90deg, #b91c1c 0%, #d97706 25%, #ca8a04 50%, #65a30d 75%, #0a7a4c 100%);
+      opacity: 0.85;
     }
 
     .fear-greed-marker {
       position: absolute;
       top: -2px;
       bottom: -2px;
-      width: 4px;
-      background: #fff;
+      width: 3px;
+      background: var(--text-primary);
       border-radius: 2px;
-      box-shadow: 0 0 10px #fff;
-      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: left 1.2s ease;
     }
 
     .fear-greed-label {
-      font-size: 1.1rem;
+      font-size: 0.95rem;
       font-weight: 700;
-      min-width: 130px;
+      min-width: 120px;
       text-align: right;
+      white-space: nowrap;
     }
 
     .fg-extreme-fear {
-      color: #ef4444;
-      text-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+      color: var(--negative);
     }
 
     .fg-fear {
-      color: #f97316;
+      color: #b45309;
     }
 
     .fg-neutral {
-      color: #eab308;
+      color: #a16207;
     }
 
     .fg-greed {
-      color: #84cc16;
+      color: #4d7c0f;
     }
 
     .fg-extreme-greed {
-      color: #22c55e;
-      text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+      color: var(--positive);
     }
 
-    /* --- Piyasa şeridi (canlı döviz/emtia/endeks verisi) ---
-       Klasik "ticker tape" gibi kullanıcı etkileşimi olmadan kendiliğinden
-       kayar: overflow:hidden ile taşan içerik gizlenir, #ticker-items JS
-       tarafından İKİ KERE ardı ardına basılır (bkz. refreshMarketTicker) ve
-       @keyframes ile tam %50 sola kaydırılır - içerik iki kopya olduğundan
-       %50'de tam olarak baştaki görünüme döner, böylece sonsuz döngü hiç
-       sıçrama/kesinti olmadan (dikişsiz) akar. */
+    /* --- Piyasa şeridi (canlı döviz/emtia/endeks verisi) --- */
     .market-ticker-wrap {
-      background: rgba(9, 9, 11, 0.9);
-      border-bottom: 1px solid var(--card-border);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
       overflow: hidden;
       white-space: nowrap;
     }
@@ -499,6 +514,7 @@
       padding: 0.4rem 1rem;
       animation: ticker-scroll 35s linear infinite;
       will-change: transform;
+      font-family: var(--font-mono);
     }
 
     @keyframes ticker-scroll {
@@ -515,7 +531,7 @@
       display: inline-flex;
       align-items: center;
       gap: 0.4rem;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       white-space: nowrap;
     }
 
@@ -525,22 +541,23 @@
     }
 
     .ticker-price {
-      color: var(--text-main);
+      color: var(--text-primary);
       font-weight: 700;
     }
 
     .ticker-up {
-      color: #4ade80;
+      color: var(--positive);
     }
 
     .ticker-down {
-      color: #f87171;
+      color: var(--negative);
     }
 
     .ticker-closed {
       color: var(--text-muted);
       font-size: 0.68rem;
-      background: rgba(148, 163, 184, 0.12);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 4px;
       padding: 0.05rem 0.35rem;
     }
@@ -559,17 +576,17 @@
       padding: 0.4rem 1rem;
       overflow-x: auto;
       white-space: nowrap;
-      border-bottom: 1px solid var(--card-border);
-      background: rgba(9, 9, 11, 0.7);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
       scrollbar-width: thin;
     }
 
     .heatmap-title {
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       color: var(--text-muted);
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
       white-space: nowrap;
     }
 
@@ -581,7 +598,7 @@
     .heatmap-box {
       min-width: 64px;
       padding: 0.3rem 0.55rem;
-      border-radius: 6px;
+      border-radius: 4px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -600,29 +617,16 @@
       opacity: 0.85;
     }
 
-    .sector-tag {
-      display: inline-block;
-      padding: 0.1rem 0.45rem;
-      border-radius: 4px;
-      background: rgba(167, 139, 250, 0.12);
-      color: #c4b5fd;
-      border: 1px solid rgba(167, 139, 250, 0.2);
-      font-size: 0.72rem;
-      margin-right: 0.25rem;
-    }
-
     /* --- Trend Özeti paneli (haftalık/aylık, bkz. src/trend_report.py) ---
        Hafif olsun diye Chart.js gibi bir kütüphane YERİNE düz CSS/HTML
        çubuklarla basit bir bar chart çizilir - dashboard'un geri kalanı da
        (ör. sektör ısı haritası) hiçbir harici script kullanmıyor, bu panel
        de aynı kendi-kendine-yeten (self-contained) yaklaşımı sürdürür. */
     .trend-panel {
-      background: rgba(24, 24, 27, 0.65);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1rem 1.5rem;
-      margin-bottom: 1.5rem;
-      backdrop-filter: blur(16px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1.25rem;
     }
 
     .trend-panel-header {
@@ -634,20 +638,19 @@
 
     .trend-panel-title {
       font-weight: 600;
-      font-size: 1.05rem;
-      color: #f8fafc;
+      font-size: 1rem;
+      color: var(--text-primary);
     }
 
     .trend-period-toggle button {
       font-size: 0.75rem;
       padding: 0.3rem 0.7rem;
-      box-shadow: none;
     }
 
     .trend-period-toggle button.inactive {
       background: transparent;
       color: var(--text-muted);
-      border: 1px solid var(--card-border);
+      border: 1px solid var(--border);
     }
 
     .trend-grid {
@@ -672,15 +675,15 @@
     }
 
     .trend-bar-track {
-      background: rgba(148, 163, 184, 0.12);
+      background: var(--surface-alt);
       border-radius: 4px;
-      height: 10px;
+      height: 8px;
       overflow: hidden;
     }
 
     .trend-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #60a5fa, #a78bfa);
+      background: var(--accent);
       border-radius: 4px;
     }
 
@@ -689,7 +692,7 @@
       font-weight: 700;
       font-size: 0.85rem;
       padding: 0.15rem 0.5rem;
-      border-radius: 6px;
+      border-radius: 4px;
       margin-left: 0.5rem;
     }
 
@@ -703,7 +706,7 @@
     .trend-top-news li {
       font-size: 0.8rem;
       margin-bottom: 0.35rem;
-      color: var(--text-main);
+      color: var(--text-primary);
     }
 
     .trend-top-news {
@@ -717,17 +720,12 @@
       font-size: 0.85rem;
     }
 
-    /* --- Haftalık Emtia Raporu paneli (bkz. src/commodity_report.py > Faz 2)
-       Trend paneliyle AYNI kart/kapsayıcı stili - burada da Chart.js YERİNE
-       basit bir inline SVG polyline sparkline kullanılıyor (yukarıdaki
-       trend-panel yorumundaki AYNI "hafif/self-contained" gerekçeyle). --- */
+    /* --- Haftalık Emtia Raporu paneli (bkz. src/commodity_report.py > Faz 2) --- */
     .commodity-panel {
-      background: rgba(24, 24, 27, 0.65);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1rem 1.5rem;
-      margin-bottom: 1.5rem;
-      backdrop-filter: blur(16px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1.25rem;
     }
 
     .commodity-panel-header {
@@ -739,8 +737,8 @@
 
     .commodity-panel-title {
       font-weight: 600;
-      font-size: 1.05rem;
-      color: #f8fafc;
+      font-size: 1rem;
+      color: var(--text-primary);
     }
 
     .commodity-panel-updated {
@@ -751,14 +749,14 @@
     .commodity-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 0.75rem;
+      gap: 0.65rem;
     }
 
     .commodity-card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 0.75rem 0.85rem;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.7rem 0.8rem;
     }
 
     .commodity-card-top {
@@ -771,32 +769,30 @@
 
     .commodity-label {
       font-weight: 600;
-      font-size: 0.85rem;
-      color: #e2e8f0;
+      font-size: 0.84rem;
+      color: var(--text-primary);
     }
 
     .commodity-change {
       font-weight: 700;
       font-size: 0.8rem;
-      padding: 0.1rem 0.4rem;
-      border-radius: 4px;
+      font-family: var(--font-mono);
       white-space: nowrap;
     }
 
     .commodity-change.up {
-      background: rgba(34, 197, 94, 0.15);
-      color: #4ade80;
+      color: var(--positive);
     }
 
     .commodity-change.down {
-      background: rgba(239, 68, 68, 0.15);
-      color: #f87171;
+      color: var(--negative);
     }
 
     .commodity-price {
       font-size: 0.78rem;
       color: var(--text-muted);
       margin-bottom: 0.4rem;
+      font-family: var(--font-mono);
     }
 
     .commodity-sparkline {
@@ -808,7 +804,7 @@
 
     .commodity-analysis {
       font-size: 0.72rem;
-      color: #cbd5e1;
+      color: var(--text-secondary);
       line-height: 1.4;
       display: -webkit-box;
       -webkit-line-clamp: 3;
@@ -818,41 +814,37 @@
 
     /* --- Çapraz kaynak karşılaştırma (bir haber grubunda >1 kaynak varsa) --- */
     .compare-details {
-      margin-top: 1rem;
-      padding-top: 0.75rem;
-      border-top: 1px solid var(--card-border);
+      margin-top: 0.85rem;
+      padding-top: 0.7rem;
+      border-top: 1px solid var(--border);
     }
 
     .compare-details summary {
       cursor: pointer;
       font-size: 0.82rem;
-      color: #93c5fd;
+      color: var(--accent);
       font-weight: 600;
       user-select: none;
-    }
-
-    .compare-details summary:hover {
-      color: #bfdbfe;
     }
 
     .compare-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 0.75rem;
-      margin-top: 0.75rem;
+      gap: 0.7rem;
+      margin-top: 0.7rem;
     }
 
     .compare-item {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
       padding: 0.6rem 0.75rem;
     }
 
     .compare-source {
       font-size: 0.72rem;
       font-weight: 700;
-      color: #a78bfa;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.3px;
       margin-bottom: 0.3rem;
@@ -861,14 +853,14 @@
     .compare-title {
       font-size: 0.85rem;
       font-weight: 600;
-      color: #e2e8f0;
+      color: var(--text-primary);
       margin-bottom: 0.3rem;
       line-height: 1.35;
     }
 
     .compare-snippet {
       font-size: 0.78rem;
-      color: #94a3b8;
+      color: var(--text-secondary);
       line-height: 1.5;
     }
   </style>
@@ -891,8 +883,8 @@
     <div>
       <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
       <div class="meta">
-        X-RAY GÖRÜNÜMÜ · {{ total_count }} sinyal · Eşik: {{ threshold }}/5 · Otonom tarama aktif ·
-        <a href="/detayli-inceleme" style="color: var(--text-muted);">📊 Detaylı İnceleme</a>
+        {{ total_count }} haber · Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif ·
+        <a href="/detayli-inceleme">Detaylı İnceleme</a>
         <!-- "Şirket Profili" ve "Kaynak Sağlığı" linkleri kasıtlı olarak
              navigasyondan kaldırıldı (kullanıcı isteği) - route'lar VE
              backend kodu (src/web/app.py > company_profile_page,
@@ -902,44 +894,52 @@
              eklenebilir. -->
       </div>
     </div>
-    <form class="filter" method="get" action="/">
-      <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
-      <select name="source" onchange="this.form.submit()">
-        <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
-        {% for s in sources %}
-        <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-      <select name="sector" onchange="this.form.submit()">
-        <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
-        {% for sec in sectors %}
-        <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
-        {% endfor %}
-      </select>
-      <select name="region" onchange="this.form.submit()">
-        <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
-        {% for reg in regions %}
-        <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
-        {% endfor %}
-      </select>
-      <select name="sentiment" onchange="this.form.submit()">
-        <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
-        {% for sent in sentiments %}
-        <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
-        {% endfor %}
-      </select>
-      <select name="min_importance" onchange="this.form.submit()">
-        <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
-        {% for opt in importance_options %}
-        <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
-        {% endfor %}
-      </select>
-      <select name="sort" onchange="this.form.submit()">
-        <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
-        <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
-      </select>
-      <button type="submit">Filtrele</button>
-    </form>
+    <div class="header-controls">
+      <form class="filter" method="get" action="/">
+        <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
+        <select name="sort" onchange="this.form.submit()">
+          <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni</option>
+          <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski</option>
+        </select>
+        <details class="filter-more" {% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %}open{% endif %}>
+          <summary>Filtreler{% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %} (aktif){% endif %}</summary>
+          <div class="filter-more-grid">
+            <select name="source">
+              <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
+              {% for s in sources %}
+              <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <select name="sector">
+              <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
+              {% for sec in sectors %}
+              <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="region">
+              <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
+              {% for reg in regions %}
+              <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="sentiment">
+              <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
+              {% for sent in sentiments %}
+              <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="min_importance">
+              <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
+              {% for opt in importance_options %}
+              <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
+              {% endfor %}
+            </select>
+          </div>
+        </details>
+        <button type="submit">Uygula</button>
+      </form>
+      <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
+    </div>
   </header>
 
   <main>
@@ -958,7 +958,7 @@
 
       <div class="trend-panel">
         <div class="trend-panel-header">
-          <span class="trend-panel-title">📈 Trend Özeti</span>
+          <span class="trend-panel-title">Trend Özeti</span>
           <span class="trend-period-toggle">
             <button type="button" id="trend-btn-weekly" onclick="loadTrendSummary('weekly')">Haftalık</button>
             <button type="button" id="trend-btn-monthly" class="inactive" onclick="loadTrendSummary('monthly')">Aylık</button>
@@ -971,7 +971,7 @@
 
       <div class="commodity-panel">
         <div class="commodity-panel-header">
-          <span class="commodity-panel-title">🛒 Haftalık Emtia Raporu</span>
+          <span class="commodity-panel-title">Haftalık Emtia Raporu</span>
           <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
         </div>
         <div id="commodity-panel-body">
@@ -981,8 +981,7 @@
 
       {% if not records %}
       <div class="empty">
-        <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
-        Veri akışı bekleniyor. Otonom ajan piyasaları tarıyor...
+        Henüz haber yok. Otomatik tarama devam ediyor…
       </div>
       {% endif %}
 
@@ -1005,7 +1004,7 @@
               {% endif %}
               {% if r.notified %}
               <span class="meta-divider">|</span>
-              <span class="notified-flag">📨 Telegram Aktarıldı</span>
+              <span class="notified-flag">Telegram Aktarıldı</span>
               {% endif %}
             </div>
           </div>
@@ -1040,7 +1039,7 @@
 
         {% if r.source_comparison %}
         <details class="compare-details">
-          <summary>🔀 Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
+          <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
           <div class="compare-grid">
             {% for c in r.source_comparison %}
             <div class="compare-item">
@@ -1058,6 +1057,22 @@
   </main>
 
   <script>
+    function initThemeToggle() {
+      const btn = document.getElementById('theme-toggle');
+      const current = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      btn.textContent = current() === 'dark' ? '☀️' : '🌙';
+      btn.addEventListener('click', function () {
+        const next = current() === 'dark' ? 'light' : 'dark';
+        if (next === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+        }
+        try { localStorage.setItem('theme', next); } catch (e) { /* erişilemezse sessizce yut */ }
+        btn.textContent = next === 'dark' ? '☀️' : '🌙';
+      });
+    }
+
     async function refreshMarketTicker() {
       const container = document.getElementById('ticker-items');
       // `hasData`: konteynerde daha önce GERÇEK/başarılı bir veri gösterilip
@@ -1080,8 +1095,8 @@
           const arrow = up ? '▲' : '▼';
           const cls = up ? 'ticker-up' : 'ticker-down';
           const priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
-          const closedTag = item.is_open ? '' : '<span class="ticker-closed" title="Piyasa şu an kapalı, gösterilen son kapanış fiyatı">🔒 kapalı</span>';
-          const delayedTag = item.is_delayed ? '<span class="ticker-closed" title="Bu kaynak (Yahoo Finance) bu sembolü ücretsiz erişimde gecikmeli veriyor - borsanın gerçek zamanlı veri lisansı gerektirmesi nedeniyle">⏱ ~' + item.delay_minutes + 'dk gecikmeli</span>' : '';
+          const closedTag = item.is_open ? '' : '<span class="ticker-closed" title="Piyasa şu an kapalı, gösterilen son kapanış fiyatı">kapalı</span>';
+          const delayedTag = item.is_delayed ? '<span class="ticker-closed" title="Bu kaynak (Yahoo Finance) bu sembolü ücretsiz erişimde gecikmeli veriyor - borsanın gerçek zamanlı veri lisansı gerektirmesi nedeniyle">~' + item.delay_minutes + 'dk gecikmeli</span>' : '';
           return '<span class="ticker-item"><span class="ticker-label">' + item.label +
             '</span><span class="ticker-price">' + priceStr + '</span><span class="' + cls + '">' +
             arrow + ' ' + Math.abs(item.change_pct).toFixed(2) + '%</span>' + closedTag + delayedTag + '</span>';
@@ -1141,13 +1156,12 @@
 
         let volumeHtml = '';
         if (data.volume_change_pct === null) {
-          volumeHtml = '<span class="trend-volume-badge" style="background:rgba(148,163,184,0.15); color:#94a3b8;">önceki dönemle karşılaştırılamıyor</span>';
+          volumeHtml = '<span class="trend-volume-badge" style="color:var(--text-muted);">önceki dönemle karşılaştırılamıyor</span>';
         } else {
           const up = data.volume_change_pct >= 0;
-          const color = up ? '#22c55e' : '#ef4444';
-          const bg = up ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+          const color = up ? 'var(--positive)' : 'var(--negative)';
           const arrow = up ? '▲' : '▼';
-          volumeHtml = '<span class="trend-volume-badge" style="background:' + bg + '; color:' + color + ';">' +
+          volumeHtml = '<span class="trend-volume-badge" style="color:' + color + ';">' +
             arrow + ' ' + (up ? '+' : '') + data.volume_change_pct + '%</span>';
         }
 
@@ -1169,17 +1183,17 @@
         const topNewsHtml = data.top_news.length
           ? '<ul class="trend-top-news">' + data.top_news.map(function (n) {
               const score = n.importance_score != null ? n.importance_score : '?';
-              return '<li>⭐ [' + score + '/5] ' + escapeHtml(n.title) + ' <span style="color:var(--text-muted)">(' + escapeHtml(n.sources) + ')</span></li>';
+              return '<li>[' + score + '/5] ' + escapeHtml(n.title) + ' <span style="color:var(--text-muted)">(' + escapeHtml(n.sources) + ')</span></li>';
             }).join('') + '</ul>'
           : '<span class="trend-empty">Öne çıkan haber yok.</span>';
 
         body.innerHTML =
           '<div class="trend-grid">' +
-          '<div><div style="font-size:0.85rem; margin-bottom:0.5rem;">🏭 En Çok Haber Alan Sektörler</div>' + sectorsHtml + '</div>' +
+          '<div><div style="font-size:0.85rem; margin-bottom:0.5rem;">En Çok Haber Alan Sektörler</div>' + sectorsHtml + '</div>' +
           '<div>' +
-          '<div style="font-size:0.85rem;">📰 Toplam haber: <b>' + data.total_count + '</b>' + volumeHtml + '</div>' +
+          '<div style="font-size:0.85rem;">Toplam haber: <b>' + data.total_count + '</b>' + volumeHtml + '</div>' +
           sentimentHtml +
-          '<div style="font-size:0.85rem; margin-top:0.75rem; margin-bottom:0.4rem;">⭐ En Önemli Haberler</div>' + topNewsHtml +
+          '<div style="font-size:0.85rem; margin-top:0.75rem; margin-bottom:0.4rem;">En Önemli Haberler</div>' + topNewsHtml +
           '</div>' +
           '</div>';
       } catch (e) {
@@ -1222,14 +1236,17 @@
           ? 'Son güncelleme: ' + new Date(data.generated_at).toLocaleString('tr-TR')
           : '(fiyat-only önizleme - ilk haftalık rapor henüz çalışmadı)';
 
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
+        const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+
         body.innerHTML = '<div class="commodity-grid">' + items.map(function (item) {
           const up = item.pct_change >= 0;
           const sign = up ? '+' : '';
           const points = buildSparklinePoints(item.history, 200, 32);
-          const strokeColor = up ? '#4ade80' : '#f87171';
+          const strokeColor = up ? accentColor : downColor;
           const sparklineSvg = points
             ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
-              '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="2"/></svg>'
+              '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
             : '';
           const analysisHtml = item.analysis
             ? '<div class="commodity-analysis" title="' + escapeHtml(item.analysis) + '">' + escapeHtml(item.analysis) + '</div>'
@@ -1249,6 +1266,7 @@
       }
     }
 
+    initThemeToggle();
     refreshMarketTicker();
     refreshSectorHeatmap();
     loadTrendSummary('weekly');
@@ -1262,5 +1280,4 @@
     setInterval(refreshSectorHeatmap, 300000);
   </script>
 </body>
-
 </html>

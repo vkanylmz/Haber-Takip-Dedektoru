@@ -5,26 +5,54 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Detaylı İnceleme — Finansal Haber Dashboard</title>
+  <script>
+    // Ana dashboard'la (bkz. dashboard.html <head>) AYNI tema-önce-boyama
+    // mantığı - iki sayfa arasında tutarlı kalmalı, kullanıcı hangi sayfayı
+    // önce açarsa açsın aynı tercih uygulanır (localStorage paylaşılır).
+    (function () {
+      try {
+        if (localStorage.getItem('theme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) { /* localStorage kapalı/erişilemez olabilir - sessizce yut */ }
+    })();
+  </script>
   <style>
+    /* Ana dashboard'la (bkz. dashboard.html) AYNI tasarım dili/değişkenleri -
+       iki şablon da self-contained olduğundan (paylaşılan bir CSS dosyası/
+       include YOK, projenin mevcut deseni) değerler burada TEKRARLANIYOR,
+       ama İKİSİ DE aynı kaynaktan (bu sohbetteki Bloomberg HT araştırması)
+       türetildi - bkz. sohbet. */
     :root {
-      --bg: #09090b;
-      --card-bg: rgba(24, 24, 27, 0.65);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --accent: #2563eb;
-      --accent-glow: rgba(37, 99, 235, 0.4);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
+      --bg: #f6f6f7;
+      --surface: #ffffff;
+      --surface-alt: #f0f0f2;
+      --border: #e1e1e4;
+      --text-primary: #16181d;
+      --text-secondary: #4b4d55;
+      --text-muted: #85878f;
+      --accent: #1d4ed8;
+      --positive: #0a7a4c;
+      --negative: #b91c1c;
+      --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06);
 
-      --critical: #ef4444;
-      --critical-glow: rgba(239, 68, 68, 0.4);
-      --important: #f59e0b;
-      --medium: #eab308;
-      --low: #64748b;
+      --font-sans: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      --font-serif: Georgia, "Times New Roman", Times, serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
 
-      --pos-bg: rgba(34, 197, 94, 0.15);
-      --pos-txt: #4ade80;
-      --neg-bg: rgba(239, 68, 68, 0.15);
-      --neg-txt: #f87171;
+    :root[data-theme="dark"] {
+      --bg: #0b0b0d;
+      --surface: #18181b;
+      --surface-alt: #131316;
+      --border: #2a2a2e;
+      --text-primary: #f1f1f3;
+      --text-secondary: #b4b6bd;
+      --text-muted: #7c7e86;
+      --accent: #3b82f6;
+      --positive: #22c55e;
+      --negative: #ef4444;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 
     * {
@@ -32,13 +60,9 @@
     }
 
     body {
-      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family: var(--font-sans);
       background: var(--bg);
-      background-image:
-        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
-      background-attachment: fixed;
-      color: var(--text-main);
+      color: var(--text-primary);
       margin: 0;
       padding: 0 0 3rem 0;
       min-height: 100vh;
@@ -46,10 +70,9 @@
     }
 
     header {
-      background: rgba(9, 9, 11, 0.8);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--card-border);
-      padding: 1.25rem 1.5rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.5rem;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -61,13 +84,11 @@
     }
 
     header h1 {
-      font-size: 1.3rem;
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
       font-weight: 700;
       margin: 0;
-      background: linear-gradient(to right, #60a5fa, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
+      color: var(--text-primary);
     }
 
     header .meta {
@@ -83,7 +104,22 @@
     }
 
     .back-link:hover {
-      color: var(--text-main);
+      color: var(--text-primary);
+    }
+
+    #theme-toggle {
+      background: var(--surface-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+
+    #theme-toggle:hover {
+      border-color: var(--accent);
     }
 
     main {
@@ -92,107 +128,94 @@
          önceki değer, sütunları gereksiz yere daraltıyordu. */
       max-width: 1900px;
       width: 97%;
-      margin: 1.5rem auto;
+      margin: 1.25rem auto;
       padding: 0 0.5rem;
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      gap: 1rem;
     }
 
     /* --- Piyasa Duygusu (Korku/Açgözlülük) --- */
     .fear-greed-container {
-      background: rgba(24, 24, 27, 0.65);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1rem 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 1rem;
-      backdrop-filter: blur(16px);
     }
 
     .fear-greed-title {
       font-weight: 600;
-      font-size: 1rem;
-      color: #f8fafc;
+      font-size: 0.95rem;
+      color: var(--text-primary);
       white-space: nowrap;
     }
 
     .fear-greed-bar {
       flex: 1;
       min-width: 120px;
-      height: 12px;
-      background: #18181b;
-      border-radius: 6px;
+      height: 8px;
+      background: var(--surface-alt);
+      border-radius: 4px;
       position: relative;
       overflow: hidden;
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
     }
 
     .fear-greed-gradient {
       position: absolute;
       inset: 0;
-      background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 50%, #84cc16 75%, #22c55e 100%);
-      opacity: 0.8;
+      background: linear-gradient(90deg, #b91c1c 0%, #d97706 25%, #ca8a04 50%, #65a30d 75%, #0a7a4c 100%);
+      opacity: 0.85;
     }
 
     .fear-greed-marker {
       position: absolute;
       top: -2px;
       bottom: -2px;
-      width: 4px;
-      background: #fff;
+      width: 3px;
+      background: var(--text-primary);
       border-radius: 2px;
-      box-shadow: 0 0 10px #fff;
     }
 
     .fear-greed-label {
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
       white-space: nowrap;
     }
 
     .fg-extreme-fear {
-      color: #ef4444;
+      color: var(--negative);
     }
 
     .fg-fear {
-      color: #f97316;
+      color: #b45309;
     }
 
     .fg-neutral {
-      color: #eab308;
+      color: #a16207;
     }
 
     .fg-greed {
-      color: #84cc16;
+      color: #4d7c0f;
     }
 
     .fg-extreme-greed {
-      color: #22c55e;
+      color: var(--positive);
     }
 
     /* --- Genel filtreler + sıralama (3 sütunun HEPSİNE aynı anda uygulanır) --- */
     .sort-section {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 0.85rem 1.25rem;
-      backdrop-filter: blur(16px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1.1rem;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.75rem;
-    }
-
-    .sort-heading {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
+      gap: 0.6rem;
     }
 
     .filter-form {
@@ -200,6 +223,44 @@
       flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem;
+    }
+
+    /* --- Katlanır "Filtreler" paneli: ana dashboard'daki (bkz.
+       dashboard.html > .filter-more) AYNI desen - sıralama her zaman
+       görünür kalır, kalan 5 dropdown varsayılan olarak gizlenir. --- */
+    .filter-more {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-alt);
+    }
+
+    .filter-more summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 0.5rem 0.8rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .filter-more summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .filter-more summary::before {
+      content: '▸ ';
+    }
+
+    .filter-more[open] summary::before {
+      content: '▾ ';
+    }
+
+    .filter-more-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0 0.8rem 0.7rem;
     }
 
     /* --- Sütun başlığındaki bağımsız çapraz-sektör alt filtresi --- */
@@ -211,31 +272,33 @@
 
     select {
       font-family: inherit;
-      font-size: 0.88rem;
-      padding: 0.45rem 0.9rem;
-      border-radius: 8px;
-      border: 1px solid var(--card-border);
-      color: var(--text-main);
-      background: #18181b;
+      font-size: 0.86rem;
+      padding: 0.45rem 0.8rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      background: var(--surface);
       cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
     }
 
     /* --- 3 sütunlu yan yana görünüm (masaüstü) --- */
     .columns-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      /* Sütunlar arası boşluk makul ama gereksiz büyük değil - main'in
-         genişlemesiyle birlikte her sütun artık gözle görülür şekilde daha
-         geniş (satır uzunluğu arttı, başlıklar daha az kırılıyor). */
       gap: 0.85rem;
       align-items: start;
     }
 
     .column {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -243,8 +306,8 @@
 
     .column-header {
       flex-shrink: 0;
-      padding: 1rem 1.15rem 0.75rem;
-      border-bottom: 1px solid var(--card-border);
+      padding: 0.9rem 1.1rem 0.7rem;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: baseline;
       justify-content: space-between;
@@ -252,9 +315,10 @@
     }
 
     .column-title {
+      font-family: var(--font-serif);
       font-size: 1.05rem;
       font-weight: 700;
-      color: #e2e8f0;
+      color: var(--text-primary);
     }
 
     .column-count {
@@ -265,32 +329,33 @@
 
     .column-preview {
       flex-shrink: 0;
-      padding: 0.75rem 1.15rem;
-      border-bottom: 1px solid var(--card-border);
+      padding: 0.7rem 1.1rem;
+      border-bottom: 1px solid var(--border);
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.4rem;
+      gap: 0.35rem;
+      background: var(--surface-alt);
     }
 
     .preview-label {
-      font-size: 0.68rem;
+      font-size: 0.66rem;
       color: var(--text-muted);
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.4px;
       white-space: nowrap;
       width: 100%;
-      margin-bottom: 0.15rem;
+      margin-bottom: 0.1rem;
     }
 
     .preview-pill {
       display: inline-block;
-      padding: 0.22rem 0.55rem;
+      padding: 0.2rem 0.5rem;
       border-radius: 999px;
-      background: rgba(167, 139, 250, 0.12);
-      color: #c4b5fd;
-      border: 1px solid rgba(167, 139, 250, 0.2);
+      background: var(--surface);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
       font-size: 0.72rem;
       max-width: 100%;
       overflow: hidden;
@@ -302,13 +367,12 @@
          iken sahip olduğu görsel stille birebir aynı kalması için. */
       font-family: inherit;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
+      transition: border-color 0.15s;
     }
 
     .preview-pill:hover,
     .preview-pill:focus-visible {
-      background: rgba(167, 139, 250, 0.25);
-      border-color: rgba(167, 139, 250, 0.4);
+      border-color: var(--accent);
       outline: none;
     }
 
@@ -321,11 +385,9 @@
     @keyframes jump-highlight-flash {
       0% {
         border-color: var(--accent);
-        box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px var(--accent-glow);
       }
       100% {
-        border-color: var(--card-border);
-        box-shadow: none;
+        border-color: var(--border);
       }
     }
 
@@ -336,10 +398,10 @@
       flex: 1;
       overflow-y: auto;
       max-height: 70vh;
-      padding: 1rem 1.15rem;
+      padding: 0.9rem 1.1rem;
       display: flex;
       flex-direction: column;
-      gap: 0.9rem;
+      gap: 0.8rem;
     }
 
     .column-body::-webkit-scrollbar {
@@ -347,17 +409,21 @@
     }
 
     .column-body::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--border);
       border-radius: 3px;
     }
 
     /* --- Haber kartları (ana dashboard'daki AYNI görsel dil) --- */
     .card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 0.9rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.85rem 0.95rem;
       position: relative;
+    }
+
+    .card.highlighted {
+      border-left: 3px solid var(--negative);
     }
 
     .card-top {
@@ -368,17 +434,18 @@
     }
 
     .card-title {
-      font-size: 0.92rem;
-      font-weight: 600;
+      font-family: var(--font-serif);
+      font-size: 0.94rem;
+      font-weight: 700;
       margin: 0 0 0.35rem 0;
       line-height: 1.35;
-      color: #e2e8f0;
+      color: var(--text-primary);
     }
 
     .card-meta {
       color: var(--text-muted);
       font-size: 0.74rem;
-      margin-bottom: 0.6rem;
+      margin-bottom: 0.55rem;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
@@ -386,91 +453,77 @@
     }
 
     .meta-divider {
-      color: #334155;
+      color: var(--border);
     }
 
     .badge {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.22rem 0.55rem;
+      padding: 0.2rem 0.5rem;
       border-radius: 6px;
       font-weight: 700;
       font-size: 0.74rem;
+      font-family: var(--font-mono);
       flex-shrink: 0;
     }
 
     .badge-critical {
-      background: var(--critical);
-      color: #fff;
-      box-shadow: 0 0 15px var(--critical-glow);
-    }
-
-    .badge-important {
-      background: var(--important);
+      background: var(--negative);
       color: #fff;
     }
 
-    .badge-medium {
-      background: var(--medium);
-      color: #000;
-    }
-
-    .badge-low {
-      background: var(--low);
-      color: #fff;
-    }
-
+    .badge-important,
+    .badge-medium,
+    .badge-low,
     .badge-unknown {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: var(--surface-alt);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
     }
 
     .sentiment {
       display: inline-flex;
       align-items: center;
-      gap: 0.3rem;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.68rem;
+      gap: 0.25rem;
+      font-size: 0.7rem;
       font-weight: 600;
     }
 
     .sentiment-positive {
-      background: var(--pos-bg);
-      color: var(--pos-txt);
+      color: var(--positive);
     }
 
     .sentiment-negative {
-      background: var(--neg-bg);
-      color: var(--neg-txt);
+      color: var(--negative);
     }
 
-    .sentiment-neutral {
-      background: rgba(148, 163, 184, 0.1);
-      color: #94a3b8;
+    .sentiment-neutral,
+    .sentiment-unknown {
+      color: var(--text-muted);
     }
 
     .summary {
       margin: 0 0 0.4rem 0;
       line-height: 1.5;
-      color: #cbd5e1;
+      color: var(--text-secondary);
       font-size: 0.82rem;
     }
 
-    /* --- Şirket haberlerinde borsa+ticker etiketi (ör. "🏢 NASDAQ: TSLA") --- */
+    /* --- Şirket haberlerinde borsa+ticker etiketi (ör. "NASDAQ: TSLA") --- */
     .ticker-badge {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
       gap: 0.4rem;
-      font-size: 0.74rem;
+      font-size: 0.72rem;
       font-weight: 700;
-      color: #93c5fd;
-      background: rgba(37, 99, 235, 0.12);
-      border: 1px solid rgba(37, 99, 235, 0.25);
-      border-radius: 6px;
-      padding: 0.2rem 0.55rem;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.18rem 0.5rem;
       margin-bottom: 0.5rem;
       width: fit-content;
     }
@@ -480,43 +533,40 @@
     }
 
     .ticker-up {
-      color: var(--pos-txt);
+      color: var(--positive);
     }
 
     .ticker-down {
-      color: var(--neg-txt);
+      color: var(--negative);
     }
 
     .sector-tag {
-      display: inline-block;
-      padding: 0.08rem 0.4rem;
-      border-radius: 4px;
-      background: rgba(167, 139, 250, 0.12);
-      color: #c4b5fd;
-      border: 1px solid rgba(167, 139, 250, 0.2);
-      font-size: 0.66rem;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+    }
+
+    .sector-tag:not(:last-child)::after {
+      content: ', ';
     }
 
     .links {
       display: flex;
       gap: 0.5rem;
       flex-wrap: wrap;
-      margin-top: 0.6rem;
-      padding-top: 0.6rem;
-      border-top: 1px solid var(--card-border);
+      margin-top: 0.55rem;
+      padding-top: 0.55rem;
+      border-top: 1px solid var(--border);
     }
 
     .links a {
-      color: #60a5fa;
+      color: var(--accent);
       text-decoration: none;
       font-size: 0.74rem;
-      padding: 0.2rem 0.45rem;
-      background: rgba(96, 165, 250, 0.1);
-      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
     }
 
     .links a:hover {
-      background: rgba(96, 165, 250, 0.2);
+      text-decoration: underline;
     }
 
     .column-empty {
@@ -558,9 +608,10 @@
 <body>
   <header>
     <div>
-      <h1>📊 Detaylı İnceleme</h1>
+      <h1>Detaylı İnceleme</h1>
       <div class="meta"><a class="back-link" href="/">← Dashboard'a dön</a></div>
     </div>
+    <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
   </header>
 
   <main>
@@ -579,44 +630,47 @@
     </div>
 
     <div class="sort-section">
-      <span class="sort-heading">Filtreler</span>
       <form id="filterForm" class="filter-form" method="get" action="/detayli-inceleme">
-        <select name="source" onchange="this.form.submit()">
-          <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
-          {% for s in sources %}
-          <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
-        <select name="sector" onchange="this.form.submit()">
-          <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
-          {% for sec in sectors %}
-          <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
-          {% endfor %}
-        </select>
-        <select name="region" onchange="this.form.submit()">
-          <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
-          {% for reg in regions %}
-          <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
-          {% endfor %}
-        </select>
-        <select name="sentiment" onchange="this.form.submit()">
-          <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
-          {% for sent in sentiments %}
-          <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
-          {% endfor %}
-        </select>
-        <select name="min_importance" onchange="this.form.submit()">
-          <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
-          {% for opt in importance_options %}
-          <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
-          {% endfor %}
-        </select>
         <select name="sort" onchange="this.form.submit()">
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni Üstte</option>
           <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski Üstte</option>
         </select>
+        <details class="filter-more" {% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %}open{% endif %}>
+          <summary>Filtreler{% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %} (aktif){% endif %} — 3 sütunun tamamına uygulanır</summary>
+          <div class="filter-more-grid">
+            <select name="source" onchange="this.form.submit()">
+              <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
+              {% for s in sources %}
+              <option value="{{ s }}" {% if s==selected_source %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <select name="sector" onchange="this.form.submit()">
+              <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
+              {% for sec in sectors %}
+              <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="region" onchange="this.form.submit()">
+              <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
+              {% for reg in regions %}
+              <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="sentiment" onchange="this.form.submit()">
+              <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
+              {% for sent in sentiments %}
+              <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
+              {% endfor %}
+            </select>
+            <select name="min_importance" onchange="this.form.submit()">
+              <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
+              {% for opt in importance_options %}
+              <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
+              {% endfor %}
+            </select>
+          </div>
+        </details>
       </form>
-      <span style="color: var(--text-muted); font-size: 0.78rem;">(3 sütunun tamamına uygulanır)</span>
     </div>
 
     <div class="columns-grid">
@@ -654,7 +708,7 @@
         <div class="column-body">
           {% if not col.records %}
           <div class="column-empty">
-            📭 Bu kategoride henüz haber yok. Yalnızca bu özellik eklendikten
+            Bu kategoride henüz haber yok. Yalnızca bu özellik eklendikten
             sonra özetlenen haberler burada görünür - zamanla artacaktır.
           </div>
           {% endif %}
@@ -683,7 +737,7 @@
                arka plan çağrısıyla dolduruluyor (bkz. src/web/app.py >
                /api/ticker-quotes'taki not). #}
             <div class="ticker-badge" data-ticker="{{ r.company_ticker }}">
-              <span>🏢 {{ r.company_ticker }}</span>
+              <span>{{ r.company_ticker }}</span>
               <span class="ticker-price-slot"></span>
             </div>
             {% endif %}
@@ -710,6 +764,22 @@
   </main>
 
   <script>
+    function initThemeToggle() {
+      const btn = document.getElementById('theme-toggle');
+      const current = () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      btn.textContent = current() === 'dark' ? '☀️' : '🌙';
+      btn.addEventListener('click', function () {
+        const next = current() === 'dark' ? 'light' : 'dark';
+        if (next === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+        }
+        try { localStorage.setItem('theme', next); } catch (e) { /* erişilemezse sessizce yut */ }
+        btn.textContent = next === 'dark' ? '☀️' : '🌙';
+      });
+    }
+
     // Şirket kartlarındaki borsa/ticker etiketlerine GERÇEK anlık fiyat
     // ekler - ama sayfa render'ından TAMAMEN AYRI, sayfa tamamen
     // yüklendikten SONRA çalışır (bkz. src/web/app.py > /api/ticker-quotes
@@ -719,6 +789,8 @@
     // sayfadaki TÜM Şirket kartları için değil (gereksinim: sayfa başına
     // eşzamanlı çekilen sembol sayısı sınırlansın).
     document.addEventListener('DOMContentLoaded', function () {
+      initThemeToggle();
+
       var MAX_TICKERS = 8;
       var badges = document.querySelectorAll('.ticker-badge[data-ticker]');
       if (!badges.length) return;
@@ -741,7 +813,7 @@
             var ticker = badge.getAttribute('data-ticker');
             var quote = quotes[ticker];
             // Sembol çözülemediyse/Yahoo'dan veri alınamadıysa quote
-            // sözlükte YOKTUR - bu durumda etiket sadece "🏢 BORSA: SEMBOL"
+            // sözlükte YOKTUR - bu durumda etiket sadece "BORSA: SEMBOL"
             // olarak kalır, hiçbir hata gösterilmez (gereksinim).
             if (!quote) return;
             var slot = badge.querySelector('.ticker-price-slot');
