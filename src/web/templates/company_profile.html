@@ -177,6 +177,14 @@
       color: #e2e8f0;
     }
 
+    /* Yabancı dildeki başlıkların yanına eklenen Türkçe çevirisi (bkz.
+       src/summarizer.py > title_tr). */
+    .title-tr {
+      font-weight: 400;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+
     .card-meta {
       color: var(--text-muted);
       font-size: 0.82rem;
@@ -345,7 +353,7 @@
     <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
       <div class="card-top">
         <div>
-          <h2 class="card-title">{{ r.title }}</h2>
+          <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}</h2>
           <div class="card-meta">
             <span>{{ r.published_at }}</span>
             <span class="meta-divider">|</span>

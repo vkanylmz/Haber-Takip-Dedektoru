@@ -431,7 +431,8 @@ async def _company_profile_command(update: Update, context: ContextTypes.DEFAULT
         score = r.importance_score if r.importance_score is not None else "?"
         link = r.links_list()[0]["link"] if r.links_list() else None
         title_part = f'<a href="{html.escape(link)}">{html.escape(r.title)}</a>' if link else html.escape(r.title)
-        lines.append(f"• [{score}/5] {title_part} <i>({html.escape(r.sources)})</i>")
+        title_tr_part = f" <i>({html.escape(r.title_tr)})</i>" if getattr(r, "title_tr", None) else ""
+        lines.append(f"• [{score}/5] {title_part}{title_tr_part} <i>({html.escape(r.sources)})</i>")
 
     messages = chunk_messages("\n".join(lines[:1]), lines[1:])
     for i, message_text in enumerate(messages):
@@ -486,7 +487,8 @@ async def _stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         for r in records:
             link = r.links_list()[0]["link"] if r.links_list() else None
             title_part = f'<a href="{html.escape(link)}">{html.escape(r.title)}</a>' if link else html.escape(r.title)
-            lines.append(f"• {title_part} <i>({html.escape(r.sources)})</i>")
+            title_tr_part = f" <i>({html.escape(r.title_tr)})</i>" if getattr(r, "title_tr", None) else ""
+            lines.append(f"• {title_part}{title_tr_part} <i>({html.escape(r.sources)})</i>")
     else:
         lines.append("\n<i>Son 30 günde bu ticker'a etiketlenmiş haber yok.</i>")
 

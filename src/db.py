@@ -50,6 +50,17 @@ class NewsRecord(Base):
     group_key = Column(String(64), unique=True, index=True, nullable=False)
 
     title = Column(String(1000), nullable=False)
+
+    # `title` yabancı dilde (ör. İngilizce kaynak) ise LLM tarafından üretilen
+    # Türkçe çevirisi (bkz. src/summarizer.py > SYSTEM_PROMPT > title_tr).
+    # `title` zaten Türkçe ise (ör. Bloomberg HT, CNBC-e, Ekonomim.com gibi
+    # Türk kaynaklardan gelen haberler) None kalır - gösterim tarafı (bkz.
+    # dashboard.html/detayli_inceleme.html/telegram_format.py) bu durumda
+    # parantez içi çeviri EKLEMEZ. Bu özellik eklenmeden ÖNCE özetlenmiş
+    # eski kayıtlarda da None kalır (geriye dönük yeniden özetleme YAPILMAZ -
+    # gereksiz LLM maliyeti oluşturmamak için kasıtlı).
+    title_tr = Column(Text, nullable=True)
+
     sources = Column(String(500), nullable=False)  # "Bloomberg HT, CNBC-e"
     links = Column(Text, nullable=False)  # JSON: [{"source": "...", "link": "..."}, ...]
 
@@ -412,6 +423,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "company_ticker" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN company_ticker VARCHAR(64)")
             logger.info("Veritabanı migrasyonu: news_records.company_ticker kolonu eklendi.")
+        if "title_tr" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN title_tr TEXT")
+            logger.info("Veritabanı migrasyonu: news_records.title_tr kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -532,6 +546,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record = NewsRecord(
             group_key=group_key,
             title=rep.title,
+            title_tr=group.title_tr,
             sources=sources_str,
             links=json.dumps(links_payload, ensure_ascii=False),
             published_at=group.latest_published_at,
@@ -564,6 +579,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.market_impact = group.market_impact or record.market_impact
         record.top_category = group.top_category or record.top_category
         record.company_ticker = group.company_ticker or record.company_ticker
+        record.title_tr = group.title_tr or record.title_tr
         record.last_seen_at = now
 
     session.flush()

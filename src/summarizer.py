@@ -149,10 +149,20 @@ sembolünü "BORSA: SEMBOL" formatında ver - ör. "NASDAQ: TSLA", "NYSE: XOM", 
 veya haber "sirket" kategorisinde değilse boş string ("") döndür - ASLA \
 tahmin/uydurma bir sembol üretme, emin değilsen boş bırak.
 
+Başlık çevirisi (title_tr):
+- Yukarıdaki bloklardan İLKİNİN "Başlık:" alanı, bu haberin dashboard'da/\
+Telegram'da GÖSTERİLECEK ana/temsili başlığıdır.
+- Bu başlık ZATEN Türkçe İSE title_tr'yi boş string ("") bırak - gereksiz \
+çeviri YAPMA.
+- Bu başlık Türkçe DEĞİLSE (İngilizce veya başka bir dilde), title_tr \
+alanına o başlığın DOĞAL/akıcı, gazetecilik diline uygun Türkçe çevirisini \
+yaz - kelimesi kelimesine birebir çeviri değil, anlamı doğru aktaran bir \
+çeviri olsun.
+
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": ""}
+{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": "", "title_tr": ""}
 """
 
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
@@ -452,6 +462,7 @@ class Summarizer:
             group.sentiment = None
             group.top_category = None
             group.company_ticker = None
+            group.title_tr = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -469,6 +480,7 @@ class Summarizer:
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
         group.top_category = self._parse_top_category(parsed.get("top_category"))
         group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
+        group.title_tr = str(parsed.get("title_tr", "")).strip() or None
 
     def _current_quota_day(self) -> str:
         return datetime.now(_QUOTA_RESET_TZ).strftime("%Y-%m-%d")
@@ -872,3 +884,4 @@ class Summarizer:
         group.market_impact = None
         group.top_category = None
         group.company_ticker = None
+        group.title_tr = None

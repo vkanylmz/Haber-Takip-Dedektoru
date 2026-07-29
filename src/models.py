@@ -57,6 +57,11 @@ class NewsGroup:
     # "NASDAQ: TSLA", "BIST: THYAO"). None -> net bir şirket/ticker
     # belirlenemedi (bkz. summarizer.py > _parse_company_ticker).
     company_ticker: str | None = None
+    # `representative.title` yabancı dilde ise LLM tarafından üretilen
+    # Türkçe çevirisi (bkz. summarizer.py > SYSTEM_PROMPT > title_tr).
+    # Başlık zaten Türkçe ise None kalır - gösterim tarafı parantez içi
+    # çeviri EKLEMEZ (bkz. src/db.py > NewsRecord.title_tr).
+    title_tr: str | None = None
 
     @property
     def representative(self) -> NewsItem:

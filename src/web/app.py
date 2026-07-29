@@ -202,6 +202,7 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         # kullanılmıyorsa hiçbir şeyi bozmaz.
         "record_id": record.group_key,
         "title": record.title,
+        "title_tr": record.title_tr,
         "sources": record.sources,
         "published_at": format_turkey_time(record.published_at) if record.published_at else "tarih bilinmiyor",
         "summary": record.summary or "(özet yok)",

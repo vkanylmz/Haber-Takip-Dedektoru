@@ -39,6 +39,12 @@ def format_news_block(record: "NewsRecord", extra_reason: str | None = None) -> 
     `extra_reason`, günlük özet gibi "neden seçildi" bilgisini eklemek için
     kullanılır (bkz. src/daily_digest.py)."""
     title = html.escape(record.title)
+    # Yabancı dildeki başlıkların yanına parantez içinde Türkçe çevirisi
+    # eklenir (bkz. src/summarizer.py > title_tr) - başlık zaten Türkçe ise
+    # (title_tr None/boş) hiçbir şey eklenmez.
+    title_tr = getattr(record, "title_tr", None)
+    if title_tr:
+        title = f"{title} <i>({html.escape(title_tr)})</i>"
     sources = html.escape(record.sources)
     summary = html.escape(record.summary or "")
     score = record.importance_score if record.importance_score is not None else "?"
