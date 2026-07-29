@@ -1698,7 +1698,13 @@
         const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
         const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
 
-        let quoteHtml = '<div class="company-modal-empty">Güncel fiyat alınamadı.</div>';
+        // Fiyat alinamama nedeni GENELDE Yahoo Finance'in ayni anda cok
+        // sayida farkli hisse sorgusuna gecici olarak sinir koymasidir
+        // (bkz. src/web/market_data.py > _yahoo_in_cooldown) - bu KALICI
+        // bir hata degil, birkac dakika icinde kendiliginden duzelir.
+        // Kullaniciyi yanlis yonlendirmemek icin "veri yok" yerine bunu
+        // acikca belirtiyoruz (gereksinim: sessizce bos birakma).
+        let quoteHtml = '<div class="company-modal-empty">⏳ Güncel fiyat şu an alınamadı (kaynak geçici olarak yoğun olabilir) - birkaç dakika sonra tekrar deneyin.</div>';
         if (data.quote) {
           const up = data.quote.change_pct >= 0;
           const sign = up ? '+' : '';
@@ -1829,7 +1835,11 @@
     // yeterli.
     setInterval(refreshMarketTicker, 10000);
     setInterval(refreshSectorHeatmap, 300000);
-    setInterval(loadCommodityPanel, 90000);
+    // Backend'in arka plan tazeleme aralığıyla (bkz.
+    // src/commodity_report.py > _COMMODITY_REFRESH_INTERVAL_SECONDS = 180)
+    // AYNI tutuldu - daha sık sormanın backend zaten o kadar sık
+    // tazelemediği için hiçbir faydası yok, gereksiz bir istek olur.
+    setInterval(loadCommodityPanel, 180000);
 
     // ======================================================================
     // Web Push bildirimleri (bkz. src/web_push.py, sw.js) - Telegram'a

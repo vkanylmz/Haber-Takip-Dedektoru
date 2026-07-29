@@ -133,7 +133,84 @@ def build_weekly_commodity_report_data(summarizer: Summarizer | None = None) -> 
             }
         )
 
+    # Ticker doğrulama (2026-07-30, GERÇEK bir hatayla bulundu): LLM
+    # "GERÇEK/var olan şirket" talimatına rağmen bazen ESKİ/artık geçersiz
+    # bir ticker üretebiliyor - GERÇEK bir örnekte "Chesapeake Energy"
+    # için "CHK" üretti, ama bu şirket 2024'te Southwestern Energy ile
+    # birleşip "Expand Energy" (ticker EXE) oldu; Yahoo'da "CHK" artık HİÇ
+    # veri döndürmüyor (hem yerelde hem Render'da doğrulandı - rate-limit
+    # DEĞİL, sembolün kendisi geçersiz). Bu YALNIZCA `summarizer is not
+    # None` iken (haftada bir, gerçek LLM raporu üretilirken) çalışır -
+    # sık çalışan arka plan fiyat tazelemesinde (summarizer=None) şirket
+    # listesi zaten ESKİ önbellekten KORUNUYOR, tekrar doğrulanmaz.
+    if summarizer is not None:
+        _validate_companies_exist(results)
+
     return results
+
+
+def _validate_companies_exist(results: list[dict[str, Any]]) -> None:
+    """`results` içindeki her emtianın `companies` listesini YERİNDE
+    (in-place) günceller: Yahoo Finance'te GERÇEKTEN veri dönmeyen (ör.
+    şirket birleşmiş/adı değişmiş, LLM eski bir ticker üretmiş) şirketleri
+    listeden ÇIKARIR - kullanıcı tıkladığında "veri alınamadı" ile
+    karşılaşmasın diye baştan filtrelenir.
+
+    GÜVENLİ TARAF: doğrulama çağrısının KENDİSİ boş dönerse (ör. Yahoo o an
+    TÜMÜYLE geçici bir rate-limit yaşıyorsa - bkz. get_ticker_detail'deki
+    GERÇEK Render testinde gözlemlenen geçici engelleme) HİÇBİR şirket
+    silinmez - yanlışlıkla TÜM şirketleri "geçersiz" sayıp gizlemek, tek
+    bir gerçekten geçersiz ticker'ı gözden kaçırmaktan çok daha kötü bir
+    kullanıcı deneyimi olurdu."""
+    all_tickers: list[str] = []
+    for item in results:
+        for c in item.get("companies", []):
+            ticker_str = _company_ticker_string(c)
+            if ticker_str not in all_tickers:
+                all_tickers.append(ticker_str)
+
+    if not all_tickers:
+        return
+
+    # Herkese açık /api/ticker-quotes ile AYNI sunucu-tarafı sınırı
+    # (_TICKER_QUOTE_MAX_SYMBOLS_PER_CALL=10) burada da geçerli olduğundan,
+    # TEK bir çağrıda 10'dan fazla sembol göndermek fazlasını sessizce
+    # (doğrulanmamış -> yanlışlıkla "geçersiz" sayılmış gibi) keserdi. Bu
+    # yüzden 10'luk parçalar hâlinde AYRI çağrılar yapılır.
+    chunk_size = 10
+    valid_tickers: set[str] = set()
+    any_chunk_succeeded = False
+    for i in range(0, len(all_tickers), chunk_size):
+        chunk = all_tickers[i : i + chunk_size]
+        try:
+            quotes = asyncio.run(get_quotes_for_company_tickers(chunk))
+        except Exception:  # noqa: BLE001 - doğrulama başarısız olursa bu parçayı atla, şirketleri SİLME
+            logger.exception("Şirket ticker doğrulaması sırasında hata (parça): %s", chunk)
+            continue
+        if quotes:
+            any_chunk_succeeded = True
+            valid_tickers.update(quotes.keys())
+
+    if not any_chunk_succeeded:
+        # Doğrulama servisi bu turda TÜMÜYLE yanıt vermedi (ör. geçici
+        # rate-limit) - hiçbir şirketi silme, bir sonraki haftaya (veya
+        # kullanıcı denemesine) bırak.
+        logger.warning("Şirket ticker doğrulaması TÜMÜYLE başarısız oldu - bu turda hiçbir şirket filtrelenmiyor.")
+        return
+
+    for item in results:
+        companies = item.get("companies", [])
+        if not companies:
+            continue
+        kept = [c for c in companies if _company_ticker_string(c) in valid_tickers]
+        removed = [c for c in companies if _company_ticker_string(c) not in valid_tickers]
+        if removed:
+            logger.warning(
+                "Geçersiz/artık var olmayan ticker(lar) rapordan çıkarıldı (%s): %s",
+                item.get("label", "?"),
+                [f"{c['name']} ({_company_ticker_string(c)})" for c in removed],
+            )
+        item["companies"] = kept
 
 
 def _company_ticker_string(company: dict[str, str]) -> str:
@@ -311,7 +388,17 @@ def _refresh_commodity_dashboard_cache() -> None:
     except Exception:
         logger.exception("Arka plan emtia verisi tazeleme de hata.")
 
-_COMMODITY_REFRESH_INTERVAL_SECONDS = 90.0
+# 90 sn -> 180 sn (2026-07-30): toplam Yahoo Finance istek hacmini azaltmak
+# için (bkz. src/web/market_data.py > _TICKER_QUOTE_CACHE_TTL_SECONDS'taki
+# AYNI tarihli not - company-detail/ticker-quotes tarafında geçici bir
+# rate-limit sorunu gözlemlendi). Bu panel 9 sembolün TAMAMININ 1 aylık
+# geçmişini (9 ayrı istek) her turda çekiyor - 90 sn'de bir 9 istek = günde
+# ~8.640, 180 sn'de bir ise ~4.320'ye iner. Piyasa şeridiyle (12 sembol,
+# 90 sn) BİRLİKTE toplam günlük hacim ~20.160'tan ~15.840'a düşer. Emtia
+# fiyatları için 3 dakikalık bir tazelik hâlâ "canlı" hissettirir (haftalık
+# pencereli bir analiz için saniyeler önemli değil), bu yüzden gözle
+# görülür bir his kaybı olmadan hacmi azaltır.
+_COMMODITY_REFRESH_INTERVAL_SECONDS = 180.0
 _commodity_background_thread: threading.Thread | None = None
 _commodity_background_stop = threading.Event()
 

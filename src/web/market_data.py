@@ -361,7 +361,22 @@ _EXCHANGE_YAHOO_SUFFIX: dict[str, str] = {
     "EURONEXT": ".PA",
 }
 
-_TICKER_QUOTE_CACHE_TTL_SECONDS = 30.0
+# 30 sn -> 120 sn (2026-07-30, gerçek Render testiyle bulunan sorun):
+# emtia raporundaki şirket kartları/company-detail modalı eklendikten
+# sonra, ayNI şirket (ör. ADM hem Buğday hem Mısır'da geçiyor) birden
+# fazla panelde/tıklamada tekrar tekrar sorgulanabiliyor - kısa TTL bunu
+# her seferinde YENİ bir Yahoo isteği olarak tekrarlıyordu. GERÇEK testte
+# doğrulandı: Render'ın IP'sinden art arda birçok FARKLI hisse sorgusu
+# (18 şirket, ~1 dk içinde) sonrası Yahoo bu dinamik/anlık sorgu yolunu
+# birkaç dakikalığına reddetmeye başladı (429 DEĞİL - sabit 12'lik piyasa
+# şeridi o sırada SORUNSUZ çalışmaya devam etti, bu yüzden mevcut
+# _yahoo_in_cooldown devre kesicisi bunu YAKALAMADI - farklı bir ret
+# şekli); ~3 dk bekleyince kendiliğinden düzeldi. Kök neden LLM'in ürettiği
+# ticker'ların GEÇERSİZLİĞİ DEĞİLDİ (en geçerli sembol olan AAPL bile aynı
+# şekilde geçici olarak başarısız oldu). TTL'i 120 sn'ye çıkarmak, aynı
+# şirketin tekrar tıklanmasında/birden fazla emtiada geçmesinde gereksiz
+# tekrar istekleri azaltarak bu riski düşürür.
+_TICKER_QUOTE_CACHE_TTL_SECONDS = 120.0
 _ticker_quote_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
