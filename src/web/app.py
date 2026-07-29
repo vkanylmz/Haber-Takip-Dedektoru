@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from src.commodity_report import get_commodity_dashboard_data
+from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
 from src.company_profile import get_company_profile
 from src.timezone_utils import format_turkey_time
 from src.config import load_config
@@ -159,6 +159,9 @@ async def lifespan(app: FastAPI):
     # Sektör ısı haritası için de AYNI mimari (bkz. yukarıdaki
     # _SECTOR_HEATMAP_BACKGROUND_INTERVAL_SECONDS notu).
     start_sector_heatmap_background_refresh()
+    
+    # Emtia raporu için eklendi (Phase 2 optimizasyonu)
+    start_commodity_background_refresh()
     yield
 
 

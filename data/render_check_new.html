@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detaylı İnceleme — Finansal Haber Dashboard</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+
+      --critical: #ef4444;
+      --critical-glow: rgba(239, 68, 68, 0.4);
+      --important: #f59e0b;
+      --medium: #eab308;
+      --low: #64748b;
+
+      --pos-bg: rgba(34, 197, 94, 0.15);
+      --pos-txt: #4ade80;
+      --neg-bg: rgba(239, 68, 68, 0.15);
+      --neg-txt: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      margin: 0;
+      padding: 0 0 3rem 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    header {
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1.25rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    header .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    .back-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .back-link:hover {
+      color: var(--text-main);
+    }
+
+    main {
+      /* Masaüstünde ekranın büyük çoğunluğunu kullan (dar/ortalanmış 1400px
+         yerine) - geniş monitörlerde çok fazla boş kenar boşluğu bırakan
+         önceki değer, sütunları gereksiz yere daraltıyordu. */
+      max-width: 1900px;
+      width: 97%;
+      margin: 1.5rem auto;
+      padding: 0 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* --- Piyasa Duygusu (Korku/Açgözlülük) --- */
+    .fear-greed-container {
+      background: rgba(24, 24, 27, 0.65);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .fear-greed-title {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #f8fafc;
+      white-space: nowrap;
+    }
+
+    .fear-greed-bar {
+      flex: 1;
+      min-width: 120px;
+      height: 12px;
+      background: #18181b;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    .fear-greed-gradient {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 50%, #84cc16 75%, #22c55e 100%);
+      opacity: 0.8;
+    }
+
+    .fear-greed-marker {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 4px;
+      background: #fff;
+      border-radius: 2px;
+      box-shadow: 0 0 10px #fff;
+    }
+
+    .fear-greed-label {
+      font-size: 1rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .fg-extreme-fear {
+      color: #ef4444;
+    }
+
+    .fg-fear {
+      color: #f97316;
+    }
+
+    .fg-neutral {
+      color: #eab308;
+    }
+
+    .fg-greed {
+      color: #84cc16;
+    }
+
+    .fg-extreme-greed {
+      color: #22c55e;
+    }
+
+    /* --- Sıralama (3 sütunun HEPSİNE aynı anda uygulanır) --- */
+    .sort-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.85rem 1.25rem;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .sort-heading {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+    }
+
+    select {
+      font-family: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      background: #18181b;
+      cursor: pointer;
+    }
+
+    /* --- 3 sütunlu yan yana görünüm (masaüstü) --- */
+    .columns-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      /* Sütunlar arası boşluk makul ama gereksiz büyük değil - main'in
+         genişlemesiyle birlikte her sütun artık gözle görülür şekilde daha
+         geniş (satır uzunluğu arttı, başlıklar daha az kırılıyor). */
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    .column {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .column-header {
+      flex-shrink: 0;
+      padding: 1rem 1.15rem 0.75rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .column-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+
+    .column-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .column-preview {
+      flex-shrink: 0;
+      padding: 0.75rem 1.15rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .preview-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      width: 100%;
+      margin-bottom: 0.15rem;
+    }
+
+    .preview-pill {
+      display: inline-block;
+      padding: 0.22rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.72rem;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Her sütun BAĞIMSIZ olarak kaydırılabilir - bkz. gereksinim: kullanıcı
+       bir sütunu kaydırırken diğer ikisi yerinde kalır (page-level scroll
+       DEĞİL, column-level scroll). */
+    .column-body {
+      flex: 1;
+      overflow-y: auto;
+      max-height: 70vh;
+      padding: 1rem 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .column-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .column-body::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    /* --- Haber kartları (ana dashboard'daki AYNI görsel dil) --- */
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      position: relative;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .card-title {
+      font-size: 0.92rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem 0;
+      line-height: 1.35;
+      color: #e2e8f0;
+    }
+
+    .card-meta {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .meta-divider {
+      color: #334155;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.22rem 0.55rem;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.74rem;
+      flex-shrink: 0;
+    }
+
+    .badge-critical {
+      background: var(--critical);
+      color: #fff;
+      box-shadow: 0 0 15px var(--critical-glow);
+    }
+
+    .badge-important {
+      background: var(--important);
+      color: #fff;
+    }
+
+    .badge-medium {
+      background: var(--medium);
+      color: #000;
+    }
+
+    .badge-low {
+      background: var(--low);
+      color: #fff;
+    }
+
+    .badge-unknown {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .sentiment {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
+
+    .sentiment-positive {
+      background: var(--pos-bg);
+      color: var(--pos-txt);
+    }
+
+    .sentiment-negative {
+      background: var(--neg-bg);
+      color: var(--neg-txt);
+    }
+
+    .sentiment-neutral {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+    }
+
+    .summary {
+      margin: 0 0 0.4rem 0;
+      line-height: 1.5;
+      color: #cbd5e1;
+      font-size: 0.82rem;
+    }
+
+    /* --- Şirket haberlerinde borsa+ticker etiketi (ör. "🏢 NASDAQ: TSLA") --- */
+    .ticker-badge {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #93c5fd;
+      background: rgba(37, 99, 235, 0.12);
+      border: 1px solid rgba(37, 99, 235, 0.25);
+      border-radius: 6px;
+      padding: 0.2rem 0.55rem;
+      margin-bottom: 0.5rem;
+      width: fit-content;
+    }
+
+    .ticker-price {
+      font-weight: 600;
+    }
+
+    .ticker-up {
+      color: var(--pos-txt);
+    }
+
+    .ticker-down {
+      color: var(--neg-txt);
+    }
+
+    .sector-tag {
+      display: inline-block;
+      padding: 0.08rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      font-size: 0.66rem;
+    }
+
+    .links {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.6rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .links a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.74rem;
+      padding: 0.2rem 0.45rem;
+      background: rgba(96, 165, 250, 0.1);
+      border-radius: 4px;
+    }
+
+    .links a:hover {
+      background: rgba(96, 165, 250, 0.2);
+    }
+
+    .column-empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 2rem 1rem;
+      font-size: 0.82rem;
+    }
+
+    /* --- Mobil: 3 sütun sığmaz, alt alta sırala --- */
+    @media (max-width: 900px) {
+      header {
+        padding: 1rem;
+      }
+
+      main {
+        margin: 1rem auto;
+      }
+
+      .columns-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .column-body {
+        max-height: 60vh;
+      }
+
+      .card {
+        padding: 0.8rem;
+      }
+
+      .card-top {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>📊 Detaylı İnceleme</h1>
+      <div class="meta"><a class="back-link" href="/">← Dashboard'a dön</a></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="fear-greed-container">
+      <div class="fear-greed-title">Piyasa Duygusu</div>
+      <div class="fear-greed-bar">
+        <div class="fear-greed-gradient"></div>
+        <div class="fear-greed-marker" style="left: 50%;"></div>
+      </div>
+      <div
+        class="fear-greed-label fg-neutral">
+        Nötr  (50)
+      </div>
+    </div>
+
+    <div class="sort-section">
+      <span class="sort-heading">Sıralama</span>
+      <form method="get" action="/detayli-inceleme" style="display: contents;">
+        <select name="sort" onchange="this.form.submit()">
+          <option value="newest" selected>En Yeni Üstte</option>
+          <option value="oldest" >En Eski Üstte</option>
+        </select>
+      </form>
+      <span style="color: var(--text-muted); font-size: 0.78rem;">(3 sütunun tamamına uygulanır)</span>
+    </div>
+
+    <div class="columns-grid">
+      
+      <div class="column">
+        <div class="column-header">
+          <span class="column-title">🏛️ Makro</span>
+          <span class="column-count">8 haber</span>
+        </div>
+
+        
+        <div class="column-preview">
+          <span class="preview-label">Öne Çıkanlar</span>
+          
+          <span class="preview-pill" title="Indonesia faces crucial choice after central bank chief&#39;s surprise resignation">Indonesia faces crucial choice after...</span>
+          
+          <span class="preview-pill" title="Government engagement with AI creates more uncertainty for investors, Bridgewater CIOs warn">Government engagement with AI...</span>
+          
+          <span class="preview-pill" title="Rates are inching lower. When will mortgage rates finally go back down to 6%?">Rates are inching lower. When will...</span>
+          
+          <span class="preview-pill" title="Tüketiciyi korumak için 10 dev adım: 1 Ağustos&#39;ta yürürlüğe giriyor">Tüketiciyi korumak için 10 dev adım:...</span>
+          
+          <span class="preview-pill" title="Pakistan&#39;s central bank holds key policy rate at 11.5%">Pakistan&#39;s central bank holds key...</span>
+          
+        </div>
+        
+
+        <div class="column-body">
+          
+
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Government engagement with AI creates more uncertainty for investors, Bridgewater CIOs warn</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:38 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Bridgewater yöneticileri, devletlerin yapay zeka teknolojisine müdahale etmesinin ve düzenleme getirmesinin yatırımcılar nezdindeki belirsizliği artırdığını vurguladı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span><span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/business/government-engagement-ai-creates-more-uncertainty-investors-bridgewater-cios-warn-6281141" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Rates are inching lower. When will mortgage rates finally go back down to 6%?</h2>
+                <div class="card-meta">
+                  <span>2025-06-24 19:50 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">ABD&#39;de mortgage faizlerinde yaşanan hafif düşüşler, oranların ne zaman yüzde 6 seviyesine gerileyeceği sorusunu gündeme getiriyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Gayrimenkul</span><span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/personal-finance/mortgages/article/when-will-mortgage-rates-go-down-to-6-195022219.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Tüketiciyi korumak için 10 dev adım: 1 Ağustos&#39;ta yürürlüğe giriyor</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:05 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>CNBC-e</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Ticaret Bakanlığı tarafından hazırlanan ve 1 Ağustos&#39;ta yürürlüğe girecek yeni düzenleme, yapay zekâlı reklamlardan influencer paylaşımlarına ve sahte indirimlere kadar pek çok alanda tüketiciyi korumayı hedefliyor. Bu kapsamda, aldatıcı ticari uygulamaların engellenmesi ve çocukların korunması için on kritik önlem hayata geçirilecek.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span><span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.cnbce.com/haberler/tuketiciyi-korumak-icin-10-dev-adim-1-agustosta-yururluge-giriyor-h33902" target="_blank" rel="noopener">CNBC-e ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Pakistan&#39;s central bank holds key policy rate at 11.5%</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 11:12 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Pakistan merkez bankası, gerçekleştirdiği son toplantıda temel politika faiz oranını yüzde 11,5 seviyesinde sabit tutma kararı aldı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/business/pakistans-central-bank-holds-key-policy-rate-115-6280601" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Live births in Singapore fall by 11.4% to 29,864 in 2025; deaths rise slightly</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:24 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Singapur&#39;da 2025 yılında canlı doğum sayısı yüzde 11,4 oranında azalarak 29.864&#39;e gerilerken, ölümlerde sınırlı bir artış kaydedildi. Bu durum, ülkedeki doğal nüfus artış hızının yavaşlamasına neden oldu.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/singapore/singapore-births-deaths-2025-ica-report-6280681" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Indonesia faces crucial choice after central bank chief&#39;s surprise resignation</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:35 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">Endonezya Merkez Bankası Başkanının beklenmedik istifası piyasalarda şaşkınlık yaratırken, bu göreve vekilen Kıdemli Başkan Yardımcısı Destry Damayanti&#39;nin getirilmesi uzmanlar tarafından piyasalara güven veren bir hamle olarak değerlendiriliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/asia/indonesia-central-bank-governor-perry-warjiyo-surprise-resignation-6280466" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Goldman Is Bullish on Three Asian Currencies, All Three Are Down in 2026</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:55 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Goldman Sachs, üç Asya para birimi için iyimser bir duruş sergilese de bu varlıklar 2026 yılı genelinde değer kaybetmeye devam ediyor. Analistler, söz konusu para birimlerinin uzun vadeli potansiyeline dikkat çekse de kısa vadeli baskıların sürdüğünü belirtiyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/currencies/articles/goldman-bullish-three-asian-currencies-125514672.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Bakanlık duyurdu: Balon balığı avcıları 13 milyon lira kazandı</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:01 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Ekonomim.com (Ekonomi)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Tarım ve Orman Bakanlığı yetkilileri, balon balığı avcılığı projeleri kapsamında avcılara toplamda 13 milyon lira ödeme yapıldığını açıkladı. Bu uygulama ile hem istilacı türlerin popülasyonunun kontrol altına alınması hem de balıkçılara ekonomik destek sağlanması amaçlanıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Tarım</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.ekonomim.com/ekonomi/bakanlik-duyurdu-balon-baligi-avcilari-13-milyon-lira-kazandi-haberi-908505" target="_blank" rel="noopener">Ekonomim.com (Ekonomi) ↗</a>
+              
+            </div>
+          </div>
+          
+        </div>
+      </div>
+      
+      <div class="column">
+        <div class="column-header">
+          <span class="column-title">🏢 Şirket</span>
+          <span class="column-count">30 haber</span>
+        </div>
+
+        
+        <div class="column-preview">
+          <span class="preview-label">Öne Çıkanlar</span>
+          
+          <span class="preview-pill" title="Apple Stock Hits Record High Before Fiscal Q3 Earnings">Apple Stock Hits Record High Before...</span>
+          
+          <span class="preview-pill" title="Alman otomobil devinden tarihi karar: 9 bin kişi işten çıkarılacak">Alman otomobil devinden tarihi...</span>
+          
+          <span class="preview-pill" title="Sam Altman to meet with Trump administration, Senators this week. Here&#39;s what he plans to say">Sam Altman to meet with Trump...</span>
+          
+          <span class="preview-pill" title="Amazon targets Musk&#39;s Starlink with 5,105 satellite plan for mobile services">Amazon targets Musk&#39;s Starlink with...</span>
+          
+          <span class="preview-pill" title="Beijing Just Aimed at Taiwan Semiconductor Manufacturing Company (NYSE:TSM). Here’s Why the Bull Case Still Wins">Beijing Just Aimed at Taiwan...</span>
+          
+        </div>
+        
+
+        <div class="column-body">
+          
+
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Amazon&#39;s Leo proposes satellite constellation for direct-to-phone service</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:06 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AMZN">
+              <span>🏢 NASDAQ: AMZN</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Amazon&#39;un Project Kuiper girişimi, doğrudan akıllı telefonlara bağlantı sağlamak amacıyla yeni bir uydu takımyıldızı konsepti önerdi. Bu teknoloji, geleneksel hücresel ağların erişemediği bölgelerde bile telefonların uydular üzerinden doğrudan iletişim kurmasına olanak tanımayı hedefliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/business/amazons-leo-proposes-satellite-constellation-direct-phone-service-6280926" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Royal Caribbean Surges Briefly Ahead Of Results As Oil Prices Slide</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:36 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NYSE: RCL">
+              <span>🏢 NYSE: RCL</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Royal Caribbean hisseleri, düşen petrol fiyatlarının etkisiyle finansal sonuçlarının açıklanması öncesinde kısa süreli bir yükseliş kaydetti. Düşen yakıt maliyetlerinin şirket kârlılığını olumlu yönde destekleyeceği beklentisi piyasalarda fiyatlandı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span><span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.investors.com/news/royal-caribbean-cruise-lines-airlines-surge-oil-prices-us-iran-strike-halt-rcl-stock-nclh-aal-dal-ual-ccl/?src=A00220&amp;yptr=yahoo" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Apple Stock Hits Record High Before Fiscal Q3 Earnings</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:37 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AAPL">
+              <span>🏢 NASDAQ: AAPL</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Apple hisseleri, şirketin yaklaşan 3. çeyrek finansal sonuçları öncesinde tüm zamanların en yüksek seviyesine ulaştı. Yatırımcılar bilançodan güçlü rakamlar bekliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.investors.com/news/technology/apple-stock-hits-record-high-before-fiscal-q3-earnings/?src=A00220&amp;yptr=yahoo" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Apollo Group to acquire Norway’s Fly Chicken chain to roll out KFC brand</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:47 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Apollo Group, KFC markasını genişletmek amacıyla Norveç merkezli Fly Chicken zincirini satın almak için harekete geçti. Bu stratejik adım, restoran grubunun Kuzey Avrupa&#39;daki pazar payını artırmasını hedefliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/small-business/articles/apollo-group-acquire-norway-fly-144714793.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Compelling Reasons to Add ATS Corporation (ATS)</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:39 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NYSE: ATS">
+              <span>🏢 NYSE: ATS</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">ATS Corporation hisselerini portföye dahil etmek için yatırımcıların değerlendirmesi gereken bazı cazip gerekçeler bulunuyor. Şirketin büyüme potansiyeli ve piyasadaki konumu, analistler tarafından dikkatle takip ediliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/compelling-reasons-add-ats-corporation-143931005.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Alman otomobil devinden tarihi karar: 9 bin kişi işten çıkarılacak</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:45 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>CNBC-e</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="XTRA: P911">
+              <span>🏢 XTRA: P911</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Alman otomotiv devi Porsche, Çin&#39;deki satış düşüşü ve elektrikli araç geçişindeki zorluklar nedeniyle 2035 yılına kadar binlerce çalışanıyla yollarını ayırmayı planlıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Otomotiv</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.cnbce.com/otomotiv/alman-otomobil-devinden-tarihi-karar-9-bin-kisi-isten-cikarilacak-g33903" target="_blank" rel="noopener">CNBC-e ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">I Will Keep Buying Amazon After Wall Street Next ‘Capex Panic’ Drops The Stock Price</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:26 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AMZN">
+              <span>🏢 NASDAQ: AMZN</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Yazar, Wall Street&#39;in yapay zeka harcamaları konusundaki olası panik satışları nedeniyle Amazon hisselerinde düşüş yaşanması durumunda alım yapmaya devam edeceğini belirtiyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span><span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/keep-buying-amazon-wall-street-142647102.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Self-Checkout Regulations Spread As NY&#39;s A11501 Signals A New Approach</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 00:00 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Forbes</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">New York&#39;ta sunulan A11501 sayılı yeni yasa tasarısı, perakendecilerin otomasyon süreçlerinde karşılaştığı düzenleyici zorluklara bir yenisini ekliyor. Tasarı, müşterilerin kasiyer işini kendilerinin yapmasına karşın doğrudan bir tasarruf veya indirim alamaması şikayetini ele alarak perakendecilere mali bir yük getirmeyi amaçlıyor. Özellikle düşük kâr marjıyla çalışan süpermarketler ve bakkallar, bu düzenlemenin maliyetlerini karşılamakta zorlanabilir.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.forbes.com/sites/briandelp/2026/07/27/self-checkout-regulations-spread-as-nys-a11501-signals-a-new-approach/" target="_blank" rel="noopener">Forbes ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Bain&#39;s US Renal Care Seeks to Undo Asset Strip in Rare Debt Move</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:58 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Bloomberg Business</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Bain Capital destekli US Renal Care, yaklaşık üç yıl önce borç yapılandırması sırasında alacaklılardan çıkardığı varlıkları yeniden onların kontrolüne vermeye hazırlanıyor. Barclays, bu nadir borç hamlesi için potansiyel yatırımcılarla görüşmeler yürütüyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span><span class="sector-tag">Sağlık</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.bloomberg.com/news/articles/2026-07-27/bain-s-us-renal-care-seeks-to-undo-asset-strip-in-rare-debt-move" target="_blank" rel="noopener">Bloomberg Business ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Cracker Barrel Stock Drops on CEO&#39;s Exit</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:00 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>The Wall Street Journal</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: CBRL">
+              <span>🏢 NASDAQ: CBRL</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Restoran zinciri Cracker Barrel&#39;ın CEO&#39;su Julie Masino&#39;nun görevinden ayrılacağını duyurmasının ardından şirket hisseleri yaklaşık yüzde üç oranında değer kaybetti. Masino&#39;nun yaklaşık üç yıllık görev süresi, kamuoyunda ve yatırımcı çevrelerinde çeşitli tartışmalara sahne olmuştu.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp-500-nasdaq-07-27-2026/card/cracker-barrel-stock-drops-on-ceo-exit-keoIkmK67lpOMl79uR3S" target="_blank" rel="noopener">The Wall Street Journal ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Sam Altman to meet with Trump administration, Senators this week. Here&#39;s what he plans to say</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:20 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>CNBC</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">OpenAI CEO&#39;su Sam Altman, yapay zeka teknolojilerine yönelik düzenlemeler ve yeni modellerin yeteneklerini tanıtmak amacıyla bu hafta Washington&#39;da Trump yönetimi yetkilileri ve milletvekilleriyle bir araya gelecek. Ziyaret sırasında özellikle Çin menşeli açık ağırlıklı yapay zeka modellerine yönelik olası kısıtlamalar ve siber güvenlik konularının ele alınması bekleniyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.cnbc.com/2026/07/27/altman-trump-china-open-weight-ai.html" target="_blank" rel="noopener">CNBC ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Everus Construction Group (ECG) Strengthens from Long-Term Infrastructure Demand</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:23 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NYSE: ECG">
+              <span>🏢 NYSE: ECG</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Everus Construction Group, uzun vadeli altyapı talebinin desteğiyle piyasadaki konumunu güçlendirmeye devam ediyor. Şirket, sektördeki artan yatırım ihtiyaçlarından olumlu yönde faydalanıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/everus-construction-group-ecg-strengthens-142305939.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Amazon targets Musk&#39;s Starlink with 5,105 satellite plan for mobile services</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:24 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Financial Times News</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AMZN">
+              <span>🏢 NASDAQ: AMZN</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Amazon, Elon Musk&#39;ın Starlink ağıyla rekabet edebilmek amacıyla dünya genelinde mobil telefon hizmeti sunmak üzere 5.105 uyduluk bir takımyıldız fırlatmayı planlıyor. Şirket, bu sistemi 2028 yılına kadar devreye sokmak için ABD Federal İletişim Komisyonu&#39;na (FCC) resmi başvuruda bulundu.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.ft.com/content/83e93ce0-1ebd-4b04-a70c-82ff7b64a5f4" target="_blank" rel="noopener">Financial Times News ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Data Centre Cooling Demand Boosted AAON (AAON)</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:24 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AAON">
+              <span>🏢 NASDAQ: AAON</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Veri merkezi soğutma sistemlerine olan talebin artması, AAON şirketinin performansını ve piyasadaki konumunu olumlu yönde destekledi.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span><span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/data-centre-cooling-demand-boosted-142442906.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">The Broadcom Dip Is a Gift</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:20 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: AVGO">
+              <span>🏢 NASDAQ: AVGO</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Broadcom hisselerinde yaşanan son düşüş, yatırımcılar için cazip bir alım fırsatı olarak değerlendiriliyor. Uzmanlar, şirketin uzun vadeli büyüme potansiyelinin bu tür kısa vadeli geri çekilmeleri telafi edeceğini öngörüyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/broadcom-dip-gift-142000448.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Even China’s A.I. Powerhouses Can’t Figure Out How to Profit Off A.I.</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:23 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>New York Times (Business)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Çin&#39;deki yapay zeka girişimleri teknik olarak önemli ilerlemeler kaydetse de, bu başarıyı finansal kazanca dönüştürme konusunda net bir yol haritasından yoksun bulunuyorlar. Sektördeki öncü firmalar, geliştirdikleri modelleri kârlı iş modellerine entegre etmekte zorlanıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.nytimes.com/2026/07/27/business/china-ai-alibaba-bytedance.html" target="_blank" rel="noopener">New York Times (Business) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Short-Seller Concerns Hurt Ensign Group (ENSG) in Q2</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:07 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: ENSG">
+              <span>🏢 NASDAQ: ENSG</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Ensign Group&#39;un ikinci çeyrek finansal performansı, açığa satış yapanların (short-seller) endişeleri nedeniyle olumsuz etkilendi. Şirket hakkındaki spekülasyonlar ve piyasa baskısı hisse senedi üzerinde baskı yarattı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Sağlık</span><span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/short-seller-concerns-hurt-ensign-140716702.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Beijing Just Aimed at Taiwan Semiconductor Manufacturing Company (NYSE:TSM). Here’s Why the Bull Case Still Wins</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:08 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NYSE:TSM">
+              <span>🏢 NYSE:TSM</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Pekin yönetimi ile Tayvan Yarı İletken Üretim Şirketi (TSMC) arasındaki olası jeopolitik risklere rağmen, şirketin uzun vadeli büyüme potansiyeli ve güçlü piyasa konumu boğa piyasası argümanlarını desteklemeye devam ediyor. Analistler, sektördeki lider konumunun ve çip talebinin riskleri dengelediğini vurguluyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/beijing-just-aimed-taiwan-semiconductor-140827384.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Here’s Why Ollie’s Bargain Outlet Holdings (OLLI) Traded Lower in Q2</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:10 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: OLLI">
+              <span>🏢 NASDAQ: OLLI</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Ollie&#39;s Bargain Outlet Holdings hisseleri, ikinci çeyrekte piyasa beklentilerinin altında bir performans sergileyerek değer kaybetti.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/why-ollie-bargain-outlet-holdings-141015086.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">JFrog Ltd. (FROG) Overcomes AI Challenges and Gains Momentum</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:12 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NASDAQ: FROG">
+              <span>🏢 NASDAQ: FROG</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">JFrog Ltd., yapay zeka alanında karşılaştığı zorlukları geride bırakarak piyasada yeniden ivme kazanmayı başardı. Şirketin bu süreçteki operasyonel gelişmeleri yatırımcılar tarafından olumlu karşılandı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/jfrog-ltd-frog-overcomes-ai-141218122.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Procore Technologies (PCOR) Slid Amid AI Disruption Concerns</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:15 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+            
+            <div class="ticker-badge" data-ticker="NYSE: PCOR">
+              <span>🏢 NYSE: PCOR</span>
+              <span class="ticker-price-slot"></span>
+            </div>
+            
+
+            <div class="summary">Procore Technologies hisseleri, yapay zeka teknolojilerinin sektördeki iş modellerini bozabileceği yönündeki artan endişeler nedeniyle düşüş yaşadı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/procore-technologies-pcor-slid-amid-141517010.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Australia’s Myer FY26 sales rise 11.3% to A$4.08bn</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:15 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Avustralya merkezli perakende zinciri Myer, FY26 mali yılında satışlarını yüzde 11,3 oranında artırarak 4,08 milyar Avustralya dolarına ulaştırdı. Şirketin bu dönemdeki performansının güç kazandığı ve satış rakamlarında belirgin bir büyüme kaydedildiği görüldü.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/australia-myer-fy26-sales-rise-141534327.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Porsche ramps up job cuts to 9,000 by 2035</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:27 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>CNBC</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">Otomotiv üreticisi Porsche, 2035 yılına kadar işten çıkarmalarını artırarak toplamda 9 bin çalışanıyla yollarını ayırmayı planlıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Otomotiv</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.cnbc.com/2026/07/27/porsche-ramps-up-job-cuts-to-9000-by-2035.html" target="_blank" rel="noopener">CNBC ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Here&#39;s Why Shares of American Express Are Plummeting</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:05 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">American Express hisselerinde yaşanan sert düşüşün ardındaki nedenler piyasalarda merak konusu olurken, yatırımcılar şirketin performansını yakından takip ediyor. Yaşanan bu değer kaybı, finans sektöründeki genel eğilimler ve şirket özelindeki gelişmelerle ilişkilendiriliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/heres-why-shares-american-express-140500596.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Should You Buy Kraft Heinz Stock Before Aug. 5?</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:07 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Kraft Heinz hisselerinin yaklaşan 5 Ağustos tarihi öncesinde alınıp alınmaması gerektiği yatırımcılar tarafından merak ediliyor. Şirketin finansal performansı ve hisse değerlemesi bu dönemde piyasa katılımcılarının odak noktasında yer alıyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Perakende</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/buy-kraft-heinz-stock-aug-140706784.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Iradimed Corporation (IRMD) Sales Reflects The Fund’s Valuation and Sizing Discipline</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:48 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Iradimed Corporation şirketinin satış performansları ve finansal sonuçları, yatırım fonlarının değerleme disiplini ile portföy büyüklüğü stratejilerini yansıtmaktadır.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Sağlık</span><span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/iradimed-corporation-irmd-sales-reflects-134817857.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Will LSB Industries (LXU) be Able to Generate Strong Free Cash Flow?</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:49 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">LSB Industries şirketinin serbest nakit akışı yaratma potansiyeli piyasa analistleri tarafından değerlendirilmektedir.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Tarım</span><span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/lsb-industries-lxu-able-generate-134926225.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">JPMorgan and Goldman Posted Record Quarters — Their Own CEOs Aren’t Sure It Lasts</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:50 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">JPMorgan ve Goldman Sachs, güçlü çeyreklik finansal sonuçlar açıklayarak rekor kârlara imza attı. Ancak bankaların üst düzey yöneticileri, mevcut ekonomik belirsizlikler ve piyasa koşulları nedeniyle bu yüksek performansın sürdürülebilirliği konusunda temkinli bir duruş sergiliyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/jpmorgan-goldman-posted-record-quarters-135016772.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Uranium Royalty (UROY) Fell Despite Stable Uranium Spot Prices</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:51 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Uranium Spot fiyatları yatay seyretmesine rağmen Uranium Royalty hisseleri düşüş kaydetti. Bu durum, hisse özelindeki dinamiklerin veya genel piyasa düzeltmelerinin etkili olduğuna işaret ediyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/uranium-royalty-uroy-fell-despite-135126437.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Buyback Announcement Makes Allot (ALLT) Attractive</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:54 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Allot şirketi tarafından yapılan hisse geri alım duyurusu, yatırımcılar nezdinde hissenin cazibesini artırdı. Bu tür kurumsal adımlar genellikle piyasada olumlu bir beklenti yaratmaktadır.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/markets/stocks/articles/buyback-announcement-makes-allot-allt-135409976.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+        </div>
+      </div>
+      
+      <div class="column">
+        <div class="column-header">
+          <span class="column-title">🌍 Siyasi</span>
+          <span class="column-count">13 haber</span>
+        </div>
+
+        
+        <div class="column-preview">
+          <span class="preview-label">Öne Çıkanlar</span>
+          
+          <span class="preview-pill" title="Husiler, Suudi Arabistan&#39;ın petrol sevkiyat hattını hedef aldığını açıkladı">Husiler, Suudi Arabistan&#39;ın petrol...</span>
+          
+          <span class="preview-pill" title="Dollar retreats as oil slumps on pause in Middle East conflict">Dollar retreats as oil slumps on...</span>
+          
+          <span class="preview-pill" title="Stock Market Today: Dow Jumps 600 Points On U.S.-Iran Hopes; Oil Prices Plunge (Live Coverage)">Stock Market Today: Dow Jumps 600...</span>
+          
+          <span class="preview-pill" title="Oil Prices Sink After U.S. and Iran Pause Fighting a Second Day">Oil Prices Sink After U.S. and Iran...</span>
+          
+          <span class="preview-pill" title="Silver prices today, Monday, July 27, 2026: Silver prices trend higher as Iran attacks on pause">Silver prices today, Monday, July...</span>
+          
+        </div>
+        
+
+        <div class="column-body">
+          
+
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Malaysia detains over 100 Rohingya refugees seeking shelter at UN agency</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:56 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Malezya Başbakanı Enver İbrahim, BM mülteci ajansı binası önünde toplanan yüzün üzerinde Rohingya mültecisinin göçmenlik yetkilileri tarafından gözaltına alındığını duyurdu. Bu kalabalık toplanmanın halkta endişe yarattığını belirten Başbakan, ülkeye yasal izinler olmadan gelen herkesin gözaltına alınacağını vurguladı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/asia/malaysia-detains-rohingya-refugees-seeking-shelter-6281161" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Modi faces challenge from activists over surveillance at India youth protest</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:38 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Reuters</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Hindistan&#39;da, yapay zeka destekli gözetim teknolojilerinin gençlik protestolarında kullanılması aktivistler ile Başbakan Narendra Modi&#39;nin hükümeti arasında hukuki bir mücadeleye yol açtı. Aktivistler, Delhi Yüksek Mahkemesi&#39;ne başvurarak bu tür kitle gözetiminin anayasaya aykırı olduğunu ve toplanan verilerin imha edilmesini talep ediyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.reuters.com/world/india/modi-faces-challenge-activists-over-surveillance-india-youth-protest-2026-07-27/" target="_blank" rel="noopener">Reuters ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Palestinians say settler violence and military raids are bringing them to breaking point</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:16 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Reuters</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Batı Şeria&#39;da artan İsrailli yerleşimci şiddeti ve askeri baskınlar bölgede tansiyonu tehlikeli seviyelere yükseltirken, yakın zamanda yaşanan çatışmalarda altı kişinin hayatını kaybetmesi gerilimi daha da tırmandırdı. İsrail ordusu olayların ardından bölgedeki yolları kapatıp çok sayıda tutuklama yaparken, Filistinli köylüler topraklarını savunmaya çalıştıklarını ifade ediyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.reuters.com/world/middle-east/palestinians-say-settler-violence-military-raids-are-bringing-them-breaking-2026-07-27/" target="_blank" rel="noopener">Reuters ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Shot fired outside US consulate in Toronto for second time this year</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 14:20 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Reuters</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Toronto&#39;daki ABD konsolosluğu binasının dışında bu yıl ikinci kez ateş açıldığı, olayda yaralanan olmad però polisin bölgeyi abluka altına aldığı bildirildi.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.reuters.com/world/americas/shot-fired-outside-us-consulate-toronto-second-time-this-year-2026-07-27/" target="_blank" rel="noopener">Reuters ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Beijing says US firms train AI models on Chinese examples</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:15 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Çin Ticaret Bakanlığı, birçok Amerikan yapay zeka şirketinin araştırma ve geliştirme süreçlerinde Çinli modellerden faydalandığını açıkladı. Bu açıklama, iki ülke arasındaki teknoloji ve yapay zeka alanındaki rekabetin devam ettiğini gösteriyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/east-asia/china-us-ai-artificial-intelligence-train-models-chinese-6280731" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Dollar retreats as oil slumps on pause in Middle East conflict</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:34 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">Orta Doğu&#39;daki gerilimin durulmasıyla birlikte petrol fiyatlarında yaşanan düşüş, ABD dolarının zayıflamasına yol açtı. Enerji maliyetlerindeki bu gerileme küresel döviz piyasalarında yatırımcıların risk iştahını yeniden şekillendiriyor.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span><span class="sector-tag">Finans</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/business/dollar-retreats-oil-slumps-pause-in-middle-east-conflict-6279646" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">China charges alleged scam kingpin Chen Zhi with intentional injury: Report</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:58 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Channel News Asia (CNA)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-neutral">➖ Nötr</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-low" title="Önem skoru">2/5</span>
+            </div>
+
+            
+
+            <div class="summary">Kamboçya&#39;dan Çin&#39;e iade edilen dolandırıcılık şüphelisi Chen Zhi, bu kez kasten yaralama suçlamasıyla karşı karşıya kaldı ve bu durum idam cezası almasına yol açabilecek yeni bir hukuki süreci başlattı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.channelnewsasia.com/east-asia/china-charges-alleged-scam-kingpin-chen-zhi-intentional-injury-report-6280861" target="_blank" rel="noopener">Channel News Asia (CNA) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Stock Market Today: Dow Jumps 600 Points On U.S.-Iran Hopes; Oil Prices Plunge (Live Coverage)</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:42 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">ABD ve İran arasındaki gerilimin azalabileceğine dair umutların artmasıyla birlikte Dow Jones endeksi 600 puanlık güçlü bir yükseliş kaydetti. Diğer taraftan, jeopolitik risk algısının hafiflemesi petrol fiyatlarında sert bir düşüş yaşanmasına yol açtı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span><span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.investors.com/market-trend/stock-market-today/dow-jones-sp500-nasdaq-us-iran-oil-prices-plunge/?src=A00220&amp;yptr=yahoo" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Oil Prices Sink After U.S. and Iran Pause Fighting a Second Day</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:31 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>New York Times (Business)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">ABD ve İran arasındaki çatışmaların ikinci gününde de devam etmemesi ve herhangi bir saldırı bildirilmemesi, petrol yatırımcıları arasında krizin çözülebileceğine dair umutları artırdı. Bu olumlu havanın etkisiyle küresel piyasalarda petrol fiyatlarında gerileme yaşandı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.nytimes.com/2026/07/26/business/oil-prices-fall-iran-war.html" target="_blank" rel="noopener">New York Times (Business) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Husiler, Suudi Arabistan&#39;ın petrol sevkiyat hattını hedef aldığını açıkladı</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:32 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Ekonomim.com (Ekonomi)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-critical" title="Önem skoru">5/5</span>
+            </div>
+
+            
+
+            <div class="summary">Yemen&#39;deki Husiler, Suudi Arabistan&#39;ın önemli petrol sevkiyat hatlarına ve bir rafineri tesisine insansız hava araçlarıyla saldırı düzenlediklerini bildirdi. Uydu görüntüleri, tesisteki bir depolama tankında yangın çıktığını doğruladı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Enerji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.ekonomim.com/ekonomi/husiler-suudi-arabistanin-petrol-sevkiyat-hattini-hedef-aldigini-acikladi-haberi-908516" target="_blank" rel="noopener">Ekonomim.com (Ekonomi) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Silver prices today, Monday, July 27, 2026: Silver prices trend higher as Iran airatrikes on pause</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:56 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">İran ile yaşanan çatışmaların geçici olarak durdurulması, değerli metaller piyasasında olumlu bir hava yaratmıştır. Bu gelişmeyle birlikte hem altın hem de gümüş fiyatlarında yukarı yönlü bir ivme gözlenmektedir.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/personal-finance/investing/article/silver-prices-today-monday-july-27-2026-silver-prices-trend-higher-as-iran-airatrikes-on-pause-125654584.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card ">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Çin&#39;den ABD&#39;ye yapay zeka tepkisi</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 13:03 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Ekonomim.com (Ekonomi)</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-negative">📉 Negatif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-medium" title="Önem skoru">3/5</span>
+            </div>
+
+            
+
+            <div class="summary">Pekin yönetimi, Washington&#39;a çağrıda bulunarak Çinli yapay zeka girişimlerine yönelik karalama kampanyalarının ve yaptırım tehditlerinin derhal sonlandırılmasını talep etti.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Teknoloji</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://www.ekonomim.com/ekonomi/cinden-abdye-yapay-zeka-tepkisi-haberi-908507" target="_blank" rel="noopener">Ekonomim.com (Ekonomi) ↗</a>
+              
+            </div>
+          </div>
+          
+          <div class="card highlighted">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">Silver prices today, Monday, July 27, 2026: Silver prices trend higher as Iran attacks on pause</h2>
+                <div class="card-meta">
+                  <span>2026-07-27 12:56 UTC</span>
+                  <span class="meta-divider">|</span>
+                  <span>Yahoo Finance</span>
+                  
+                  <span class="meta-divider">|</span>
+                  <span class="sentiment sentiment-positive">📈 Pozitif</span>
+                  
+                </div>
+              </div>
+              <span class="badge badge-important" title="Önem skoru">4/5</span>
+            </div>
+
+            
+
+            <div class="summary">İran ile çatışmaların geçici olarak durdurulması, kıymetli madenler üzerinde olumlu bir etki yaratarak altın ve gümüş fiyatlarının yukarı yönlü bir ivme kazanmasını sağladı.</div>
+
+            
+            <div style="margin-bottom: 0.5rem;">
+              <span class="sector-tag">Diğer</span>
+            </div>
+            
+
+            <div class="links">
+              
+              <a href="https://finance.yahoo.com/personal-finance/investing/article/silver-prices-today-monday-july-27-2026-silver-prices-trend-higher-as-iran-attacks-on-pause-125654584.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+              <a href="https://finance.yahoo.com/personal-finance/investing/article/gold-prices-today-monday-july-27-2026-gold-prices-see-positive-traction-as-fighting-with-iran-has-paused-123327127.html" target="_blank" rel="noopener">Yahoo Finance ↗</a>
+              
+            </div>
+          </div>
+          
+        </div>
+      </div>
+      
+    </div>
+  </main>
+
+  <script>
+    // Şirket kartlarındaki borsa/ticker etiketlerine GERÇEK anlık fiyat
+    // ekler - ama sayfa render'ından TAMAMEN AYRI, sayfa tamamen
+    // yüklendikten SONRA çalışır (bkz. src/web/app.py > /api/ticker-quotes
+    // route'undaki not: bu, Render'ın kısıtlı CPU'su altında sayfa
+    // render'ını bloklayan eski senkron yaklaşımın yerini alıyor).
+    // Yalnızca İLK birkaç (en fazla 8) BENZERSİZ ticker için istek atılır -
+    // sayfadaki TÜM Şirket kartları için değil (gereksinim: sayfa başına
+    // eşzamanlı çekilen sembol sayısı sınırlansın).
+    document.addEventListener('DOMContentLoaded', function () {
+      var MAX_TICKERS = 8;
+      var badges = document.querySelectorAll('.ticker-badge[data-ticker]');
+      if (!badges.length) return;
+
+      var seen = {};
+      var tickers = [];
+      for (var i = 0; i < badges.length && tickers.length < MAX_TICKERS; i++) {
+        var t = badges[i].getAttribute('data-ticker');
+        if (t && !seen[t]) {
+          seen[t] = true;
+          tickers.push(t);
+        }
+      }
+      if (!tickers.length) return;
+
+      fetch('/api/ticker-quotes?tickers=' + encodeURIComponent(tickers.join(',')))
+        .then(function (res) { return res.ok ? res.json() : {}; })
+        .then(function (quotes) {
+          badges.forEach(function (badge) {
+            var ticker = badge.getAttribute('data-ticker');
+            var quote = quotes[ticker];
+            // Sembol çözülemediyse/Yahoo'dan veri alınamadıysa quote
+            // sözlükte YOKTUR - bu durumda etiket sadece "🏢 BORSA: SEMBOL"
+            // olarak kalır, hiçbir hata gösterilmez (gereksinim).
+            if (!quote) return;
+            var slot = badge.querySelector('.ticker-price-slot');
+            if (!slot) return;
+            var cls = quote.change_pct >= 0 ? 'ticker-up' : 'ticker-down';
+            var sign = quote.change_pct >= 0 ? '+' : '';
+            slot.textContent = quote.price.toFixed(2) + ' ' + quote.currency +
+              ' (' + sign + quote.change_pct.toFixed(2) + '%)';
+            slot.className = 'ticker-price-slot ticker-price ' + cls;
+          });
+        })
+        .catch(function () {
+          // Ağ hatası/timeout - sessizce yut, sayfa zaten tamamen
+          // yüklenmiş ve kullanılabilir durumda, sadece fiyatlar eksik kalır.
+        });
+    });
+  </script>
+</body>
+
+</html>

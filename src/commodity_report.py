@@ -20,6 +20,8 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import threading
+import time
 from typing import Any
 
 from datetime import datetime, timezone
@@ -268,6 +270,51 @@ def send_weekly_commodity_report(config: dict[str, Any], chat_ids: list[str] | N
         logger.exception("Haftalık Emtia Raporu gönderilirken beklenmeyen bir hata oluştu.")
 
 
+def _refresh_commodity_dashboard_cache() -> None:
+    try:
+        new_data = build_weekly_commodity_report_data(summarizer=None)
+        if not new_data:
+            return
+            
+        old_cache = get_app_state(_DASHBOARD_CACHE_KEY)
+        old_commodities = {}
+        generated_at = None
+        if old_cache and old_cache.get("commodities"):
+            generated_at = old_cache.get("generated_at")
+            for item in old_cache["commodities"]:
+                old_commodities[item["symbol"]] = item
+
+        for item in new_data:
+            old_item = old_commodities.get(item["symbol"])
+            if old_item:
+                item["analysis"] = old_item.get("analysis", "")
+                item["companies"] = old_item.get("companies", [])
+                
+        set_app_state(
+            _DASHBOARD_CACHE_KEY,
+            {"generated_at": generated_at, "commodities": new_data},
+        )
+    except Exception:
+        logger.exception("Arka plan emtia verisi tazeleme de hata.")
+
+_COMMODITY_REFRESH_INTERVAL_SECONDS = 90.0
+_commodity_background_thread: threading.Thread | None = None
+_commodity_background_stop = threading.Event()
+
+def _commodity_background_loop() -> None:
+    while not _commodity_background_stop.is_set():
+        _refresh_commodity_dashboard_cache()
+        _commodity_background_stop.wait(_COMMODITY_REFRESH_INTERVAL_SECONDS)
+
+def start_commodity_background_refresh() -> None:
+    global _commodity_background_thread
+    if _commodity_background_thread is not None and _commodity_background_thread.is_alive():
+        return
+    _commodity_background_thread = threading.Thread(
+        target=_commodity_background_loop, daemon=True, name="commodity-refresh"
+    )
+    _commodity_background_thread.start()
+
 def get_commodity_dashboard_data() -> dict[str, Any]:
     """Dashboard paneli (bkz. src/web/app.py > /api/commodity-weekly-report)
     için veri. Öncelik SIRASI:
@@ -284,4 +331,6 @@ def get_commodity_dashboard_data() -> dict[str, Any]:
         return cached
 
     data = build_weekly_commodity_report_data(summarizer=None)
+    set_app_state(_DASHBOARD_CACHE_KEY, {"generated_at": None, "commodities": data})
     return {"generated_at": None, "commodities": data}
+

@@ -22,7 +22,9 @@
        değişir. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
   <script>
     // Tema tercihini SAYFA BOYANMADAN ÖNCE uygula (FOUC/yanlış-tema
     // yanıp sönmesini önlemek için <head>'in en başında, senkron çalışır).
@@ -300,7 +302,7 @@
       transition: transform 0.15s;
     }
 
-    details[open] > .card-top .card-chevron {
+    details[open]>.card-top .card-chevron {
       transform: rotate(90deg);
     }
 
@@ -832,6 +834,44 @@
       color: var(--text-primary);
     }
 
+    /* Emtia adı, şirket isimleriyle AYNI mantıkla tıklanabilir - tıklanınca
+       tam analiz metni/fiyat/grafik gösteren detay modalı açılır (bkz.
+       openCommodityModal). <button> olduğundan tarayıcı varsayılan
+       stilleri sıfırlanır (arka plan/border/padding YOK - .commodity-label
+       ile GÖRSEL olarak birebir aynı görünsün diye). */
+    .commodity-label-clickable {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      cursor: pointer;
+      text-decoration: underline dotted;
+    }
+
+    .commodity-label-clickable:hover {
+      color: var(--positive);
+    }
+
+    /* "Devamını oku" - .commodity-analysis'in 3 satırlık clamp'i yüzünden
+       (bkz. CSS yorumu) sessizce kaybolan metnin HER ZAMAN erişilebilir
+       kalmasını garanti eder (bkz. görev gereksinimi) - tıklanınca TAM
+       metni gösteren modalı açar. */
+    .commodity-more-link {
+      background: none;
+      border: none;
+      padding: 0;
+      margin-top: 0.2rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--accent);
+      cursor: pointer;
+      display: block;
+    }
+
+    .commodity-more-link:hover {
+      text-decoration: underline;
+    }
+
     .commodity-change {
       font-weight: 700;
       font-size: 0.8rem;
@@ -863,6 +903,12 @@
       margin-bottom: 0.4rem;
     }
 
+    /* KASITLI 3 satırlık önizleme (kart yüksekliği kompakt kalsın diye) -
+       ama metin ASLA bununla birlikte KAYBOLMAZ: hemen altına eklenen
+       ".commodity-more-link" (bkz. loadCommodityPanel) HER ZAMAN TAM
+       metni gösteren bir detay modalı açar (bkz. openCommodityModal).
+       2026-07-30 ÖNCESİ bu link YOKTU - metin sessizce kesiliyordu
+       (kullanıcı geri bildirimi), bu yüzden eklendi. */
     .commodity-analysis {
       font-size: 0.72rem;
       color: var(--text-secondary);
@@ -908,7 +954,8 @@
       cursor: pointer;
     }
 
-    .company-chip:hover, .company-mention:hover {
+    .company-chip:hover,
+    .company-mention:hover {
       color: var(--positive);
     }
 
@@ -1103,8 +1150,10 @@
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni</option>
           <option value="oldest" {% if selected_sort=="oldest" %}selected{% endif %}>En Eski</option>
         </select>
-        <details class="filter-more" {% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %}open{% endif %}>
-          <summary>Filtreler{% if selected_source or selected_sector or selected_region or selected_sentiment or selected_min_importance %} (aktif){% endif %}</summary>
+        <details class="filter-more" {% if selected_source or selected_sector or selected_region or selected_sentiment
+          or selected_min_importance %}open{% endif %}>
+          <summary>Filtreler{% if selected_source or selected_sector or selected_region or selected_sentiment or
+            selected_min_importance %} (aktif){% endif %}</summary>
           <div class="filter-more-grid">
             <select name="source">
               <option value="" {% if not selected_source %}selected{% endif %}>Tüm Kaynaklar</option>
@@ -1115,25 +1164,29 @@
             <select name="sector">
               <option value="" {% if not selected_sector %}selected{% endif %}>Tüm Sektörler</option>
               {% for sec in sectors %}
-              <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}</option>
+              <option value="{{ sec.slug }}" {% if sec.slug==selected_sector %}selected{% endif %}>{{ sec.label }}
+              </option>
               {% endfor %}
             </select>
             <select name="region">
               <option value="" {% if not selected_region %}selected{% endif %}>Tüm Bölgeler</option>
               {% for reg in regions %}
-              <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}</option>
+              <option value="{{ reg.slug }}" {% if reg.slug==selected_region %}selected{% endif %}>{{ reg.label }}
+              </option>
               {% endfor %}
             </select>
             <select name="sentiment">
               <option value="" {% if not selected_sentiment %}selected{% endif %}>Tüm Duygular</option>
               {% for sent in sentiments %}
-              <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}</option>
+              <option value="{{ sent.slug }}" {% if sent.slug==selected_sentiment %}selected{% endif %}>{{ sent.label }}
+              </option>
               {% endfor %}
             </select>
             <select name="min_importance">
               <option value="" {% if not selected_min_importance %}selected{% endif %}>Tüm Önem Skorları</option>
               {% for opt in importance_options %}
-              <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri</option>
+              <option value="{{ opt }}" {% if opt==selected_min_importance %}selected{% endif %}>{{ opt }}+ ve üzeri
+              </option>
               {% endfor %}
             </select>
           </div>
@@ -1163,7 +1216,8 @@
           <span class="trend-panel-title">Trend Özeti</span>
           <span class="trend-period-toggle">
             <button type="button" id="trend-btn-weekly" onclick="loadTrendSummary('weekly')">Haftalık</button>
-            <button type="button" id="trend-btn-monthly" class="inactive" onclick="loadTrendSummary('monthly')">Aylık</button>
+            <button type="button" id="trend-btn-monthly" class="inactive"
+              onclick="loadTrendSummary('monthly')">Aylık</button>
           </span>
         </div>
         <div id="trend-panel-body">
@@ -1185,9 +1239,25 @@
         <div class="company-modal">
           <div class="company-modal-header">
             <span id="company-modal-title" class="company-modal-title"></span>
-            <button type="button" class="company-modal-close" onclick="closeCompanyModal()" aria-label="Kapat">✕</button>
+            <button type="button" class="company-modal-close" onclick="closeCompanyModal()"
+              aria-label="Kapat">✕</button>
           </div>
           <div id="company-modal-body"></div>
+        </div>
+      </div>
+
+      <!-- Emtia detay modalı - şirket modalıyla (bkz. yukarısı) AYNI
+           .company-modal-* CSS sınıflarını yeniden kullanır (tasarım
+           tekrarını önlemek için), ama tamamen ayrı bir DOM/JS
+           mekanizması (bkz. openCommodityModal). -->
+      <div id="commodity-modal-overlay" class="company-modal-overlay">
+        <div class="company-modal">
+          <div class="company-modal-header">
+            <span id="commodity-modal-title" class="company-modal-title"></span>
+            <button type="button" class="company-modal-close" onclick="closeCommodityModal()"
+              aria-label="Kapat">✕</button>
+          </div>
+          <div id="commodity-modal-body"></div>
         </div>
       </div>
 
@@ -1201,7 +1271,8 @@
       <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
         <summary class="card-top">
           <div>
-            <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}</h2>
+            <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{%
+              endif %}</h2>
             <div class="card-meta">
               <span>{{ r.published_at }}</span>
               <span class="meta-divider">|</span>
@@ -1255,14 +1326,16 @@
 
           {% if r.source_comparison %}
           <details class="compare-details">
-            <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)</summary>
+            <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)
+            </summary>
             <div class="compare-grid">
               {% for c in r.source_comparison %}
               <div class="compare-item">
                 <div class="compare-source">{{ c.source }}</div>
                 {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
                 {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
-                {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
+                {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet
+                  henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
               </div>
               {% endfor %}
             </div>
@@ -1385,12 +1458,12 @@
         const maxSectorCount = data.top_sectors.length ? Math.max.apply(null, data.top_sectors.map(function (s) { return s.count; })) : 1;
         const sectorsHtml = data.top_sectors.length
           ? data.top_sectors.map(function (s) {
-              const pct = Math.round(100 * s.count / maxSectorCount);
-              return '<div class="trend-sector-row">' +
-                '<span>' + escapeHtml(s.label) + '</span>' +
-                '<div class="trend-bar-track"><div class="trend-bar-fill" style="width:' + pct + '%"></div></div>' +
-                '<span>' + s.count + '</span></div>';
-            }).join('')
+            const pct = Math.round(100 * s.count / maxSectorCount);
+            return '<div class="trend-sector-row">' +
+              '<span>' + escapeHtml(s.label) + '</span>' +
+              '<div class="trend-bar-track"><div class="trend-bar-fill" style="width:' + pct + '%"></div></div>' +
+              '<span>' + s.count + '</span></div>';
+          }).join('')
           : '<span class="trend-empty">Sektör verisi yok.</span>';
 
         const sp = data.sentiment_pct;
@@ -1399,9 +1472,9 @@
 
         const topNewsHtml = data.top_news.length
           ? '<ul class="trend-top-news">' + data.top_news.map(function (n) {
-              const score = n.importance_score != null ? n.importance_score : '?';
-              return '<li>[' + score + '/5] ' + escapeHtml(n.title) + ' <span style="color:var(--text-muted)">(' + escapeHtml(n.sources) + ')</span></li>';
-            }).join('') + '</ul>'
+            const score = n.importance_score != null ? n.importance_score : '?';
+            return '<li>[' + score + '/5] ' + escapeHtml(n.title) + ' <span style="color:var(--text-muted)">(' + escapeHtml(n.sources) + ')</span></li>';
+          }).join('') + '</ul>'
           : '<span class="trend-empty">Öne çıkan haber yok.</span>';
 
         body.innerHTML =
@@ -1463,24 +1536,32 @@
           const strokeColor = up ? accentColor : downColor;
           const sparklineSvg = points
             ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
-              '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
+            '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
             : '';
           const companies = item.companies || [];
           const foundTickers = {};
+          // Kart içinde KISALTILMIŞ (3 satır, bkz. .commodity-analysis CSS)
+          // önizleme gösterilir, ama metin ASLA sessizce kaybolmaz - hemen
+          // altına eklenen "Devamını oku" her zaman TAM metni (kesilmeden)
+          // gösteren emtia detay modalını açar (bkz. openCommodityModal).
           const analysisHtml = item.analysis
-            ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>'
+            ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>' +
+            '<button type="button" class="commodity-more-link" onclick="openCommodityModal(\'' + item.symbol + '\')">Devamını oku →</button>'
             : '';
           const unmatched = companies.filter(function (c) { return !foundTickers[c.exchange + ': ' + c.ticker]; });
           const chipsHtml = unmatched.length
             ? '<div class="commodity-companies">' + unmatched.map(function (c) {
-                const key = registerCompany(c);
-                return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
-                  escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
-              }).join('') + '</div>'
+              const key = registerCompany(c);
+              return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
+                escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
+            }).join('') + '</div>'
             : '';
+          __commodityRegistry[item.symbol] = item;
           return '<div class="commodity-card">' +
             '<div class="commodity-card-top">' +
-            '<span class="commodity-label">' + item.emoji + ' ' + escapeHtml(item.label) + '</span>' +
+            '<button type="button" class="commodity-label commodity-label-clickable" onclick="openCommodityModal(\'' + item.symbol + '\')">' +
+            item.emoji + ' ' + escapeHtml(item.label) +
+            '</button>' +
             '<span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + item.pct_change + '%</span>' +
             '</div>' +
             '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
@@ -1503,6 +1584,11 @@
     // gömülür, gerçek veri registry'den okunur.
     let __companyRegistrySeq = 0;
     const __companyRegistry = {};
+    // Emtia detay modalı registry'si - şirketlerin aksine emtia sembolü
+    // (ör. "HG=F") zaten güvenli/tek tırnak içermeyen bir kod olduğundan
+    // (bkz. src/commodities.py > COMMODITY_SYMBOLS, sabit bir liste - LLM
+    // çıktısı DEĞİL), doğrudan anahtar olarak kullanılabilir.
+    const __commodityRegistry = {};
 
     function registerCompany(company) {
       const key = 'c' + (__companyRegistrySeq++);
@@ -1579,19 +1665,19 @@
         const points = buildSparklinePoints(data.history, 400, 48);
         const sparklineHtml = points
           ? '<svg class="company-modal-sparkline" viewBox="0 0 400 48" preserveAspectRatio="none">' +
-            '<polyline points="' + points + '" fill="none" stroke="' + (data.quote && data.quote.change_pct < 0 ? downColor : accentColor) + '" stroke-width="1.5"/></svg>'
+          '<polyline points="' + points + '" fill="none" stroke="' + (data.quote && data.quote.change_pct < 0 ? downColor : accentColor) + '" stroke-width="1.5"/></svg>'
           : '';
 
         const news = data.news || [];
         const newsHtml = news.length
           ? news.map(function (n) {
-              const titleHtml = n.link
-                ? '<a class="company-modal-news-title" href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
-                : '<span class="company-modal-news-title">' + escapeHtml(n.title) + '</span>';
-              return '<div class="company-modal-news-item">' + titleHtml +
-                '<div class="company-modal-news-meta">' + escapeHtml(n.sources) + ' · ' + escapeHtml(n.published_at) + '</div>' +
-                '</div>';
-            }).join('')
+            const titleHtml = n.link
+              ? '<a class="company-modal-news-title" href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
+              : '<span class="company-modal-news-title">' + escapeHtml(n.title) + '</span>';
+            return '<div class="company-modal-news-item">' + titleHtml +
+              '<div class="company-modal-news-meta">' + escapeHtml(n.sources) + ' · ' + escapeHtml(n.published_at) + '</div>' +
+              '</div>';
+          }).join('')
           : '<div class="company-modal-empty">Son 30 günde bu şirketle ilgili etiketlenmiş haber yok.</div>';
 
         bodyEl.innerHTML = quoteHtml + sparklineHtml +
@@ -1603,6 +1689,88 @@
 
     document.getElementById('company-modal-overlay').addEventListener('click', function (e) {
       if (e.target === this) closeCompanyModal();
+    });
+
+    // Emtia detay modalı - /api/commodity-weekly-report'un TEK bir
+    // çağrısında zaten TÜM ihtiyaç duyulan veri (tam analiz metni, 1 aylık
+    // fiyat geçmişi, ilgili şirketler) geldiğinden (bkz. loadCommodityPanel
+    // > __commodityRegistry), ayrı bir backend çağrısı GEREKMEZ - şirket
+    // detay modalının (bkz. get_ticker_detail) aksine.
+    function closeCommodityModal() {
+      document.getElementById('commodity-modal-overlay').classList.remove('open');
+    }
+
+    // Emtia haftalık raporu yalnızca HAFTALIK değişimi (pct_change) içerir;
+    // günlük değişim için ayrı bir alan YOK - ama zaten elimizdeki `history`
+    // (1 aylık günlük kapanış) dizisinin SON İKİ noktasından ücretsiz/ek
+    // ağ isteği olmadan hesaplanabilir.
+    function computeDailyChange(history) {
+      if (!history || history.length < 2) return null;
+      const prev = history[history.length - 2].close;
+      const last = history[history.length - 1].close;
+      if (!prev) return null;
+      return { pct: ((last - prev) / prev) * 100, abs: last - prev };
+    }
+
+    function openCommodityModal(symbol) {
+      const item = __commodityRegistry[symbol];
+      if (!item) return;
+
+      const overlay = document.getElementById('commodity-modal-overlay');
+      const titleEl = document.getElementById('commodity-modal-title');
+      const bodyEl = document.getElementById('commodity-modal-body');
+      titleEl.textContent = item.emoji + ' ' + item.label;
+
+      const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
+      const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+
+      const weeklyUp = item.pct_change >= 0;
+      const weeklySign = weeklyUp ? '+' : '';
+      let quoteHtml = '<div class="company-modal-quote">' + item.last_close + ' ' + escapeHtml(item.unit) +
+        ' <span class="commodity-change ' + (weeklyUp ? 'up' : 'down') + '">' + (weeklyUp ? '▲' : '▼') + ' ' +
+        weeklySign + item.pct_change + '% (haftalık)</span></div>';
+
+      const daily = computeDailyChange(item.history);
+      if (daily) {
+        const dailyUp = daily.pct >= 0;
+        const dailySign = dailyUp ? '+' : '';
+        quoteHtml += '<div class="company-modal-quote">' +
+          '<span class="commodity-change ' + (dailyUp ? 'up' : 'down') + '">' + (dailyUp ? '▲' : '▼') + ' ' +
+          dailySign + daily.pct.toFixed(2) + '% (günlük)</span></div>';
+      }
+
+      const points = buildSparklinePoints(item.history, 400, 48);
+      const sparklineHtml = points
+        ? '<svg class="company-modal-sparkline" viewBox="0 0 400 48" preserveAspectRatio="none">' +
+        '<polyline points="' + points + '" fill="none" stroke="' + (weeklyUp ? accentColor : downColor) + '" stroke-width="1.5"/></svg>'
+        : '';
+
+      // Tam analiz metni - KESİLMEDEN (bkz. görev açıklaması, önceki 3
+      // satırlık .commodity-analysis clamp'i burada UYGULANMAZ).
+      const analysisHtml = item.analysis
+        ? '<div class="company-modal-section-title">Analiz</div><div>' + escapeHtml(item.analysis) + '</div>'
+        : '<div class="company-modal-empty">Bu emtia için henüz LLM analizi üretilmedi.</div>';
+
+      const companies = item.companies || [];
+      const companiesHtml = companies.length
+        ? '<div class="company-modal-section-title">İlgili Şirketler</div><div class="commodity-companies">' +
+        companies.map(function (c) {
+          const key = registerCompany(c);
+          // Emtia modalı açıkken bir şirkete tıklanırsa, iki modalın ÜST
+          // ÜSTE binmesini önlemek için ÖNCE bu modal kapatılır, SONRA
+          // şirket modalı açılır (yığın/nested modal YOK, tek seferde
+          // tek modal - basit/öngörülebilir davranış).
+          return '<button type="button" class="company-chip" onclick="closeCommodityModal(); openCompanyModal(\'' + key + '\')">' +
+            escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
+        }).join('') + '</div>'
+        : '';
+
+      bodyEl.innerHTML = quoteHtml + sparklineHtml + analysisHtml + companiesHtml;
+      overlay.classList.add('open');
+    }
+
+    document.getElementById('commodity-modal-overlay').addEventListener('click', function (e) {
+      if (e.target === this) closeCommodityModal();
     });
 
     initThemeToggle();
@@ -1617,6 +1785,8 @@
     // yeterli.
     setInterval(refreshMarketTicker, 10000);
     setInterval(refreshSectorHeatmap, 300000);
+    setInterval(loadCommodityPanel, 90000);
   </script>
 </body>
+
 </html>
