@@ -84,9 +84,21 @@ MARKET_SYMBOLS: list[tuple[str, str]] = [
 #      ilerlediği gözlendi. Yani 10 sn'lik bir aralık, kaynağın kendi tik
 #      hızına yakın durarak neredeyse her gerçek güncellemeyi yakalar - daha
 #      sık sormanın (rate-limit güvenli olsa da) somut bir faydası olmaz.
-# Sonuç: 12 sn seçildi - kaynağın gerçek tik hızına en yakın, güvenlik payı
-# hâlâ çok yüksek (test edilen en agresif aralığın [2 sn] 6 katı kadar
-# gevşek) bir değer.
+# Sonuç (İLK karar, 2026-07): 12 sn seçildi - kaynağın gerçek tik hızına en
+# yakın, güvenlik payı hâlâ çok yüksek (test edilen en agresif aralığın
+# [2 sn] 6 katı kadar gevşek) bir değer.
+#
+# GERÇEK PRODUCTION SONUCU (2026-07-29, birkaç GÜNLÜK sürekli çalıştırmadan
+# sonra): yukarıdaki test yalnızca ~5 dk'lık KISA bir burst'ü ölçmüştü - bu,
+# Yahoo'nun SÜRDÜRÜLEBİLİR/uzun-vadeli hacim sınırını YANSITMIYORDU. 12 sn'de
+# bir 12 sembol = günde ~86.400 istek, GÜNLERCE sürekli aynı (Render'ın sabit)
+# IP'den - Render'ın Render loglarında GERÇEKTEN gözlemlendi: TÜM sembollerde
+# "429 Too Many Requests" (bkz. sohbet). Bu yüzden değer 90 sn'ye çıkarıldı
+# (~7.5 kat azaltma, günde ~11.520 isteğe iner) VE aşağıdaki 429-özel
+# "cooldown" mekanizması (bkz. _enter_yahoo_cooldown) eklendi - bir 429
+# alındığında, engel devam ederken YİNE DE her turda tekrar denemek (önceki
+# davranış) engeli UZATIYOR/pekiştiriyor olabilir; artık 429 görülünce bir
+# süre TÜM Yahoo isteği (arka plan VE anlık ticker sorguları) tamamen durur.
 #
 # MİMARİ NOT (2026-07, çoklu kullanıcı performans düzeltmesi): bu değer
 # ARTIK bir "TTL" (kullanıcı isteği geldiğinde ne kadar eski veri kabul
@@ -100,8 +112,35 @@ MARKET_SYMBOLS: list[tuple[str, str]] = [
 # `get_market_snapshot()` artık hiçbir zaman kilit BEKLEMİYOR, sadece
 # hazır veriyi okuyor (soğuk başlangıç anındaki TEK seferlik istisna
 # hariç, bkz. get_market_snapshot).
-_BACKGROUND_REFRESH_INTERVAL_SECONDS = 12.0
+_BACKGROUND_REFRESH_INTERVAL_SECONDS = 90.0
 _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+
+# --- Yahoo 429 ("Too Many Requests") circuit breaker (2026-07-29) ---
+# Gerçek production'da (Render, birkaç günlük sürekli çalıştırma sonrası)
+# Yahoo'nun bu anonim/ücretsiz endpoint'i TÜM sembollerde 429 döndürmeye
+# başladığı gözlemlendi. Bir 429 görüldüğünde, engel süresince YİNE DE
+# yeni istek göndermeye devam etmek (eski davranış: her arka plan turunda
+# veya her kullanıcı tıklamasında tekrar dene) muhtemelen engeli
+# UZATIYOR/pekiştiriyor - bu yüzden 429 görülür görülmez TÜM Yahoo
+# isteği (hem arka plan şeridi HEM anlık ticker/emtia geçmişi sorguları)
+# bir süreliğine TAMAMEN durdurulur; önbellekteki ESKİ veri (varsa) o süre
+# boyunca gösterilmeye devam eder, hiçbir yeni ağ isteği YAPILMAZ.
+_YAHOO_COOLDOWN_SECONDS = 300.0
+_yahoo_cooldown_until = 0.0
+
+
+def _yahoo_in_cooldown() -> bool:
+    return time.monotonic() < _yahoo_cooldown_until
+
+
+def _enter_yahoo_cooldown() -> None:
+    global _yahoo_cooldown_until
+    _yahoo_cooldown_until = time.monotonic() + _YAHOO_COOLDOWN_SECONDS
+    logger.warning(
+        "Yahoo Finance 429 (Too Many Requests) döndürdü - %.0f sn boyunca HİÇBİR yeni Yahoo isteği gönderilmeyecek "
+        "(bkz. src/web/market_data.py > _enter_yahoo_cooldown).",
+        _YAHOO_COOLDOWN_SECONDS,
+    )
 
 # "Thundering herd" koruması: HEM arka plan görevinin kendi periyodik
 # tazelemesi HEM DE soğuk başlangıç anında (süreç yeni başladığında, arka
@@ -131,7 +170,13 @@ async def fetch_symbol_history(
     ettiği değerler. `range_`: "1mo", "6mo" gibi. Hata durumunda (sembol
     geçersiz, ağ hatası, veri yok) boş liste döner - exception fırlatmaz,
     çağıran taraf tek bir emtianın geçmişinin çekilememesi yüzünden tüm
-    raporun durmasını istemez."""
+    raporun durmasını istemez.
+
+    Yahoo zaten 429 ile engellemişse (bkz. _yahoo_in_cooldown) hiç istek
+    ATILMAZ - hem gereksiz bir isteği önler hem de aktif engeli
+    uzatmamış olur."""
+    if _yahoo_in_cooldown():
+        return []
     try:
         response = await client.get(
             _CHART_URL.format(symbol=symbol),
@@ -147,12 +192,19 @@ async def fetch_symbol_history(
             for ts, close in zip(timestamps, closes)
             if close is not None
         ]
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            _enter_yahoo_cooldown()
+        logger.warning("Fiyat geçmişi alınamadı: %s (interval=%s, range=%s)", symbol, interval, range_, exc_info=True)
+        return []
     except Exception:  # noqa: BLE001 - tek bir sembolün geçmiş verisi başarısız olursa çağıran tarafı durdurmaz
         logger.warning("Fiyat geçmişi alınamadı: %s (interval=%s, range=%s)", symbol, interval, range_, exc_info=True)
         return []
 
 
 async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict[str, Any] | None:
+    if _yahoo_in_cooldown():
+        return None
     try:
         response = await client.get(
             _CHART_URL.format(symbol=symbol),
@@ -217,6 +269,11 @@ async def _fetch_one(client: httpx.AsyncClient, symbol: str, label: str) -> dict
             "is_delayed": is_delayed,
             "delay_minutes": delay_minutes,
         }
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            _enter_yahoo_cooldown()
+        logger.warning("Piyasa verisi alınamadı: %s", symbol, exc_info=True)
+        return None
     except Exception:  # noqa: BLE001 - tek bir sembolün başarısız olması diğerlerini etkilemesin
         logger.warning("Piyasa verisi alınamadı: %s", symbol, exc_info=True)
         return None
