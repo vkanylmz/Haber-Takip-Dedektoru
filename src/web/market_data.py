@@ -446,6 +446,52 @@ async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str
     return results
 
 
+async def validate_tickers_exist(company_tickers: list[str]) -> dict[str, dict[str, Any]]:
+    """`get_quotes_for_company_tickers` İLE AYNI mantık (aynı önbellek/
+    semaphore, sonuç şekli), ama `_TICKER_QUOTE_MAX_SYMBOLS_PER_CALL` (10)
+    SUNUCU TARAFI sınırı YOK - bu, HERKESE AÇIK `/api/ticker-quotes`
+    endpoint'ini kötüye kullanıma karşı koruyan bir önlemdi, ama bu
+    fonksiyon dışarıdan HİÇ çağrılmıyor (bkz. src/commodity_report.py >
+    _validate_companies_exist - haftada BİR, LLM'in ürettiği TÜM
+    şirketleri TEK seferde doğrulamak için).
+
+    ÖNEMLİ (2026-07-30, gerçek bir bug'la bulundu): çağıran taraf BİRDEN
+    FAZLA `asyncio.run()` çağrısıyla (ör. 10'luk parçalar hâlinde)
+    doğrulama yaparsa, modül düzeyindeki `_ticker_quote_semaphore` HER
+    `asyncio.run()`'da YENİ bir event loop'a bağlanmaya çalışıp
+    "bound to a different event loop" hatası fırlatıyordu - bu da bazı
+    parçaların sessizce başarısız olup GEÇERLİ şirketlerin bile
+    yanlışlıkla "geçersiz" sayılmasına yol açtı. Bu fonksiyon TÜM
+    ticker'ları TEK bir `asyncio.gather` içinde (dolayısıyla TEK bir
+    event loop'ta) işleyerek bu sorunu ortadan kaldırır - çağıran taraf
+    kendi `asyncio.run()`'ını yalnızca BİR KEZ çağırmalıdır."""
+    now = time.monotonic()
+    to_fetch: dict[str, str] = {}
+    results: dict[str, dict[str, Any]] = {}
+
+    unique_tickers = list(dict.fromkeys(company_tickers))
+    for ct in unique_tickers:
+        yahoo_symbol = _resolve_yahoo_symbol(ct)
+        if not yahoo_symbol:
+            continue
+        cached = _ticker_quote_cache.get(yahoo_symbol)
+        if cached and (now - cached[0]) < _TICKER_QUOTE_CACHE_TTL_SECONDS:
+            if cached[1] is not None:
+                results[ct] = cached[1]
+        else:
+            to_fetch[yahoo_symbol] = ct
+
+    if to_fetch:
+        async with httpx.AsyncClient(timeout=_TICKER_QUOTE_HTTP_TIMEOUT) as client:
+            fetched = await asyncio.gather(*(_fetch_one_limited(client, sym, sym) for sym in to_fetch))
+        for sym, quote in zip(to_fetch.keys(), fetched):
+            _ticker_quote_cache[sym] = (now, quote)
+            if quote is not None:
+                results[to_fetch[sym]] = quote
+
+    return results
+
+
 # Emtia raporundaki tıklanabilir şirket kartları (bkz. dashboard.html >
 # şirket detay modalı, /api/company-detail) için 1 aylık günlük fiyat
 # geçmişi (sparkline) önbelleği - `_ticker_quote_cache` (30 sn) ile AYNI

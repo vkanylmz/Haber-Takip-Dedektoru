@@ -32,7 +32,7 @@ from src.db import get_all_subscriber_chat_ids, get_app_state, set_app_state
 from src.notifier import send_telegram_message_to_chat_ids
 from src.summarizer import Summarizer
 from src.telegram_format import chunk_messages
-from src.web.market_data import get_quotes_for_company_tickers
+from src.web.market_data import get_quotes_for_company_tickers, validate_tickers_exist
 
 logger = logging.getLogger(__name__)
 
@@ -172,26 +172,19 @@ def _validate_companies_exist(results: list[dict[str, Any]]) -> None:
     if not all_tickers:
         return
 
-    # Herkese açık /api/ticker-quotes ile AYNI sunucu-tarafı sınırı
-    # (_TICKER_QUOTE_MAX_SYMBOLS_PER_CALL=10) burada da geçerli olduğundan,
-    # TEK bir çağrıda 10'dan fazla sembol göndermek fazlasını sessizce
-    # (doğrulanmamış -> yanlışlıkla "geçersiz" sayılmış gibi) keserdi. Bu
-    # yüzden 10'luk parçalar hâlinde AYRI çağrılar yapılır.
-    chunk_size = 10
-    valid_tickers: set[str] = set()
-    any_chunk_succeeded = False
-    for i in range(0, len(all_tickers), chunk_size):
-        chunk = all_tickers[i : i + chunk_size]
-        try:
-            quotes = asyncio.run(get_quotes_for_company_tickers(chunk))
-        except Exception:  # noqa: BLE001 - doğrulama başarısız olursa bu parçayı atla, şirketleri SİLME
-            logger.exception("Şirket ticker doğrulaması sırasında hata (parça): %s", chunk)
-            continue
-        if quotes:
-            any_chunk_succeeded = True
-            valid_tickers.update(quotes.keys())
+    # TEK bir asyncio.run() çağrısı - validate_tickers_exist TÜM ticker'ları
+    # KENDİ İÇİNDE tek bir asyncio.gather ile işler (bkz. o fonksiyonun
+    # docstring'i: BİRDEN FAZLA asyncio.run() çağrısı, modül düzeyindeki
+    # semaphore'un farklı event loop'lara bağlanmaya çalışmasına ve
+    # GEÇERLİ şirketlerin bile yanlışlıkla "geçersiz" sayılmasına yol
+    # açan GERÇEK bir bug'a neden olmuştu - 2026-07-30'da bulunup düzeltildi).
+    try:
+        valid_tickers = set(asyncio.run(validate_tickers_exist(all_tickers)).keys())
+    except Exception:  # noqa: BLE001 - doğrulama tümüyle başarısız olursa HİÇBİR şirketi silme
+        logger.exception("Şirket ticker doğrulaması sırasında hata - bu turda hiçbir şirket filtrelenmiyor.")
+        return
 
-    if not any_chunk_succeeded:
+    if not valid_tickers:
         # Doğrulama servisi bu turda TÜMÜYLE yanıt vermedi (ör. geçici
         # rate-limit) - hiçbir şirketi silme, bir sonraki haftaya (veya
         # kullanıcı denemesine) bırak.
