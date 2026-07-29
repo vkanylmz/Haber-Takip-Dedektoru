@@ -271,16 +271,30 @@ def send_weekly_commodity_report(config: dict[str, Any], chat_ids: list[str] | N
 
 
 def _refresh_commodity_dashboard_cache() -> None:
+    """Her `_COMMODITY_REFRESH_INTERVAL_SECONDS` (90 sn) fiyat/sparkline'ı
+    TAZE Yahoo verisiyle günceller - LLM analizi/şirket listesi (pahalı,
+    haftada bir üretilir) ESKİ önbellekten KORUNUR, yeniden üretilmez.
+
+    ÖNEMLİ DÜZELTME (2026-07-30, kullanıcı geri bildirimi): `generated_at`
+    ÖNCEDEN buradaki her tazelemede ESKİ (Telegram raporunun yazdığı)
+    değere sabitleniyordu - bu, dashboard panelindeki "Son güncelleme"
+    yazısının GERÇEKTE her 90 sn'de bir tazelenen fiyatı YANSITMAMASINA,
+    kullanıcıya panelin donduğu izlenimi vermesine yol açıyordu (gerçek
+    testte doğrulandı: fiyatlar sessizce güncelleniyordu ama zaman damgası
+    hiç değişmiyordu). Artık HER başarılı tazelemede `datetime.now()` ile
+    güncelleniyor - "Son güncelleme" artık GERÇEKTEN o an gösterilen
+    fiyat/sparkline verisinin ne zaman çekildiğini yansıtıyor (LLM analizi
+    kendi içinde hâlâ haftalık kalıyor, sadece zaman damgasının anlamı artık
+    "fiyat tazeliği" - bu, kullanıcının "fiyat/yüzde canlı olsun" isteğiyle
+    tutarlı)."""
     try:
         new_data = build_weekly_commodity_report_data(summarizer=None)
         if not new_data:
             return
-            
+
         old_cache = get_app_state(_DASHBOARD_CACHE_KEY)
         old_commodities = {}
-        generated_at = None
         if old_cache and old_cache.get("commodities"):
-            generated_at = old_cache.get("generated_at")
             for item in old_cache["commodities"]:
                 old_commodities[item["symbol"]] = item
 
@@ -289,10 +303,10 @@ def _refresh_commodity_dashboard_cache() -> None:
             if old_item:
                 item["analysis"] = old_item.get("analysis", "")
                 item["companies"] = old_item.get("companies", [])
-                
+
         set_app_state(
             _DASHBOARD_CACHE_KEY,
-            {"generated_at": generated_at, "commodities": new_data},
+            {"generated_at": datetime.now(timezone.utc).isoformat(), "commodities": new_data},
         )
     except Exception:
         logger.exception("Arka plan emtia verisi tazeleme de hata.")
