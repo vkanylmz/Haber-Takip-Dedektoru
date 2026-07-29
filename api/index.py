@@ -39,6 +39,7 @@ from src.config import load_config
 from src.db import init_db
 from src.web.app import (
     commodity_weekly_report_endpoint as _commodity_weekly_report_view,
+    company_detail_endpoint as _company_detail_view,
     dashboard as _dashboard_view,
     detayli_inceleme_page as _detayli_inceleme_view,
     health as _health_view,
@@ -118,4 +119,10 @@ app.get("/api/ticker-quotes")(_ticker_quotes_view)
 app.get("/api/sector-heatmap")(_sector_heatmap_view)
 app.get("/api/trend-summary")(_trend_summary_view)
 app.get("/api/commodity-weekly-report")(_commodity_weekly_report_view)
+# /sirket-profili'nin AKSİNE (yukarıdaki modül docstring'i) hiçbir LLM
+# çağrısı tetiklemez (bkz. src/web/app.py > company_detail_endpoint) -
+# yalnızca ücretsiz/kimlik doğrulamasız Yahoo Finance + veritabanı okuması
+# yapar, tıpkı zaten herkese açık olan /api/ticker-quotes gibi - bu yüzden
+# güvenle Render'a da yansıtılabilir.
+app.get("/api/company-detail")(_company_detail_view)
 app.get("/health")(_health_view)
