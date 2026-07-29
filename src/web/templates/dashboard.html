@@ -11,6 +11,18 @@
        listesi artık otomatik yenilenmiyor (yalnızca manuel sayfa yenileme
        veya filtre değiştirme ile güncellenir) - bu kasıtlı bir değiş tokuş. -->
   <title>Finansal Haber Dashboard</title>
+  <!-- Font (2026-07): Bloomberg HT'nin serif başlık + sistem-sans gövde
+       ikilisinden BİLİNÇLİ olarak uzaklaşmak için (bkz. kullanıcı isteği)
+       Google Fonts'tan Space Grotesk (başlıklar) + Inter (gövde) yüklenir -
+       ikisi de ücretsiz/açık lisanslı (SIL Open Font License). CDN
+       erişilemezse (ör. ağ engeli) `--font-heading`/`--font-sans`
+       değişkenlerindeki sistem fontu fallback'leri devreye girer, sayfa
+       KIRILMAZ. `display=swap` FOUT'u (görünmez metin yanıp sönmesini)
+       önler - font yüklenene kadar sistem fontuyla gösterilip sonra
+       değişir. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     // Tema tercihini SAYFA BOYANMADAN ÖNCE uygula (FOUC/yanlış-tema
     // yanıp sönmesini önlemek için <head>'in en başında, senkron çalışır).
@@ -35,8 +47,16 @@
          - Küçük border-radius (6-10px, önceki 12-16px yerine)
          - TEK vurgu rengi + yalnızca pozitif/negatif için yeşil/kırmızı
            (önceki 5 renkli rozet sistemi yerine)
-         - Serif başlık + sans-serif gövde ikilisi (harici font YOK,
-           sistem fontları - self-contained kalınır)
+
+       FONT (2026-07-29 güncellemesi): önceki Georgia (serif başlık) +
+       sistem-sans (gövde) ikilisi, Bloomberg'in kendi tasarımına ÇOK
+       benziyordu (kullanıcı geri bildirimi) - kasıtlı olarak KENDİNE ÖZGÜ
+       bir görünüme geçildi: Space Grotesk (başlıklar, --font-heading -
+       geometrik/köşeli, "yazılım/fintech" karakterli, serif DEĞİL) +
+       Inter (gövde, --font-sans - yüksek okunabilirlik, tabular rakam
+       desteği). Fiyat/skor gibi sayısal alanlar hâlâ ayrı --font-mono
+       (sistem monospace) kullanıyor - hizalı rakamlar için zaten en
+       güvenilir seçenek, bu yüzden değiştirilmedi.
        ========================================================== */
     :root {
       --bg: #f6f6f7;
@@ -52,8 +72,8 @@
       --negative: #b91c1c;
       --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06);
 
-      --font-sans: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      --font-serif: Georgia, "Times New Roman", Times, serif;
+      --font-sans: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      --font-heading: 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
@@ -100,7 +120,7 @@
     }
 
     header h1 {
-      font-family: var(--font-serif);
+      font-family: var(--font-heading);
       font-size: 1.4rem;
       font-weight: 700;
       margin: 0;
@@ -289,7 +309,7 @@
     }
 
     .card-title {
-      font-family: var(--font-serif);
+      font-family: var(--font-heading);
       font-size: 1.1rem;
       font-weight: 700;
       margin: 0 0 0.4rem 0;
@@ -325,6 +345,7 @@
       font-weight: 700;
       font-size: 0.8rem;
       font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
     }
 
     .badge-critical {
@@ -543,6 +564,7 @@
       animation: ticker-scroll 35s linear infinite;
       will-change: transform;
       font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
     }
 
     @keyframes ticker-scroll {
@@ -805,6 +827,7 @@
       font-weight: 700;
       font-size: 0.8rem;
       font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
 
@@ -821,6 +844,7 @@
       color: var(--text-muted);
       margin-bottom: 0.4rem;
       font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
     }
 
     .commodity-sparkline {
@@ -931,6 +955,7 @@
 
     .company-modal-quote {
       font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
       font-size: 0.95rem;
       margin-bottom: 0.5rem;
     }
