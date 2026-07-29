@@ -30,6 +30,7 @@ from src.db import get_all_subscriber_chat_ids, get_app_state, set_app_state
 from src.notifier import send_telegram_message_to_chat_ids
 from src.summarizer import Summarizer
 from src.telegram_format import chunk_messages
+from src.web.market_data import get_quotes_for_company_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,13 @@ async def _fetch_all_histories() -> dict[str, list[dict[str, Any]]]:
 
 def build_weekly_commodity_report_data(summarizer: Summarizer | None = None) -> list[dict[str, Any]]:
     """Her emtia için {symbol, label, unit, emoji, first_close, last_close,
-    abs_change, pct_change, history, analysis} sözlüğü döner. `history`
-    (sparkline/trend grafiği için) tüm 1 aylık günlük noktaları içerir;
-    değişim yüzdesi ise yalnızca SON `_WEEKLY_WINDOW_POINTS` noktadan
-    (yaklaşık 1 hafta) hesaplanır.
+    abs_change, pct_change, history, analysis, companies} sözlüğü döner.
+    `history` (sparkline/trend grafiği için) tüm 1 aylık günlük noktaları
+    içerir; değişim yüzdesi ise yalnızca SON `_WEEKLY_WINDOW_POINTS` noktadan
+    (yaklaşık 1 hafta) hesaplanır. `companies` (bkz. Summarizer.
+    analyze_commodity_weekly), analiz metninde bahsedilen şirketlerin
+    yapılandırılmış [{"name","ticker","exchange"}] listesidir - dashboard/
+    Telegram bunu kullanarak metni ayrıştırmadan güncel fiyat gösterir.
 
     `summarizer` verilmezse (ör. sadece veri/grafik lazım, LLM analizi
     gerekmiyorsa - bkz. dashboard API'si) LLM çağrısı YAPILMAZ, `analysis`
@@ -105,8 +109,9 @@ def build_weekly_commodity_report_data(summarizer: Summarizer | None = None) -> 
             continue
 
         analysis = ""
+        companies: list[dict[str, str]] = []
         if summarizer is not None:
-            analysis = summarizer.analyze_commodity_weekly(
+            analysis, companies = summarizer.analyze_commodity_weekly(
                 label, change["pct_change"], change["abs_change"], unit
             )
 
@@ -122,13 +127,44 @@ def build_weekly_commodity_report_data(summarizer: Summarizer | None = None) -> 
                 "pct_change": change["pct_change"],
                 "history": history,
                 "analysis": analysis,
+                "companies": companies,
             }
         )
 
     return results
 
 
-def format_commodity_weekly_messages(data: list[dict[str, Any]]) -> list[str]:
+def _company_ticker_string(company: dict[str, str]) -> str:
+    """{"ticker": "FCX", "exchange": "NYSE", ...} -> "NYSE: FCX" (bkz.
+    src/web/market_data.py > _resolve_yahoo_symbol'ün beklediği "BORSA:
+    SEMBOL" formatı - src/summarizer.py > company_ticker ile AYNI)."""
+    return f"{company['exchange']}: {company['ticker']}"
+
+
+def _fetch_company_quotes(data: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Rapordaki TÜM emtiaların TÜM şirketleri için, TEK bir toplu çağrıda
+    (bkz. get_quotes_for_company_tickers - kendi 30 sn'lik önbelleği/
+    eşzamanlılık sınırı VAR, burada tekrarlanmıyor) anlık fiyat/değişim
+    çeker. Ağ hatası/boş liste durumunda boş sözlük döner (Telegram mesajı
+    fiyat eki OLMADAN, sadece LLM analiziyle gönderilmeye devam eder -
+    bkz. format_commodity_weekly_messages)."""
+    tickers = [
+        _company_ticker_string(c)
+        for item in data
+        for c in item.get("companies", [])
+    ]
+    if not tickers:
+        return {}
+    try:
+        return asyncio.run(get_quotes_for_company_tickers(tickers))
+    except Exception:  # noqa: BLE001 - fiyat eki opsiyonel bir bonus, raporun gönderimini durdurmasın
+        logger.exception("Haftalık Emtia Raporu için şirket fiyatları çekilirken hata oluştu.")
+        return {}
+
+
+def format_commodity_weekly_messages(
+    data: list[dict[str, Any]], quotes: dict[str, dict[str, Any]] | None = None
+) -> list[str]:
     """9 emtianın TAMAMI (her biri kendi LLM analiziyle) tek bir Telegram
     mesajına SIĞMAYABİLİR (bkz. src/telegram_format.py > TELEGRAM_MESSAGE_LIMIT
     = 4096 karakter - GERÇEK bir test çalıştırmasında 9/9 emtia + analizle
@@ -136,12 +172,23 @@ def format_commodity_weekly_messages(data: list[dict[str, Any]]) -> list[str]:
     TAMAMEN BAŞARISIZ oldu, bkz. sohbet). Bu yüzden `daily_digest.py`'nin
     kullandığı AYNI `chunk_messages` yardımcı fonksiyonu kullanılarak, gerekli
     olduğunda birden fazla mesaja bölünür - her mesaj bağımsız olarak
-    gönderilir (bkz. send_weekly_commodity_report)."""
+    gönderilir (bkz. send_weekly_commodity_report).
+
+    `quotes` verilirse (bkz. _fetch_company_quotes - "BORSA: SEMBOL" ->
+    fiyat sözlüğü), her emtia analizinde bahsedilen şirketler için ayrı bir
+    "İlgili şirketler" satırı eklenir (ör. "Freeport-McMoRan (FCX): $42.10
+    (+1.2%)"). LLM'in serbest metnindeki isim biçimiyle bire bir eşleşmesi
+    GARANTİ olmadığından, fiyat metne "ameliyat" edilerek gömülmez - AYRI,
+    kendi başına doğru bir satır olarak eklenir (bkz. kullanıcıyla yapılan
+    tasarım tartışması). Bir şirketin fiyatı çözülemezse (sembol geçersiz/
+    Yahoo'dan veri alınamadı) o şirket sessizce fiyatsız (sadece isim/ticker)
+    gösterilir."""
     header = "<b>🛒 Haftalık Emtia Raporu</b>"
 
     if not data:
         return [f"{header}\n\nBu hafta hiçbir emtia için veri hesaplanamadı."]
 
+    quotes = quotes or {}
     blocks: list[str] = []
     for item in data:
         arrow = "📈" if item["pct_change"] >= 0 else "📉"
@@ -153,6 +200,19 @@ def format_commodity_weekly_messages(data: list[dict[str, Any]]) -> list[str]:
         )
         if item["analysis"]:
             block += f"\n{html.escape(item['analysis'])}"
+
+        companies = item.get("companies", [])
+        if companies:
+            company_bits = []
+            for c in companies:
+                quote = quotes.get(_company_ticker_string(c))
+                label_bit = f"{html.escape(c['name'])} ({html.escape(c['ticker'])})"
+                if quote:
+                    q_sign = "+" if quote["change_pct"] >= 0 else ""
+                    label_bit += f": {quote['price']} {html.escape(quote['currency'])} ({q_sign}{quote['change_pct']}%)"
+                company_bits.append(label_bit)
+            block += "\n<i>İlgili şirketler:</i> " + ", ".join(company_bits)
+
         blocks.append(block)
 
     return chunk_messages(header, blocks)
@@ -184,7 +244,8 @@ def send_weekly_commodity_report(config: dict[str, Any], chat_ids: list[str] | N
         summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
 
         data = build_weekly_commodity_report_data(summarizer)
-        messages = format_commodity_weekly_messages(data)
+        quotes = _fetch_company_quotes(data)
+        messages = format_commodity_weekly_messages(data, quotes)
 
         # Dashboard panelinin AYNI veriyi (LLM analizi/şirket isimleri DAHİL)
         # gösterebilmesi için önbelleğe yazılır - panel bu sayede kendi

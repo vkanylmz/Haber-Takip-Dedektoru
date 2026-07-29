@@ -374,6 +374,55 @@ async def get_quotes_for_company_tickers(company_tickers: list[str]) -> dict[str
     return results
 
 
+# Emtia raporundaki tıklanabilir şirket kartları (bkz. dashboard.html >
+# şirket detay modalı, /api/company-detail) için 1 aylık günlük fiyat
+# geçmişi (sparkline) önbelleği - `_ticker_quote_cache` (30 sn) ile AYNI
+# kaynaktan (Yahoo chart endpoint'i) geldiği için AYNI semaphore'u
+# paylaşır, ama TTL'i çok daha uzun: 1 aylık günlük kapanış verisi gün
+# içinde pratikte değişmez (yalnızca bugünün henüz kapanmamış barı
+# güncellenir), bu yüzden fiyat kadar sık tazelenmesine gerek yok - Yahoo'ya
+# gereksiz yük bindirmemek için 5 dakika seçildi.
+_TICKER_HISTORY_CACHE_TTL_SECONDS = 300.0
+_ticker_history_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_TICKER_HISTORY_RANGE = "1mo"
+_TICKER_HISTORY_INTERVAL = "1d"
+
+
+async def get_ticker_detail(company_ticker: str) -> dict[str, Any] | None:
+    """Emtia raporundaki bir şirket kartına tıklanınca (bkz.
+    /api/company-detail) gösterilecek TÜM veriyi tek çağrıda toplar: anlık
+    fiyat/değişim (bkz. get_quotes_for_company_tickers - kendi 30 sn
+    önbelleği/semaphore'u ile) + 1 aylık günlük fiyat geçmişi (sparkline
+    için, kendi 5 dk önbelleğiyle, bkz. yukarıdaki not).
+
+    "BORSA: SEMBOL" çözülemezse (geçersiz format/sembol) None döner - bu,
+    çağıran tarafın (app.py) 404 dönmesi için kullanılır."""
+    yahoo_symbol = _resolve_yahoo_symbol(company_ticker)
+    if not yahoo_symbol:
+        return None
+
+    quotes = await get_quotes_for_company_tickers([company_ticker])
+    quote = quotes.get(company_ticker)
+
+    now = time.monotonic()
+    cached = _ticker_history_cache.get(yahoo_symbol)
+    if cached and (now - cached[0]) < _TICKER_HISTORY_CACHE_TTL_SECONDS:
+        history = cached[1]
+    else:
+        async with _ticker_quote_semaphore:
+            async with httpx.AsyncClient(timeout=_TICKER_QUOTE_HTTP_TIMEOUT) as client:
+                history = await fetch_symbol_history(
+                    client, yahoo_symbol, _TICKER_HISTORY_INTERVAL, _TICKER_HISTORY_RANGE
+                )
+        _ticker_history_cache[yahoo_symbol] = (now, history)
+
+    if quote is None and not history:
+        # Ne fiyat ne geçmiş alınabildiyse (ör. sembol Yahoo'da yok) - 404.
+        return None
+
+    return {"quote": quote, "history": history}
+
+
 async def _refresh_market_data_cache() -> None:
     """Yahoo'dan GERÇEK veriyi çekip önbelleği yazar - hem arka plan görevi
     (bkz. _background_refresh_loop) hem de soğuk başlangıç fallback'i (bkz.

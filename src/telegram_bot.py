@@ -55,6 +55,7 @@ from src.db import (
     add_keyword_subscription,
     add_subscriber,
     get_keywords_for_chat,
+    get_records_by_company_ticker,
     get_records_since,
     get_records_since_by_region,
     get_source_health_summary,
@@ -67,6 +68,7 @@ from src.db import (
 from src.summarizer import SECTOR_LABELS
 from src.telegram_format import chunk_messages, format_news_block
 from src.timezone_utils import format_turkey_time
+from src.web.market_data import get_ticker_detail
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,7 @@ _GUIDE_TEXT = (
     "<b>🔍 Arama &amp; Analiz</b>\n"
     "/ara &lt;kelime&gt; — Geçmiş TÜM haberlerde (başlık + özet) ara (ör. /ara faiz)\n"
     "/sirket &lt;isim&gt; — Bir şirket/varlık için son 30 günün haberleri + AI tarafından üretilmiş genel görünüm özeti (ör. /sirket Tesla)\n"
+    "/hisse &lt;TICKER&gt; — Bir hissenin GÜNCEL fiyatı/günlük değişimi + son 30 günün ilgili haberleri (ör. /hisse ADM veya /hisse BIST: THYAO)\n"
     "/sektorler (veya /sektoranaliz) — Son 24 saatteki sektör analizi: hangi sektörde kaç haber var, ortalama önem, genel duygu eğilimi\n"
     "/kaynaksagligi — Her haber kaynağının son 24 saatteki başarı oranı, ortalama haber sayısı, son başarılı/başarısız çalışma zamanı\n\n"
 
@@ -437,6 +440,59 @@ async def _company_profile_command(update: Update, context: ContextTypes.DEFAULT
             await asyncio.sleep(0.05)
 
 
+async def _stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/hisse <TICKER>: Haftalık Emtia Raporu'ndaki tıklanabilir şirket
+    kartlarının (bkz. src/web/market_data.py > get_ticker_detail, dashboard
+    şirket detay modalıyla AYNI veri kaynağı) Telegram karşılığı - güncel
+    fiyat/değişim + son 30 günün `company_ticker` alanı TAM eşleşen
+    haberleri (bkz. src/db.py > get_records_by_company_ticker - LLM çağrısı
+    YOK, /sirket'in aksine anında yanıt verir).
+
+    Borsa belirtilmezse (ör. "/hisse ADM") NASDAQ/NYSE varsayılır - ikisi de
+    Yahoo sembolüne sonek eklemediğinden (bkz. _EXCHANGE_YAHOO_SUFFIX)
+    aralarında pratik bir fark yoktur. "BORSA: SEMBOL" formatında da (ör.
+    "/hisse BIST: THYAO") girilebilir."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    raw = " ".join(context.args).strip() if context.args else ""
+    if not raw:
+        await update.message.reply_text("Kullanım: /hisse <TICKER>  (örn. /hisse ADM veya /hisse BIST: THYAO)")
+        return
+
+    company_ticker = raw if ":" in raw else f"NASDAQ: {raw.upper()}"
+    logger.info("/hisse alındı: chat_id=%s, ticker=%r", chat.id, company_ticker)
+
+    detail = await get_ticker_detail(company_ticker)
+    if detail is None or detail.get("quote") is None:
+        await update.message.reply_text(f"'{raw}' için güncel fiyat bulunamadı (sembol geçersiz/desteklenmiyor olabilir).")
+        return
+
+    quote = detail["quote"]
+    arrow = "📈" if quote["change_pct"] >= 0 else "📉"
+    sign = "+" if quote["change_pct"] >= 0 else ""
+    lines = [
+        f"<b>{html.escape(quote['label'])}</b>",
+        f"{quote['price']} {html.escape(quote['currency'])} ({arrow} {sign}{quote['change_pct']}%)",
+    ]
+    if quote.get("is_delayed"):
+        lines.append(f"<i>({quote['delay_minutes']} dk gecikmeli veri)</i>")
+
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    records = get_records_by_company_ticker(company_ticker, limit=5, since=since)
+    if records:
+        lines.append("\n📰 <b>Son Haberler:</b>")
+        for r in records:
+            link = r.links_list()[0]["link"] if r.links_list() else None
+            title_part = f'<a href="{html.escape(link)}">{html.escape(r.title)}</a>' if link else html.escape(r.title)
+            lines.append(f"• {title_part} <i>({html.escape(r.sources)})</i>")
+    else:
+        lines.append("\n<i>Son 30 günde bu ticker'a etiketlenmiş haber yok.</i>")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+
 async def _source_health_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     """/kaynaksagligi: web dashboard'daki Kaynak Sağlığı panelinin (bkz.
     src/db.py > get_source_health_summary) Telegram karşılığı - her
@@ -595,6 +651,7 @@ def build_application(bot_token: str) -> Application:
     application.add_handler(CommandHandler(["sektorler", "sektoranaliz"], _sector_analysis))
     application.add_handler(CommandHandler("ara", _search_news))
     application.add_handler(CommandHandler("sirket", _company_profile_command))
+    application.add_handler(CommandHandler("hisse", _stock_command))
     application.add_handler(CommandHandler("kaynaksagligi", _source_health_command))
     application.add_handler(CommandHandler("takip", _track_keyword))
     application.add_handler(CommandHandler("takiplerim", _list_tracked_keywords))

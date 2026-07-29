@@ -271,10 +271,17 @@ artan üreticiler" vs "üretici/madenci şirketler için gelir artışı"). \
 Kesinlik iddia etme, "olabilir/muhtemelen" gibi temkinli bir üslup kullan - \
 yatırım tavsiyesi verme.
 
+Ayrıca, metinde adı geçen şirketlerin GERÇEK borsa ticker'larını (SADECE \
+NYSE/NASDAQ'ta gerçekten işlem gören, GERÇEKTEN var olan şirketler - \
+uydurma/tahmini ticker YAZMA, bilmiyorsan o şirketi listeye ekleme) ayrı bir \
+yapılandırılmış listede de ver - bu, dashboard/Telegram'ın metinden şirket \
+adı ayrıştırmaya çalışmadan doğrudan güncel fiyat gösterebilmesi için. En \
+fazla 4 şirket, metinde bahsettiğin sırayla.
+
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"analysis": "..."}
+{"analysis": "...", "companies": [{"name": "Freeport-McMoRan", "ticker": "FCX", "exchange": "NYSE"}]}
 """
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -785,13 +792,21 @@ class Summarizer:
 
         return parsed["summary"].strip()
 
-    def analyze_commodity_weekly(self, label: str, pct_change: float, abs_change: float, unit: str) -> str:
+    def analyze_commodity_weekly(
+        self, label: str, pct_change: float, abs_change: float, unit: str
+    ) -> tuple[str, list[dict[str, str]]]:
         """Haftalık emtia raporu (bkz. src/commodity_report.py) için TEK bir
         ek çağrı ile "bu fiyat hareketi hangi ABD borsası şirket/sektörlerini
-        nasıl etkiler" analizi ürettirir (bkz. COMMODITY_WEEKLY_SYSTEM_PROMPT).
+        nasıl etkiler" analizi VE bahsedilen şirketlerin yapılandırılmış
+        ticker listesini ürettirir (bkz. COMMODITY_WEEKLY_SYSTEM_PROMPT).
+        Dönen ticker listesi, dashboard'daki tıklanabilir şirket
+        kartları/Telegram'daki anlık fiyat eki için kullanılır (bkz.
+        src/web/market_data.py > get_quotes_for_company_tickers - "BORSA:
+        SEMBOL" formatına burada, çağıran tarafta çevrilir).
+
         `summarize_company_profile` ile AYNI desen: hata/ayrıştırma
-        sorununda boş string döner (exception fırlatmaz) - çağıran taraf bu
-        durumda o emtia için LLM analizi olmadan devam eder."""
+        sorununda ("", []) döner (exception fırlatmaz) - çağıran taraf bu
+        durumda o emtia için LLM analizi/şirket listesi olmadan devam eder."""
         direction = "yükseldi" if pct_change >= 0 else "düştü"
         user_prompt = (
             f"Emtia: {label}\n"
@@ -802,14 +817,46 @@ class Summarizer:
             raw_text = self._call_model_with_retry(user_prompt, system_prompt=COMMODITY_WEEKLY_SYSTEM_PROMPT)
         except Exception:  # noqa: BLE001 - bir emtianın analizi başarısız olursa raporun geri kalanını durdurmasın
             logger.exception("Emtia haftalık analizi (LLM çağrısı) başarısız oldu: %s", label)
-            return ""
+            return "", []
 
         parsed = _extract_json(raw_text)
         if not parsed or not isinstance(parsed.get("analysis"), str):
             logger.warning("Emtia haftalık analizi yanıtı beklenen JSON formatında değildi: %s", label)
-            return ""
+            return "", []
 
-        return parsed["analysis"].strip()
+        analysis = parsed["analysis"].strip()
+        companies = self._parse_commodity_companies(parsed.get("companies"))
+        return analysis, companies
+
+    @staticmethod
+    def _parse_commodity_companies(raw_value: Any) -> list[dict[str, str]]:
+        """Modelin döndürdüğü `companies` listesini ({"name","ticker",
+        "exchange"} sözlükleri) doğrular/temizler. Geçersiz veya eksik alanlı
+        girişler sessizce atlanır (raporun geri kalanını etkilemez) - `name`
+        boş/aşırı uzunsa, `ticker` basit bir borsa sembolü şekline
+        uymuyorsa (harf/rakam/nokta/tire, en fazla 10 karakter) o giriş
+        elenir. `exchange` normalize edilip bilinmeyen bir değerse (model
+        promptta SADECE NYSE/NASDAQ istendi ama garanti değil) "NASDAQ"
+        varsayılır - bkz. src/web/market_data.py > _EXCHANGE_YAHOO_SUFFIX
+        (NASDAQ/NYSE için zaten aynı, sonek eklenmiyor)."""
+        if not isinstance(raw_value, list):
+            return []
+
+        result: list[dict[str, str]] = []
+        for item in raw_value[:4]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            ticker = str(item.get("ticker", "")).strip().upper()
+            if not name or len(name) > 80:
+                continue
+            if not re.match(r"^[A-Z0-9.\-]{1,10}$", ticker):
+                continue
+            exchange = str(item.get("exchange", "")).strip().upper()
+            if exchange not in ("NASDAQ", "NYSE", "AMEX", "NYSEAMERICAN"):
+                exchange = "NASDAQ"
+            result.append({"name": name, "ticker": ticker, "exchange": exchange})
+        return result
 
     def _apply_fallback(self, group: NewsGroup, quota_deferred: bool = False) -> None:
         rep = group.representative

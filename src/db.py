@@ -657,6 +657,22 @@ def get_recent_records(
     return query.limit(limit).all()
 
 
+def get_records_by_company_ticker(company_ticker: str, limit: int = 10, since: datetime | None = None) -> list[NewsRecord]:
+    """Verilen `company_ticker` ("BORSA: SEMBOL", ör. "NASDAQ: TSLA") alanı
+    TAM olarak eşleşen haberleri döner - bkz. src/web/app.py >
+    /api/company-detail (emtia raporundaki şirket detay modalı). BİLİNÇLİ
+    olarak `src/company_profile.py > get_company_profile`'daki gibi
+    başlık/özet içinde serbest metin arama (LIKE) YAPILMAZ: burada amaç
+    "bu TİCKER için sistemin zaten etiketlediği haberler" - ayrı bir LLM
+    çağrısı da gerektirmez (bkz. company_profile.py'nin aksine), bu yüzden
+    modal her açıldığında ek maliyet/gecikme YOKTUR."""
+    with get_session() as session:
+        query = session.query(NewsRecord).filter(NewsRecord.company_ticker == company_ticker)
+        if since is not None:
+            query = query.filter(NewsRecord.first_seen_at >= since)
+        return query.order_by(NewsRecord.first_seen_at.desc()).limit(limit).all()
+
+
 def get_records_since(since: datetime) -> list[NewsRecord]:
     """`since` zamanından bu yana görülmüş (first_seen_at >= since) TÜM
     haberleri döner (bölge/önem skoru filtresi yok) — günlük özet raporu

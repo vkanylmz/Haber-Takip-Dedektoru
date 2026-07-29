@@ -840,6 +840,146 @@
       overflow: hidden;
     }
 
+    /* Emtia analiz metninde geçen (yapılandırılmış listeyle eşleşen) şirket
+       isimlerinin satır-içi vurgusu - bkz. src/summarizer.py >
+       Summarizer._parse_commodity_companies / dashboard.html script'i. */
+    .company-mention {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      color: var(--accent, var(--text-primary));
+      text-decoration: underline dotted;
+      cursor: pointer;
+    }
+
+    /* Analiz metninde YAKALANAMAYAN (LLM'in yazdığı biçim structured
+       listeyle bire bir örtüşmediği) şirketler için, metnin altında ayrı
+       birer tıklanabilir "chip" olarak gösterilir - bkz. loadCommodityPanel
+       > buildCompanyMentions (çift güvence, gereksinim: özellik LLM'in
+       tam eşleşmesine bağımlı kalmasın). */
+    .commodity-companies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin-top: 0.4rem;
+    }
+
+    .company-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.15rem 0.55rem;
+      font-size: 0.68rem;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .company-chip:hover, .company-mention:hover {
+      color: var(--positive);
+    }
+
+    /* --- Şirket detay modalı (bkz. /api/company-detail) --- */
+    .company-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 4vh 1rem;
+      overflow-y: auto;
+    }
+
+    .company-modal-overlay.open {
+      display: flex;
+    }
+
+    .company-modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-width: 480px;
+      width: 100%;
+      padding: 1.1rem 1.25rem 1.4rem;
+    }
+
+    .company-modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .company-modal-title {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text-primary);
+    }
+
+    .company-modal-close {
+      background: none;
+      border: none;
+      font-size: 1.1rem;
+      line-height: 1;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0.1rem 0.3rem;
+    }
+
+    .company-modal-quote {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .company-modal-sparkline {
+      display: block;
+      width: 100%;
+      height: 48px;
+      margin-bottom: 0.7rem;
+    }
+
+    .company-modal-section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0.7rem 0 0.4rem;
+    }
+
+    .company-modal-news-item {
+      border-bottom: 1px solid var(--border);
+      padding: 0.4rem 0;
+      font-size: 0.78rem;
+    }
+
+    .company-modal-news-item:last-child {
+      border-bottom: none;
+    }
+
+    .company-modal-news-title {
+      color: var(--text-primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .company-modal-news-title:hover {
+      text-decoration: underline;
+    }
+
+    .company-modal-news-meta {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      margin-top: 0.15rem;
+    }
+
+    .company-modal-empty {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
     /* --- Çapraz kaynak karşılaştırma (bir haber grubunda >1 kaynak varsa) --- */
     .compare-details {
       margin-top: 0.85rem;
@@ -1004,6 +1144,16 @@
         </div>
         <div id="commodity-panel-body">
           <span class="trend-empty">Yükleniyor…</span>
+        </div>
+      </div>
+
+      <div id="company-modal-overlay" class="company-modal-overlay">
+        <div class="company-modal">
+          <div class="company-modal-header">
+            <span id="company-modal-title" class="company-modal-title"></span>
+            <button type="button" class="company-modal-close" onclick="closeCompanyModal()" aria-label="Kapat">✕</button>
+          </div>
+          <div id="company-modal-body"></div>
         </div>
       </div>
 
@@ -1281,8 +1431,18 @@
             ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
               '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
             : '';
+          const companies = item.companies || [];
+          const foundTickers = {};
           const analysisHtml = item.analysis
-            ? '<div class="commodity-analysis" title="' + escapeHtml(item.analysis) + '">' + escapeHtml(item.analysis) + '</div>'
+            ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>'
+            : '';
+          const unmatched = companies.filter(function (c) { return !foundTickers[c.exchange + ': ' + c.ticker]; });
+          const chipsHtml = unmatched.length
+            ? '<div class="commodity-companies">' + unmatched.map(function (c) {
+                const key = registerCompany(c);
+                return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
+                  escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
+              }).join('') + '</div>'
             : '';
           return '<div class="commodity-card">' +
             '<div class="commodity-card-top">' +
@@ -1292,12 +1452,124 @@
             '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
             sparklineSvg +
             analysisHtml +
+            chipsHtml +
             '</div>';
         }).join('') + '</div>';
       } catch (e) {
         body.innerHTML = '<span class="trend-empty">Emtia verisi alınamadı.</span>';
       }
     }
+
+    // Şirket detay modalı (bkz. /api/company-detail) - registry, her bir
+    // "chip"/vurgu için otomatik/güvenli bir anahtar (c0, c1, ...) üretir.
+    // Şirket adı/ticker'ı DOĞRUDAN onclick attribute'una GÖMÜLMÜYOR - bazı
+    // gerçek şirket isimleri tek tırnak içerir (ör. "Moody's", "McDonald's"),
+    // bu da bir string literal'i doğrudan attribute'a gömmeyi kırılgan
+    // yapardı; bunun yerine yalnızca kendi ürettiğimiz güvenli anahtar
+    // gömülür, gerçek veri registry'den okunur.
+    let __companyRegistrySeq = 0;
+    const __companyRegistry = {};
+
+    function registerCompany(company) {
+      const key = 'c' + (__companyRegistrySeq++);
+      __companyRegistry[key] = { name: company.name, ticker: company.exchange + ': ' + company.ticker };
+      return key;
+    }
+
+    // Emtia analiz metni (LLM'in serbest Türkçe metni) içinde, yapılandırılmış
+    // `companies` listesindeki isimlerden BİRİNİN TAM OLARAK geçtiği yerleri
+    // bulup tıklanabilir bir <button>'a çevirir (satır-içi vurgu). LLM'in
+    // metinde ismi structured listedekiyle BİREBİR AYNI yazması garanti
+    // olmadığından (ör. metinde "ADM" kısaltması, listede tam ad), eşleşmeyen
+    // şirketler burada YAKALANAMAZ - bu durumda çağıran taraf (loadCommodityPanel)
+    // onları ayrı birer "chip" olarak metnin altında gösterir (bkz.
+    // `foundTickers` çıktı parametresi, çift güvence gereksinimi).
+    function buildAnalysisHtml(analysisText, companies, foundTickers) {
+      if (!analysisText) return '';
+      let segments = [{ text: analysisText, isCompany: false }];
+      companies.forEach(function (c) {
+        const tickerStr = c.exchange + ': ' + c.ticker;
+        const nextSegments = [];
+        segments.forEach(function (seg) {
+          if (seg.isCompany) { nextSegments.push(seg); return; }
+          const idx = seg.text.indexOf(c.name);
+          if (idx === -1) { nextSegments.push(seg); return; }
+          foundTickers[tickerStr] = true;
+          if (idx > 0) nextSegments.push({ text: seg.text.slice(0, idx), isCompany: false });
+          nextSegments.push({ text: c.name, isCompany: true, company: c });
+          const rest = seg.text.slice(idx + c.name.length);
+          if (rest) nextSegments.push({ text: rest, isCompany: false });
+        });
+        segments = nextSegments;
+      });
+      return segments.map(function (seg) {
+        if (!seg.isCompany) return escapeHtml(seg.text);
+        const key = registerCompany(seg.company);
+        return '<button type="button" class="company-mention" onclick="openCompanyModal(\'' + key + '\')">' +
+          escapeHtml(seg.text) + '</button>';
+      }).join('');
+    }
+
+    function closeCompanyModal() {
+      document.getElementById('company-modal-overlay').classList.remove('open');
+    }
+
+    async function openCompanyModal(key) {
+      const company = __companyRegistry[key];
+      if (!company) return;
+
+      const overlay = document.getElementById('company-modal-overlay');
+      const titleEl = document.getElementById('company-modal-title');
+      const bodyEl = document.getElementById('company-modal-body');
+      titleEl.textContent = company.name + ' (' + company.ticker + ')';
+      bodyEl.innerHTML = '<span class="trend-empty">Yükleniyor…</span>';
+      overlay.classList.add('open');
+
+      try {
+        const res = await fetch(
+          '/api/company-detail?ticker=' + encodeURIComponent(company.ticker) + '&name=' + encodeURIComponent(company.name)
+        );
+        const data = await res.json();
+
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
+        const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+
+        let quoteHtml = '<div class="company-modal-empty">Güncel fiyat alınamadı.</div>';
+        if (data.quote) {
+          const up = data.quote.change_pct >= 0;
+          const sign = up ? '+' : '';
+          quoteHtml = '<div class="company-modal-quote">' + data.quote.price + ' ' + escapeHtml(data.quote.currency) +
+            ' <span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + data.quote.change_pct + '%</span></div>';
+        }
+
+        const points = buildSparklinePoints(data.history, 400, 48);
+        const sparklineHtml = points
+          ? '<svg class="company-modal-sparkline" viewBox="0 0 400 48" preserveAspectRatio="none">' +
+            '<polyline points="' + points + '" fill="none" stroke="' + (data.quote && data.quote.change_pct < 0 ? downColor : accentColor) + '" stroke-width="1.5"/></svg>'
+          : '';
+
+        const news = data.news || [];
+        const newsHtml = news.length
+          ? news.map(function (n) {
+              const titleHtml = n.link
+                ? '<a class="company-modal-news-title" href="' + escapeHtml(n.link) + '" target="_blank" rel="noopener">' + escapeHtml(n.title) + '</a>'
+                : '<span class="company-modal-news-title">' + escapeHtml(n.title) + '</span>';
+              return '<div class="company-modal-news-item">' + titleHtml +
+                '<div class="company-modal-news-meta">' + escapeHtml(n.sources) + ' · ' + escapeHtml(n.published_at) + '</div>' +
+                '</div>';
+            }).join('')
+          : '<div class="company-modal-empty">Son 30 günde bu şirketle ilgili etiketlenmiş haber yok.</div>';
+
+        bodyEl.innerHTML = quoteHtml + sparklineHtml +
+          '<div class="company-modal-section-title">İlgili Haberler</div>' + newsHtml;
+      } catch (e) {
+        bodyEl.innerHTML = '<span class="trend-empty">Şirket verisi alınamadı.</span>';
+      }
+    }
+
+    document.getElementById('company-modal-overlay').addEventListener('click', function (e) {
+      if (e.target === this) closeCompanyModal();
+    });
 
     initThemeToggle();
     refreshMarketTicker();

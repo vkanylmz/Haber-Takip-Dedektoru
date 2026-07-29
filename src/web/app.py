@@ -32,6 +32,7 @@ from src.db import (
     NewsRecord,
     get_distinct_sectors,
     get_distinct_sources,
+    get_records_by_company_ticker,
     get_records_since,
     get_recent_records,
     get_session,
@@ -48,7 +49,12 @@ from src.summarizer import (
     VALID_TOP_CATEGORIES,
 )
 from src.trend_report import get_dashboard_trend_summary
-from src.web.market_data import get_market_snapshot, get_quotes_for_company_tickers, start_background_refresh
+from src.web.market_data import (
+    get_market_snapshot,
+    get_quotes_for_company_tickers,
+    get_ticker_detail,
+    start_background_refresh,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -598,6 +604,53 @@ def commodity_weekly_report_endpoint() -> dict[str, Any]:
     yolunda), bu yüzden `async def` OLAMAZ (FastAPI zaten senkron route'ları
     kendi thread pool'unda çalıştırır, event loop çakışması olmaz)."""
     return get_commodity_dashboard_data()
+
+
+@app.get("/api/company-detail")
+async def company_detail_endpoint(ticker: str = "", name: str = "") -> dict[str, Any]:
+    """Haftalık emtia raporu panelindeki tıklanabilir şirket kartı/chip'i
+    (bkz. dashboard.html > şirket detay modalı) için detay verisi: güncel
+    fiyat/değişim + 1 aylık sparkline geçmişi (bkz. src/web/market_data.py >
+    get_ticker_detail, kendi 30 sn/5 dk önbellekleriyle) + veritabanında bu
+    ticker'a (company_ticker alanı TAM eşleşen) etiketlenmiş son 30 günün
+    haberleri (bkz. src/db.py > get_records_by_company_ticker).
+
+    BİLİNÇLİ olarak `/sirket-profili` sayfasının (src/company_profile.py)
+    AKSİNE hiçbir LLM çağrısı YAPMAZ - modal her açıldığında ek maliyet/
+    gecikme olmadan anlık açılabilsin diye (gereksinim: emtia raporu zaten
+    haftada bir LLM analizi üretiyor, modal AYRICA bir LLM çağrısı
+    tetiklemesin).
+
+    `ticker` "BORSA: SEMBOL" formatında beklenir (ör. "NYSE: FCX" - bkz.
+    src/summarizer.py > Summarizer._parse_commodity_companies). Boş/geçersiz
+    ticker'da veya Yahoo'dan hiçbir veri alınamadığında `quote`/`history`
+    boş/None döner - exception FIRLATMAZ, frontend bu durumda ilgili
+    bölümleri sessizce gizler."""
+    ticker = ticker.strip()
+    if not ticker:
+        return {"ticker": ticker, "name": name, "quote": None, "history": [], "news": []}
+
+    detail = await get_ticker_detail(ticker)
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    records = get_records_by_company_ticker(ticker, limit=10, since=since)
+    news = [
+        {
+            "title": r.title,
+            "sources": r.sources,
+            "summary": (r.summary or "")[:280],
+            "published_at": format_turkey_time(r.first_seen_at),
+            "link": (r.links_list()[0]["link"] if r.links_list() else ""),
+        }
+        for r in records
+    ]
+
+    return {
+        "ticker": ticker,
+        "name": name,
+        "quote": detail["quote"] if detail else None,
+        "history": detail["history"] if detail else [],
+        "news": news,
+    }
 
 
 def _sector_heatmap_background_loop() -> None:
