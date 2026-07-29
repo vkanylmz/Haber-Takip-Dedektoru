@@ -24,12 +24,22 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from py_vapid import Vapid
 from pywebpush import WebPushException, webpush
 
-from src.db import get_app_state, remove_push_subscription, set_app_state
+from src.db import (
+    get_all_push_subscriptions,
+    get_app_state,
+    mark_push_notified,
+    remove_push_subscription,
+    set_app_state,
+    was_push_notified,
+)
+
+if TYPE_CHECKING:
+    from src.db import NewsRecord
 
 logger = logging.getLogger(__name__)
 
@@ -139,3 +149,104 @@ def send_push_notification(subscription_info: dict[str, Any], payload: dict[str,
     except Exception:  # noqa: BLE001 - tek bir aboneliğe gönderim hatası diğerlerini/ana akışı etkilemesin
         logger.exception("Web Push gönderimi sırasında beklenmeyen hata.")
         return False
+
+
+def _record_matches_filters(record: "NewsRecord", filters: dict[str, Any]) -> bool:
+    """Bir haberin, bir aboneliğin filtresiyle eşleşip eşleşmediğini
+    kontrol eder. Her boyut BAĞIMSIZ bir AND koşuludur (ör. hem kaynak HEM
+    önem skoru filtresi VARSA, haber İKİSİNİ DE karşılamalı); bir boyutun
+    KENDİ İÇİNDE birden fazla değer varsa bunlar OR ile eşleşir (ör.
+    sources=["A","B"] -> haberin kaynağı A OLABİLİR ya da B). Boş/None bir
+    filtre alanı o boyutta HİÇBİR KISITLAMA olmadığı anlamına gelir."""
+    sources = filters.get("sources") or []
+    if sources:
+        record_sources = [s.strip() for s in (record.sources or "").split(",")]
+        if not any(s in record_sources for s in sources):
+            return False
+
+    sectors = filters.get("sectors") or []
+    if sectors:
+        record_sectors = record.sectors_list()
+        if not any(s in record_sectors for s in sectors):
+            return False
+
+    regions = filters.get("regions") or []
+    if regions:
+        record_regions = record.regions_list()
+        if not any(r in record_regions for r in regions):
+            return False
+
+    sentiments = filters.get("sentiments") or []
+    if sentiments and record.sentiment not in sentiments:
+        return False
+
+    min_importance = filters.get("min_importance")
+    if min_importance and (record.importance_score is None or record.importance_score < min_importance):
+        return False
+
+    return True
+
+
+def notify_matching_push_subscriptions(record: "NewsRecord") -> None:
+    """Yeni özetlenmiş/güncellenmiş bir haberi TÜM kayıtlı tarayıcı push
+    aboneliklerinin filtreleriyle karşılaştırır; eşleşen ve daha önce BU
+    ABONELİĞE bildirilmemiş her biri için push bildirimi gönderir.
+
+    `src/keyword_alerts.py > check_keyword_matches_and_notify` İLE AYNI
+    mimari desen (Telegram önem skoru eşiğinden TAMAMEN BAĞIMSIZ, ayrı bir
+    dedup tablosu ile tekrar bildirimi önler) - buradaki tek fark,
+    hedefin bir Telegram chat_id değil bir tarayıcı push endpoint'i olması.
+
+    Filtresiz bir abonelik (filters=None/boş - bkz. Faz 1 ham abonelik)
+    HER haberde eşleşir (tüm boyutlar boş -> _record_matches_filters
+    otomatik olarak True döner).
+
+    Hiçbir durumda exception fırlatmaz - bir aboneliğe gönderim hatası
+    diğerlerini/ana özetleme akışını etkilemez."""
+    subscriptions = get_all_push_subscriptions()
+    if not subscriptions:
+        return
+
+    for sub in subscriptions:
+        try:
+            filters: dict[str, Any] = json.loads(sub.filters) if sub.filters else {}
+        except ValueError:
+            filters = {}
+
+        try:
+            if not _record_matches_filters(record, filters):
+                continue
+        except Exception:  # noqa: BLE001 - bozuk bir filtre bu aboneliği atlasın, diğerlerini etkilemesin
+            logger.exception("Push abonelik filtresi değerlendirilirken hata: endpoint=...%s", sub.endpoint[-24:])
+            continue
+
+        if was_push_notified(sub.endpoint, record.group_key):
+            continue
+
+        subscription_info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+        payload = {
+            "title": record.title,
+            "body": (record.summary or "")[:150],
+            "url": "/",
+            # Aynı habere ait ardışık bir push gelirse (pratikte olmaz, ama
+            # güvenlik payı) tarayıcıda ÜST ÜSTE YIĞILMASIN diye group_key
+            # `tag` olarak kullanılır (bkz. sw.js > 'push' event listener).
+            "tag": record.group_key,
+        }
+        sent = send_push_notification(subscription_info, payload)
+        if not sent:
+            continue
+
+        logger.info(
+            "Web Push bildirimi gönderildi: endpoint=...%s, haber=%s",
+            sub.endpoint[-24:],
+            record.title,
+        )
+        try:
+            mark_push_notified(sub.endpoint, record.group_key)
+        except Exception:  # noqa: BLE001 - mesaj zaten gitti, işaretleme başarısız olsa da akış devam etsin
+            logger.exception(
+                "Push bildirimi 'gönderildi' olarak işaretlenemedi (endpoint=...%s, haber=%s).",
+                sub.endpoint[-24:],
+                record.title,
+            )

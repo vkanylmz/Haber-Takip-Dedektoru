@@ -36,6 +36,7 @@ from src.notifier import send_telegram_notification
 from src.output.cli_output import print_report
 from src.output.markdown_output import write_markdown
 from src.summarizer import Summarizer
+from src.web_push import notify_matching_push_subscriptions
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,19 @@ def _persist_and_notify_single(group: NewsGroup, group_key: str, config: dict[st
     with get_session() as session:
         record = upsert_group(session, group, group_key)
 
-    if not notify or not telegram_enabled:
+    if not notify:
+        return
+
+    # Web Push bildirimleri (src/web_push.py) - Telegram'a PARALEL, TAMAMEN
+    # AYRI bir kanal (gereksinim). BİLİNÇLİ olarak `telegram_enabled`
+    # kontrolünün DIŞINDA/ÖNCESİNDE: kullanıcı Telegram'ı kapatsa bile
+    # tarayıcı bildirimleri çalışmaya devam etmeli.
+    try:
+        notify_matching_push_subscriptions(record)
+    except Exception:  # noqa: BLE001 - Web Push bildirimi asla ana akışı durdurmasın
+        logger.exception("Web Push eşleşme kontrolü sırasında beklenmeyen hata: %s", record.title)
+
+    if not telegram_enabled:
         return
 
     # Anahtar kelime takibi (src/keyword_alerts.py), önem skoru eşiğinden

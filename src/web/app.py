@@ -12,6 +12,7 @@ başlatılır (bkz. README > Tek Komutla Başlatma).
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -31,6 +32,7 @@ from src.timezone_utils import format_turkey_time
 from src.config import load_config
 from src.db import (
     NewsRecord,
+    PushSubscription,
     get_distinct_sectors,
     get_distinct_sources,
     get_records_by_company_ticker,
@@ -765,26 +767,46 @@ def push_vapid_public_key() -> dict[str, str]:
     return {"publicKey": get_vapid_public_key()}
 
 
+class _PushFilters(BaseModel):
+    """Bir push aboneliğinin hangi haberler için bildirim almak istediğini
+    belirten filtre - dashboard'un MEVCUT filtre formuyla (bkz.
+    dashboard.html > `<form class="filter">`) BİREBİR AYNI eksenler. Her
+    alan BOŞ LİSTE/None ise o eksende filtre YOK (her değer eşleşir) -
+    bkz. src/web_push.py > _record_matches_filters."""
+
+    sources: list[str] = []
+    sectors: list[str] = []
+    regions: list[str] = []
+    sentiments: list[str] = []
+    min_importance: int | None = None
+
+
 class _PushSubscriptionPayload(BaseModel):
-    """Tarayıcının `PushSubscription.toJSON()` çıktısıyla BİREBİR AYNI şekil
-    (bkz. dashboard.html > subscribeToPush)."""
+    """Tarayıcının `PushSubscription.toJSON()` çıktısı (endpoint/keys) +
+    isteğe bağlı `filters` (bkz. dashboard.html > subscribeToPushWithFilters).
+    `filters` gönderilmezse (Faz 1 tarzı ham abonelik) mevcut filtre
+    (varsa) KORUNUR - bkz. src/db.py > upsert_push_subscription."""
 
     endpoint: str
     keys: dict[str, str]
+    filters: _PushFilters | None = None
 
 
 @app.post("/api/push/subscribe")
 def push_subscribe(payload: _PushSubscriptionPayload) -> JSONResponse:
-    """Tarayıcının push aboneliğini kaydeder (bkz. src/db.py >
-    upsert_push_subscription). `filters` bu aşamada (Faz 1) HENÜZ
-    gönderilmiyor/işlenmiyor - Faz 2'de eklenecek filtre paneli bu AYNI
-    endpoint'i (filters alanıyla BİRLİKTE) tekrar çağırarak günceller."""
+    """Tarayıcının push aboneliğini (+ isteğe bağlı filtresini) kaydeder/
+    günceller (bkz. src/db.py > upsert_push_subscription). Kullanıcı
+    dashboard'daki filtre formunu değiştirip "Bu filtrelere göre bildirim
+    al" dediğinde AYNI endpoint tekrar çağrılır - yeni bir abonelik
+    OLUŞTURULMAZ, mevcut olan GÜNCELLENİR (bkz. o fonksiyonun "endpoint
+    zaten varsa güncelle" mantığı)."""
     p256dh = payload.keys.get("p256dh", "")
     auth = payload.keys.get("auth", "")
     if not payload.endpoint or not p256dh or not auth:
         return JSONResponse({"error": "Eksik abonelik bilgisi."}, status_code=400)
 
-    upsert_push_subscription(payload.endpoint, p256dh, auth)
+    filters_dict = payload.filters.model_dump() if payload.filters is not None else None
+    upsert_push_subscription(payload.endpoint, p256dh, auth, filters_dict)
     return JSONResponse({"status": "ok"})
 
 
@@ -799,3 +821,24 @@ def push_unsubscribe(payload: _PushUnsubscribePayload) -> JSONResponse:
     dashboard.html > unsubscribeFromPush)."""
     remove_push_subscription(payload.endpoint)
     return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/push/subscription-status")
+def push_subscription_status(endpoint: str = "") -> dict[str, Any]:
+    """Dashboard sayfa yüklenince, tarayıcının HALİHAZIRDA sahip olduğu bir
+    push aboneliğinin (varsa) hangi filtreyle kaydedildiğini gösterebilmek
+    için (bkz. dashboard.html > updatePushButtonState). Abonelik yoksa/
+    endpoint boşsa `{"subscribed": false}` döner."""
+    if not endpoint:
+        return {"subscribed": False}
+    with get_session() as session:
+        row = session.query(PushSubscription).filter_by(endpoint=endpoint).one_or_none()
+        if row is None:
+            return {"subscribed": False}
+        filters = None
+        if row.filters:
+            try:
+                filters = json.loads(row.filters)
+            except ValueError:
+                filters = None
+        return {"subscribed": True, "filters": filters}

@@ -188,6 +188,22 @@
       border-color: var(--accent);
     }
 
+    /* "Bu Filtrelere Göre Bildirim Al" düğmesi - dashboard'un mevcut filtre
+       formunun (source/sector/region/sentiment/min_importance) içinde,
+       normal "Uygula" gönder düğmesinin yanında. Faz 2 (bkz. src/web_push.py
+       > filtre eşleştirme). */
+    #push-filter-btn.push-filter-active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+    }
+
+    .push-filter-status {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      align-self: center;
+    }
+
     form.filter {
       display: flex;
       flex-wrap: wrap;
@@ -1169,7 +1185,7 @@
       </div>
     </div>
     <div class="header-controls">
-      <form class="filter" method="get" action="/">
+      <form class="filter" id="filter-form" method="get" action="/">
         <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
         <select name="sort" onchange="this.form.submit()">
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni</option>
@@ -1217,8 +1233,10 @@
           </div>
         </details>
         <button type="submit">Uygula</button>
+        <button type="button" id="push-filter-btn" onclick="subscribeToPushWithCurrentFilters()" title="Yukarıdaki filtrelere uyan yeni bir haber geldiğinde tarayıcı bildirimi al">🎯 Bu Filtrelere Göre Bildirim Al</button>
       </form>
       <button type="button" id="push-toggle-btn" onclick="togglePushNotifications()" title="Sekme/tarayıcı kapalıyken bile bildirim al">🔔 Bildirimleri Aç</button>
+      <span id="push-filter-status" class="push-filter-status"></span>
       <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
     </div>
   </header>
@@ -1844,19 +1862,69 @@
 
     async function updatePushButtonState() {
       const btn = document.getElementById('push-toggle-btn');
+      const filterBtn = document.getElementById('push-filter-btn');
+      const statusEl = document.getElementById('push-filter-status');
       if (!btn) return;
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         btn.style.display = 'none';
         return;
       }
       const sub = await getExistingPushSubscription();
-      if (sub) {
-        btn.textContent = '🔔 Bildirimler Açık';
-        btn.classList.add('push-active');
-      } else {
+      if (!sub) {
         btn.textContent = '🔔 Bildirimleri Aç';
         btn.classList.remove('push-active');
+        if (filterBtn) filterBtn.classList.remove('push-filter-active');
+        if (statusEl) statusEl.textContent = '';
+        return;
       }
+
+      btn.textContent = '🔔 Bildirimler Açık';
+      btn.classList.add('push-active');
+
+      // Bu aboneliğin sunucuda kayıtlı bir filtresi (bkz. Faz 2) varsa,
+      // sayfa her yüklendiğinde (kullanıcı geri döndüğünde) o filtreyi
+      // GÖSTER - kaybolmasın/unutulmasın diye.
+      try {
+        const statusRes = await fetch('/api/push/subscription-status?endpoint=' + encodeURIComponent(sub.endpoint));
+        const statusData = await statusRes.json();
+        if (statusData.subscribed && statusData.filters) {
+          if (filterBtn) filterBtn.classList.add('push-filter-active');
+          if (statusEl) statusEl.textContent = '🎯 Aktif filtre: ' + describeFilters(statusData.filters);
+        } else {
+          if (filterBtn) filterBtn.classList.remove('push-filter-active');
+          if (statusEl) statusEl.textContent = '';
+        }
+      } catch (e) {
+        // Durum sorgusu başarısız olsa da ana bildirim düğmesi zaten
+        // doğru gösteriliyor - sessizce yut.
+      }
+    }
+
+    // Tarayıcının ham push aboneliğini döner - yoksa izin ister (KULLANICI
+    // REDDEDERSE zorlamadan null döner) ve YENİ bir abonelik oluşturur.
+    // Backend'e HİÇBİR ŞEY POST ETMEZ - bu, çağıran tarafın (togglePush
+    // Notifications / subscribeToPushWithCurrentFilters) sorumluluğu, çünkü
+    // ikisi FARKLI `filters` değeriyle POST atar.
+    async function ensurePushSubscriptionRaw() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+
+      const existing = await getExistingPushSubscription();
+      if (existing) return existing;
+
+      // Tarayıcının izin isteği KENDİ native UI'ı - kullanıcı reddederse
+      // (gereksinim: ZORLAMA) sessizce vazgeçilir, tekrar sormaya
+      // çalışılmaz (tarayıcı zaten "reddedildi" durumunda bir sonraki
+      // Notification.requestPermission() çağrısını da sessizce reddeder).
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return null;
+
+      const registration = await navigator.serviceWorker.ready;
+      const keyRes = await fetch('/api/push/vapid-public-key');
+      const keyData = await keyRes.json();
+      return registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+      });
     }
 
     async function togglePushNotifications() {
@@ -1867,7 +1935,9 @@
 
       const existing = await getExistingPushSubscription();
       if (existing) {
-        // Zaten abone - düğme "kapat" işlevi görüyor.
+        // Zaten abone - düğme "kapat" işlevi görüyor (tüm abonelik silinir,
+        // filtre de dahil - "Bu Filtrelere Göre Bildirim Al" düğmesi de
+        // sıfırlanır, bkz. updatePushButtonState).
         try {
           await fetch('/api/push/unsubscribe', {
             method: 'POST',
@@ -1882,21 +1952,12 @@
         return;
       }
 
-      // Tarayıcının izin isteği KENDİ native UI'ı - kullanıcı reddederse
-      // (gereksinim: ZORLAMA) burada sessizce vazgeçilir, tekrar sormaya
-      // çalışılmaz (tarayıcı zaten "reddedildi" durumunda bir sonraki
-      // Notification.requestPermission() çağrısını da sessizce reddeder).
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-
       try {
-        const registration = await navigator.serviceWorker.ready;
-        const keyRes = await fetch('/api/push/vapid-public-key');
-        const keyData = await keyRes.json();
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
-        });
+        const subscription = await ensurePushSubscriptionRaw();
+        if (!subscription) return;
+        // Filtresiz (ham) abonelik: TÜM yeni özetlenmiş haberlerde bildirim
+        // gider - kullanıcı isterse ayrıca "Bu Filtrelere Göre Bildirim Al"
+        // ile daraltabilir (bkz. subscribeToPushWithCurrentFilters).
         await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1908,6 +1969,66 @@
       await updatePushButtonState();
     }
 
+    // Dashboard'un MEVCUT filtre formundaki (bkz. <form id="filter-form">)
+    // seçili değerleri, push abonelik filtresi şekline (bkz.
+    // src/web/app.py > _PushFilters) çevirir. Formdaki select'ler TEKİL
+    // seçim olduğundan, her alan 0 veya 1 elemanlı bir liste üretir - DB
+    // şeması birden fazla değeri desteklese de (OR eşleşmesi), mevcut
+    // formun kendisi zaten tek seçime izin veriyor.
+    function collectCurrentFilters() {
+      const form = document.getElementById('filter-form');
+      const source = form.querySelector('[name="source"]').value;
+      const sector = form.querySelector('[name="sector"]').value;
+      const region = form.querySelector('[name="region"]').value;
+      const sentiment = form.querySelector('[name="sentiment"]').value;
+      const minImportance = form.querySelector('[name="min_importance"]').value;
+      return {
+        sources: source ? [source] : [],
+        sectors: sector ? [sector] : [],
+        regions: region ? [region] : [],
+        sentiments: sentiment ? [sentiment] : [],
+        min_importance: minImportance ? parseInt(minImportance, 10) : null,
+      };
+    }
+
+    function describeFilters(filters) {
+      if (!filters) return '';
+      const parts = [];
+      if (filters.sources && filters.sources.length) parts.push(filters.sources.join(', '));
+      if (filters.sectors && filters.sectors.length) parts.push(filters.sectors.join(', '));
+      if (filters.regions && filters.regions.length) parts.push(filters.regions.join(', '));
+      if (filters.sentiments && filters.sentiments.length) parts.push(filters.sentiments.join(', '));
+      if (filters.min_importance) parts.push(filters.min_importance + '+ önem');
+      return parts.length ? parts.join(' · ') : 'tüm haberler';
+    }
+
+    async function subscribeToPushWithCurrentFilters() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        alert('Bu tarayıcı push bildirimlerini desteklemiyor.');
+        return;
+      }
+
+      const statusEl = document.getElementById('push-filter-status');
+      const btn = document.getElementById('push-filter-btn');
+      try {
+        const subscription = await ensurePushSubscriptionRaw();
+        if (!subscription) return;
+
+        const filters = collectCurrentFilters();
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.assign(subscription.toJSON(), { filters: filters })),
+        });
+
+        if (btn) btn.classList.add('push-filter-active');
+        if (statusEl) statusEl.textContent = '🎯 Aktif filtre: ' + describeFilters(filters);
+        await updatePushButtonState();
+      } catch (e) {
+        console.error('Filtreli push aboneliği başarısız:', e);
+      }
+    }
+
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.register('/sw.js').then(function () {
         updatePushButtonState();
@@ -1916,8 +2037,10 @@
         if (btn) btn.style.display = 'none';
       });
     } else {
-      const btn = document.getElementById('push-toggle-btn');
-      if (btn) btn.style.display = 'none';
+      const toggleBtn = document.getElementById('push-toggle-btn');
+      if (toggleBtn) toggleBtn.style.display = 'none';
+      const filterBtn = document.getElementById('push-filter-btn');
+      if (filterBtn) filterBtn.style.display = 'none';
     }
   </script>
 </body>

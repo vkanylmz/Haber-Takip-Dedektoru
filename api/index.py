@@ -45,6 +45,7 @@ from src.web.app import (
     health as _health_view,
     market_data as _market_data_view,
     push_subscribe as _push_subscribe_view,
+    push_subscription_status as _push_subscription_status_view,
     push_unsubscribe as _push_unsubscribe_view,
     push_vapid_public_key as _push_vapid_public_key_view,
     sector_heatmap as _sector_heatmap_view,
@@ -144,3 +145,4 @@ app.get("/sw.js")(_service_worker_view)
 app.get("/api/push/vapid-public-key")(_push_vapid_public_key_view)
 app.post("/api/push/subscribe")(_push_subscribe_view)
 app.post("/api/push/unsubscribe")(_push_unsubscribe_view)
+app.get("/api/push/subscription-status")(_push_subscription_status_view)
