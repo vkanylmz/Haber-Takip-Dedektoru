@@ -1174,7 +1174,13 @@
       <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
       <div class="meta">
         {{ total_count }} haber · Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif ·
-        <a href="/detayli-inceleme">Detaylı İnceleme</a>
+        <a href="/detayli-inceleme">Detaylı İnceleme</a> ·
+        <!-- Genel/dış API'nin (bkz. src/web/api_v1.py, API_DOCS.md) keşfedilebilir
+             olması için eklendi (kullanıcı isteği, 2026-07) - önceden dashboard'da
+             API'ye dair HİÇBİR iz yoktu. /docs, FastAPI'nin OTOMATİK ürettiği
+             Swagger UI'dır - ayrı bir sayfa/route yazmaya gerek yok, her zaman
+             kod ile senkron kalır. -->
+        <a href="/docs" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
         <!-- "Şirket Profili" ve "Kaynak Sağlığı" linkleri kasıtlı olarak
              navigasyondan kaldırıldı (kullanıcı isteği) - route'lar VE
              backend kodu (src/web/app.py > company_profile_page,

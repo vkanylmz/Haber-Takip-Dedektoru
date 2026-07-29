@@ -35,6 +35,20 @@ self-servis bir anahtar üretme endpoint'i yoktur — kötüye kullanımı
 Limit aşıldığında `429` yanıtı, `detail` alanında hangi limitin (dakikalık/
 günlük) aşıldığını açıklayan bir mesajla birlikte döner.
 
+## Hata Kodları
+
+| Kod | Anlamı | `detail` mesajı örneği |
+|---|---|---|
+| `401 Unauthorized` | `X-API-Key` header'ı hiç gönderilmedi | `"X-API-Key header eksik."` |
+| `401 Unauthorized` | Gönderilen anahtar geçersiz/devre dışı | `"Geçersiz veya devre dışı API anahtarı."` |
+| `404 Not Found` | `/api/v1/news/{id}` için verilen id bulunamadı | `"Haber bulunamadı."` |
+| `429 Too Many Requests` | Dakikalık limit aşıldı | `"Dakikalık istek limiti (60) aşıldı. Lütfen bir dakika sonra tekrar deneyin."` |
+| `429 Too Many Requests` | Günlük limit aşıldı | `"Günlük istek limiti (5000) aşıldı."` |
+| `422 Unprocessable Entity` | Bir query/path parametresi yanlış tipte/aralık dışında (ör. `min_importance=9`) | FastAPI'nin standart doğrulama hata gövdesi |
+
+Tüm hata yanıtları `{"detail": "..."}` şeklinde JSON döner (FastAPI'nin
+standart hata formatı).
+
 ## Genel Notlar
 
 - Tüm yanıtlar JSON formatındadır.
