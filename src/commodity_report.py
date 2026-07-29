@@ -180,7 +180,8 @@ def send_weekly_commodity_report(config: dict[str, Any], chat_ids: list[str] | N
 
         summarizer_cfg = config.get("summarizer", {})
         provider, api_key = get_summarizer_api_key(summarizer_cfg)
-        summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider)
+        output_dir = config.get("app", {}).get("output_dir", "data")
+        summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
 
         data = build_weekly_commodity_report_data(summarizer)
         messages = format_commodity_weekly_messages(data)

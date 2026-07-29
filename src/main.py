@@ -144,7 +144,8 @@ def summarize_groups(groups: list[NewsGroup], group_keys: dict[int, str], config
             group.summary = f"(Özetlenmedi - API anahtarı yok) {rep.raw_text[:280] or rep.title}"
         return
 
-    summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider)
+    output_dir = config.get("app", {}).get("output_dir", "data")
+    summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
     for group in groups:
         try:
             summarizer.summarize_group(group)

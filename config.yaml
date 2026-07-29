@@ -22,7 +22,15 @@ worker:
   # Otomatik tarama aralığı (dakika). worker.py ve main.py bunu kullanır.
   # (Not: bu proje daha önce bu ayarı "scheduler:" adıyla tutuyordu; worker.py
   # eklenmesiyle isim güncellendi.)
-  interval_minutes: 1
+  # ÖNEMLİ (2026-07-29): 1 dakikaydı (başlangıçtan beri) - bu, tek başına asıl
+  # kota tükenme sebebi DEĞİLDİ (aynı başlık zaten özetlenmişse tekrar API
+  # çağrısı yapılmıyor, bkz. src/main.py > _reuse_or_mark_for_summarization),
+  # ama bir taramanın (rate-limit nedeniyle) 1 dakikadan uzun sürebilmesi
+  # yüzünden APScheduler'ın "maximum number of running instances reached"
+  # uyarılarıyla sürekli atlanmasına ve gereksiz yere her 12 kaynağın 60
+  # saniyede bir yeniden çekilmesine yol açıyordu. 5 dakikaya çıkarıldı -
+  # finans haberleri için hâlâ çok taze bir tarama sıklığı, ama israfı önlüyor.
+  interval_minutes: 5
 
 summarizer:
   # Özetleme + önem skorlama için kullanılacak LLM sağlayıcısı: "gemini" veya
@@ -68,6 +76,17 @@ summarizer:
   requests_per_minute: 5
   # 429 hatası alınırsa en fazla kaç kez otomatik tekrar denensin.
   max_retries: 3
+
+  # --- Günlük kota koruması (2026-07-29'da eklendi) ---
+  # Gemini ücretsiz katmanın GÜNLÜK (RPD) kotası tükendiğinde (bkz.
+  # _is_daily_quota_error), bu bilgi data/state/ altına KALICI olarak
+  # yazılır ve o gün boyunca (Gemini'nin resetlediği Pasifik saatine göre)
+  # ARTIK hiç Gemini isteği gönderilmez - süreç yeniden başlatılsa bile.
+  # Böylece onlarca haber için boşuna 429 fırtınası/log spam'i yaşanmaz;
+  # özetlenemeyen haberler importance_score=None kalır ve kota resetlenince
+  # bir sonraki taramada otomatik olarak tekrar denenir (bkz. src/main.py >
+  # _reuse_or_mark_for_summarization).
+  daily_quota_guard_enabled: true
 
 importance:
   # 1 (rutin) - 5 (piyasayı doğrudan etkileyebilecek büyük gelişme) arası

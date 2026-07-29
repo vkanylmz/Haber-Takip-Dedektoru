@@ -62,7 +62,8 @@ def _generate_outlook_summary(company_name: str, records: list[NewsRecord], conf
         return None
 
     try:
-        summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider)
+        output_dir = config.get("app", {}).get("output_dir", "data")
+        summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
         summary = summarizer.summarize_company_profile(company_name, records[:_MAX_RECORDS_FOR_LLM])
     except Exception:  # noqa: BLE001 - profil özeti başarısız olursa sadece haber listesi gösterilsin
         logger.exception("Şirket profili özeti üretilirken beklenmeyen hata: %s", company_name)

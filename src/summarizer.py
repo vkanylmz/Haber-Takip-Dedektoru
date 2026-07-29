@@ -20,7 +20,10 @@ import json
 import logging
 import re
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import anthropic
 from google import genai
@@ -30,6 +33,12 @@ from google.genai import types as genai_types
 from src.models import NewsGroup
 
 logger = logging.getLogger(__name__)
+
+# Google'ın Gemini ücretsiz katman GÜNLÜK (RPD) kotası Pasifik saatine göre
+# resetlenir (gerçek çalıştırmada gözlemlendi/doğrulandı, bkz. README) -
+# bu yüzden "gün" sınırı UTC/yerel saat değil, bu saat dilimine göre hesaplanır.
+_QUOTA_RESET_TZ = ZoneInfo("America/Los_Angeles")
+_QUOTA_STATE_FILENAME = "gemini_daily_quota_state.json"
 
 SYSTEM_PROMPT = """\
 Sen finansal haberleri özetleyen ve önemini değerlendiren bir asistansın. \
@@ -336,7 +345,13 @@ def _is_daily_quota_error(exc: Exception) -> bool:
 
 
 class Summarizer:
-    def __init__(self, summarizer_cfg: dict[str, Any], api_key: str, provider: str = "gemini"):
+    def __init__(
+        self,
+        summarizer_cfg: dict[str, Any],
+        api_key: str,
+        provider: str = "gemini",
+        output_dir: str = "data",
+    ):
         if provider not in ("gemini", "anthropic"):
             raise ValueError(f"Bilinmeyen llm_provider: {provider!r} ('gemini' veya 'anthropic' olmalı)")
 
@@ -344,6 +359,10 @@ class Summarizer:
         self.max_output_tokens = summarizer_cfg.get("max_output_tokens", 900)
         self.language = summarizer_cfg.get("language", "tr")
         self.effort = summarizer_cfg.get("effort", "low")
+
+        # Günlük kota koruması (bkz. modül başındaki _QUOTA_RESET_TZ notu).
+        self.daily_quota_guard_enabled = summarizer_cfg.get("daily_quota_guard_enabled", True)
+        self._quota_state_path = Path(output_dir) / "state" / _QUOTA_STATE_FILENAME
 
         # Rate limit koruması: sağlayıcının dakika başına istek (RPM) limitini
         # aşmamak için istekler arasına otomatik bekleme eklenir (gereksinim:
@@ -388,6 +407,21 @@ class Summarizer:
         skoru None kalır -> bu haber Telegram eşiğini asla geçmez), böylece
         bir haberin özetlenmesindeki hata tüm çalıştırmayı durdurmaz.
         """
+        if self._quota_exhausted_today():
+            # Bugün zaten GÜNLÜK kota tükendiği tespit edilmişti (bkz.
+            # _mark_quota_exhausted_today) - boşuna ağ çağrısı/429 denemesi
+            # yapmadan direkt ertelenmiş fallback'e düş. importance_score
+            # None kaldığından bu haber, kota resetlenince bir sonraki
+            # taramada otomatik olarak tekrar denenir.
+            logger.info(
+                "Günlük Gemini kotası bugün için tükenmiş durumda, '%s' özetlemesi "
+                "erteleniyor (bkz. data/state/%s).",
+                group.representative.title,
+                _QUOTA_STATE_FILENAME,
+            )
+            self._apply_fallback(group, quota_deferred=True)
+            return
+
         user_prompt = self._build_user_prompt(group)
         try:
             raw_text = self._call_model_with_retry(user_prompt)
@@ -428,6 +462,38 @@ class Summarizer:
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
         group.top_category = self._parse_top_category(parsed.get("top_category"))
         group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
+
+    def _current_quota_day(self) -> str:
+        return datetime.now(_QUOTA_RESET_TZ).strftime("%Y-%m-%d")
+
+    def _quota_exhausted_today(self) -> bool:
+        """data/state/gemini_daily_quota_state.json'da, o günün Gemini GÜNLÜK
+        kotasının daha önce (bu süreç ya da önceki bir süreç tarafından)
+        tükendiği işaretlenmiş mi kontrol eder. Dosya yoksa/bozuksa/başka bir
+        güne aitse False döner (tükenmemiş sayılır)."""
+        if not self.daily_quota_guard_enabled or self.provider != "gemini":
+            return False
+        try:
+            state = json.loads(self._quota_state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return state.get("exhausted_quota_day") == self._current_quota_day()
+
+    def _mark_quota_exhausted_today(self) -> None:
+        """GÜNLÜK kota tükendi sinyali (429 + quotaId=...PerDay...) alınınca
+        çağrılır: bugünün tarihini (Pasifik saatine göre) diske kalıcı olarak
+        yazar - süreç yeniden başlasa bile aynı gün içinde tekrar boşuna
+        Gemini'ye istek atılmaz."""
+        if not self.daily_quota_guard_enabled:
+            return
+        try:
+            self._quota_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._quota_state_path.write_text(
+                json.dumps({"exhausted_quota_day": self._current_quota_day(), "model": self.model}),
+                encoding="utf-8",
+            )
+        except OSError as exc:  # noqa: BLE001
+            logger.warning("Günlük kota durumu diske yazılamadı: %s", exc)
 
     def _throttle(self) -> None:
         """Sağlayıcının dakika başına istek (RPM) limitini aşmamak için, bir
@@ -495,7 +561,10 @@ class Summarizer:
                 if _is_daily_quota_error(exc):
                     # Günlük kota tükenmiş: retryDelay kadar beklemek işe
                     # yaramaz (kota ancak yarın sıfırlanır). Tekrar denemeden
-                    # direkt vazgeçip fallback'e düşülüyor.
+                    # direkt vazgeçip fallback'e düşülüyor. Ayrıca bu durumu
+                    # diske kalıcı olarak işaretle (bkz. _mark_quota_exhausted_today)
+                    # ki AYNI süreç/gün içindeki SONRAKİ tüm gruplar (ve süreç
+                    # yeniden başlasa bile) boşuna 429 denemesi yapmasın.
                     logger.error(
                         "%s: '%s' modelinin ücretsiz GÜNLÜK istek kotası tükendi. "
                         "Bu dakika-başına bir limit değil; beklemek/tekrar denemek "
@@ -505,6 +574,7 @@ class Summarizer:
                         self.provider,
                         self.model,
                     )
+                    self._mark_quota_exhausted_today()
                     raise
                 if attempt > self.max_retries:
                     raise
@@ -741,10 +811,11 @@ class Summarizer:
 
         return parsed["analysis"].strip()
 
-    def _apply_fallback(self, group: NewsGroup) -> None:
+    def _apply_fallback(self, group: NewsGroup, quota_deferred: bool = False) -> None:
         rep = group.representative
         fallback = rep.raw_text.strip()[:280] or rep.title
-        group.summary = f"(Otomatik özet üretilemedi) {fallback}"
+        prefix = "(Günlük Gemini kotası doldu, yarın otomatik özetlenecek)" if quota_deferred else "(Otomatik özet üretilemedi)"
+        group.summary = f"{prefix} {fallback}"
         group.key_points = []
         group.importance_score = None
         group.importance_reason = ""

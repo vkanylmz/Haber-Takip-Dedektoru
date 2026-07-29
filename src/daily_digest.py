@@ -50,7 +50,8 @@ def _select_highlights(config: dict[str, Any], records: list[NewsRecord]) -> lis
         )
         return _fallback_top_by_score(records)
 
-    summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider)
+    output_dir = config.get("app", {}).get("output_dir", "data")
+    summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
     selections = summarizer.select_daily_highlights(records)
     if not selections:
         logger.warning(

@@ -38,6 +38,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from src.config import load_config
 from src.config_setup import ensure_all_credentials
 from src.logging_setup import setup_logging
+from src.singleton_lock import acquire_singleton_lock, release_singleton_lock
 from worker import start_background_scheduler
 from src.telegram_bot import stop_bot_listener_thread
 
@@ -46,7 +47,14 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     config = load_config()
-    setup_logging(config["app"].get("output_dir", "data"))
+    output_dir = config["app"].get("output_dir", "data")
+    setup_logging(output_dir)
+
+    # Aynı anda ikinci bir `python main.py` kopyasının paylaşımlı Gemini
+    # kotasını/veritabanını gereksiz yere tüketmesini önler (bkz.
+    # src/singleton_lock.py - gerçek bir olayda 4 kopya aynı anda çalışıp
+    # günlük kotayı normalden kat kat hızlı tükettiği tespit edildi).
+    lock_path = acquire_singleton_lock(output_dir)
 
     # Eksik API anahtarı/token'ları (varsa, etkileşimli bir terminaldeysek)
     # sorar, doğrular, .env'e kaydeder; eksik/geçersiz kalanlar için ilgili
@@ -76,6 +84,7 @@ def main() -> None:
     finally:
         scheduler.shutdown(wait=False)
         stop_bot_listener_thread()
+        release_singleton_lock(lock_path)
         logger.info("Uygulama kapatıldı.")
 
 
