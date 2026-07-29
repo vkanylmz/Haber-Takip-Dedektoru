@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -327,6 +328,37 @@ class AppState(Base):
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=False)  # JSON string
     updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class ApiKey(Base):
+    """Genel/dış kullanıma açık `/api/v1/*` uç noktaları (bkz.
+    src/web/api_v1.py) için API anahtarı kaydı. Bu tablo SADECE anahtar
+    doğrulama/kullanım sayacı için var - dashboard'un iç kullandığı
+    `/api/*` rotaları bu tabloyu HİÇ kullanmaz, kimlik doğrulaması
+    gerektirmez (gereksinim: iç/dış API'ler birbirinden bağımsız).
+
+    `key` DEĞERİNİN KENDİSİ hiçbir zaman `/api/v1/*` yanıtlarında geri
+    DÖNMEZ/SIZDIRILMAZ - sadece `X-API-Key` header'ıyla gelen değerle
+    karşılaştırılır (bkz. src/web/api_v1.py > require_api_key)."""
+
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(64), unique=True, index=True, nullable=False)
+    # Anahtarın kime/hangi projeye ait olduğunu hatırlamak için (ör. "admin",
+    # "proje-x") - salt görsel/yönetimsel, yetkilendirmede kullanılmaz.
+    label = Column(String(200), nullable=False)
+    # "standard" (varsayılan, düşük rate-limit) veya "admin" (kullanıcının
+    # KENDİ kullanımı için - çok daha yüksek/pratikte sınırsız rate-limit,
+    # bkz. src/web/api_v1.py > RATE_LIMITS).
+    tier = Column(String(20), nullable=False, default="standard")
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    # Rate-limit SAYAÇLARI değil (bunlar süreç-içi/in-memory tutulur, bkz.
+    # src/web/api_v1.py - Render zaten TEK worker çalıştırdığından güvenilir)
+    # - bu sadece TOPLAM kullanım istatistiği, kalıcı/DB tarafında.
+    total_request_count = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
 
 
 # --------------------------------------------------------------------------
@@ -722,6 +754,69 @@ def get_recent_records(
     else:
         query = query.order_by(NewsRecord.first_seen_at.desc())
     return query.limit(limit).all()
+
+
+def get_public_news_by_id(group_key: str) -> NewsRecord | None:
+    """Genel/dış `/api/v1/news/{id}` uç noktası için tek bir haberi
+    `group_key`'ine göre döner (bkz. find_record_by_group_key - AYNI sorgu,
+    sadece kendi session'ını açan bağımsız bir sarmalayıcı)."""
+    with get_session() as session:
+        return find_record_by_group_key(session, group_key)
+
+
+def get_public_news_page(
+    page: int = 1,
+    page_size: int = 20,
+    source: str | None = None,
+    sector: str | None = None,
+    region: str | None = None,
+    sentiment: str | None = None,
+    min_importance: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> tuple[list[NewsRecord], int]:
+    """Genel/dış `/api/v1/news` uç noktası (bkz. src/web/api_v1.py) için
+    SAYFALAMA destekli sorgu - BİLİNÇLİ OLARAK `get_recent_records`'tan
+    AYRI bir fonksiyon (iç dashboard sorgusunu değiştirme/bozma riski
+    almamak için, gereksinim: iç/dış API'ler birbirinden bağımsız).
+
+    `get_recent_records` ile AYNI filtre mantığı (JSON liste alanlarında
+    tam eşleşme için tırnaklı `contains`), ama EK olarak `date_to` (üst
+    sınır) ve gerçek OFFSET-tabanlı sayfalama destekler.
+
+    Döner: (bu sayfadaki kayıtlar, TÜM filtreye uyan toplam kayıt sayısı) -
+    toplam sayı, istemcinin "kaç sayfa var" hesaplayabilmesi için AYRI bir
+    COUNT sorgusuyla hesaplanır (tüm kayıtları belleğe çekmeden)."""
+    with get_session() as session:
+        query = session.query(NewsRecord)
+        if source:
+            query = query.filter(NewsRecord.sources.contains(source))
+        if sector:
+            query = query.filter(NewsRecord.sector.contains(f'"{sector}"'))
+        if region:
+            query = query.filter(NewsRecord.regions.contains(f'"{region}"'))
+        if sentiment:
+            query = query.filter(NewsRecord.sentiment == sentiment)
+        if min_importance is not None:
+            query = query.filter(NewsRecord.importance_score >= min_importance)
+        if date_from is not None:
+            query = query.filter(NewsRecord.first_seen_at >= date_from)
+        if date_to is not None:
+            query = query.filter(NewsRecord.first_seen_at <= date_to)
+
+        total = query.count()
+
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))  # sunucu tarafı üst sınır - kötüye kullanıma karşı
+        offset = (page - 1) * page_size
+
+        records = (
+            query.order_by(NewsRecord.first_seen_at.desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+        return records, total
 
 
 def get_records_by_company_ticker(company_ticker: str, limit: int = 10, since: datetime | None = None) -> list[NewsRecord]:
@@ -1198,3 +1293,55 @@ def get_distinct_sectors(session: Session) -> list[str]:
         except json.JSONDecodeError:
             continue
     return sorted(slugs)
+
+
+# --------------------------------------------------------------------------
+# Genel/dış API anahtarları (bkz. src/web/api_v1.py) - dashboard'un iç
+# kullandığı hiçbir mekanizmayla İLİŞKİLİ DEĞİL.
+# --------------------------------------------------------------------------
+
+
+def create_api_key(label: str, tier: str = "standard") -> str:
+    """Yeni bir API anahtarı üretir (kriptografik olarak güvenli, URL-safe,
+    43 karakter - `secrets.token_urlsafe(32)`), veritabanına kaydeder ve
+    ÜRETİLEN HAM DEĞERİ döner - bu, anahtarın açık metin olarak görülebildiği
+    TEK andır, bir daha hiçbir yerden okunamaz/gösterilemez (yalnızca
+    `X-API-Key` header'ıyla karşılaştırılır, bkz. get_api_key_by_value)."""
+    key = secrets.token_urlsafe(32)
+    with get_session() as session:
+        session.add(
+            ApiKey(
+                key=key,
+                label=label,
+                tier=tier,
+                created_at=datetime.now(timezone.utc),
+                total_request_count=0,
+                is_active=True,
+            )
+        )
+    return key
+
+
+def get_api_key_by_value(key: str) -> ApiKey | None:
+    """Bir `X-API-Key` header değerini doğrular - aktif VE var olan bir
+    anahtarsa `ApiKey` satırını, değilse None döner (bkz.
+    src/web/api_v1.py > require_api_key)."""
+    with get_session() as session:
+        return session.query(ApiKey).filter_by(key=key, is_active=True).one_or_none()
+
+
+def record_api_key_usage(key: str) -> None:
+    """Bir API anahtarının `last_used_at`/`total_request_count` alanlarını
+    günceller - rate-limit KARARI için DEĞİL (o, süreç-içi/in-memory bir
+    sayaçla veriliyor, bkz. src/web/api_v1.py), sadece kalıcı kullanım
+    istatistiği için. Hiçbir durumda exception fırlatmaz - bu kayıt
+    başarısız olsa bile GERÇEK API isteği engellenmemeli."""
+    try:
+        with get_session() as session:
+            row = session.query(ApiKey).filter_by(key=key).one_or_none()
+            if row is None:
+                return
+            row.last_used_at = datetime.now(timezone.utc)
+            row.total_request_count = (row.total_request_count or 0) + 1
+    except Exception:  # noqa: BLE001 - kullanım istatistiği asla gerçek isteği engellemesin
+        logger.exception("API anahtarı kullanım istatistiği güncellenemedi.")

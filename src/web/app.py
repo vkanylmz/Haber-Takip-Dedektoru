@@ -54,6 +54,7 @@ from src.summarizer import (
     VALID_TOP_CATEGORIES,
 )
 from src.trend_report import get_dashboard_trend_summary
+from src.web.api_v1 import router as api_v1_router
 from src.web.market_data import (
     get_market_snapshot,
     get_quotes_for_company_tickers,
@@ -172,6 +173,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Finansal Haber Dashboard", lifespan=lifespan)
+
+# Genel/dış kullanıma açık, API-key korumalı REST API (bkz.
+# src/web/api_v1.py) - dashboard'un yukarıdaki iç `/api/*` rotalarından
+# TAMAMEN AYRI, kendi router'ında. Bu app'e (yerel `python main.py`
+# geliştirme/test ortamı) eklenmesi opsiyoneldi ama tutarlılık için
+# eklendi - GERÇEK dış kullanım hedefi Render (bkz. api/index.py).
+app.include_router(api_v1_router)
 
 
 def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:

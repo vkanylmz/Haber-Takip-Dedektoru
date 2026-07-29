@@ -37,6 +37,7 @@ from fastapi.responses import HTMLResponse
 
 from src.config import load_config
 from src.db import init_db
+from src.web.api_v1 import router as api_v1_router
 from src.web.app import (
     commodity_weekly_report_endpoint as _commodity_weekly_report_view,
     company_detail_endpoint as _company_detail_view,
@@ -146,3 +147,13 @@ app.get("/api/push/vapid-public-key")(_push_vapid_public_key_view)
 app.post("/api/push/subscribe")(_push_subscribe_view)
 app.post("/api/push/unsubscribe")(_push_unsubscribe_view)
 app.get("/api/push/subscription-status")(_push_subscription_status_view)
+
+# Genel/dış kullanıma açık, API-key korumalı REST API (bkz.
+# src/web/api_v1.py) - BURASI o API'nin GERÇEK/kalıcı olarak erişilebilir
+# olduğu tek yer (Render her zaman ayakta, yerel `python main.py` kişisel
+# bilgisayar kapandığında erişilemez). `include_router` kullanılıyor
+# (yukarıdaki gibi tek tek `app.get(...)` DEĞİL) çünkü router zaten kendi
+# prefix'ini (/api/v1) VE her rotanın kendi `Depends(require_api_key)`
+# bağımlılığını taşıyor - route tanımları src/web/api_v1.py'de TEK bir
+# yerde kalır.
+app.include_router(api_v1_router)

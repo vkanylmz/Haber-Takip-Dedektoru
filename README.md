@@ -41,6 +41,16 @@ dener; hata bir GÜNLÜK kota tükenmesiyse (retryDelay beklemek yardımcı
 olmayacağından) tekrar denemeden hemen vazgeçip ham metin fallback'ine düşer
 — bkz. aşağıdaki "Rate Limit Koruması" bölümü.
 
+## Genel API (`/api/v1/*`)
+
+Bu projenin topladığı haber/piyasa verisi, API-key korumalı, sayfalanabilir
+bir REST API üzerinden **başka projelerden** de kullanılabilir - dashboard'un
+kendi iç kullandığı `/api/*` rotalarından TAMAMEN bağımsız, ayrı bir router
+(bkz. `src/web/api_v1.py`). Detaylı endpoint listesi, parametreler ve örnek
+istek/yanıtlar için: **[API_DOCS.md](API_DOCS.md)**.
+
+İnteraktif dokümantasyon (Swagger UI): `https://finans-haber-dashboard.onrender.com/docs`
+
 ## Proje Yapısı
 
 ```
