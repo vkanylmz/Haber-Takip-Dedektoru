@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
 from src.company_profile import get_company_profile
@@ -38,6 +39,8 @@ from src.db import (
     get_session,
     get_source_health_summary,
     init_db,
+    remove_push_subscription,
+    upsert_push_subscription,
 )
 from src.summarizer import (
     REGION_LABELS,
@@ -55,6 +58,7 @@ from src.web.market_data import (
     get_ticker_detail,
     start_background_refresh,
 )
+from src.web_push import get_vapid_public_key
 
 logger = logging.getLogger(__name__)
 
@@ -725,3 +729,73 @@ def trend_summary(period: str = "weekly") -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# --------------------------------------------------------------------------
+# Web Push bildirimleri (bkz. src/web_push.py) - Telegram'a PARALEL, TAMAMEN
+# AYRI bir kanal. Sekme/tarayıcı KAPALIYKEN bile çalışır (bkz. sw.js).
+# --------------------------------------------------------------------------
+
+_SW_JS_PATH = Path(__file__).resolve().parent / "static" / "sw.js"
+
+
+@app.get("/sw.js")
+def service_worker_file() -> FileResponse:
+    """Service Worker dosyasını KÖK yoldan (/sw.js) servis eder - fiziksel
+    dosya `src/web/static/sw.js`'de dursa da, bir Service Worker'ın
+    varsayılan "scope"u kendi URL'inin bulunduğu dizin olduğundan (bkz.
+    sw.js docstring'i), `/static/sw.js` olarak servis edilseydi scope
+    `/static/`'le sınırlı kalır, dashboard'un geri kalanını (ana sayfa `/`
+    dahil) KAPSAMAZDI.
+
+    `Cache-Control: no-cache` KASITLI: tarayıcılar Service Worker
+    dosyasını genelde zaten kendi güncelleme mantığıyla (byte-karşılaştırma)
+    kontrol eder, ama agresif bir HTTP önbelleği bu kontrolü GECİKTİREBİLİR -
+    özellikle geliştirme/güncelleme sırasında yeni sürümün hemen
+    yakalanmasını garanti eder."""
+    return FileResponse(_SW_JS_PATH, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/push/vapid-public-key")
+def push_vapid_public_key() -> dict[str, str]:
+    """Frontend'in `PushManager.subscribe({applicationServerKey: ...})`
+    çağrısı için gereken VAPID genel anahtarı (bkz. src/web_push.py >
+    get_vapid_public_key). Herkese açık bir anahtardır - gizli DEĞİLDİR
+    (VAPID'in özel anahtarı hiçbir zaman istemciye gönderilmez)."""
+    return {"publicKey": get_vapid_public_key()}
+
+
+class _PushSubscriptionPayload(BaseModel):
+    """Tarayıcının `PushSubscription.toJSON()` çıktısıyla BİREBİR AYNI şekil
+    (bkz. dashboard.html > subscribeToPush)."""
+
+    endpoint: str
+    keys: dict[str, str]
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(payload: _PushSubscriptionPayload) -> JSONResponse:
+    """Tarayıcının push aboneliğini kaydeder (bkz. src/db.py >
+    upsert_push_subscription). `filters` bu aşamada (Faz 1) HENÜZ
+    gönderilmiyor/işlenmiyor - Faz 2'de eklenecek filtre paneli bu AYNI
+    endpoint'i (filters alanıyla BİRLİKTE) tekrar çağırarak günceller."""
+    p256dh = payload.keys.get("p256dh", "")
+    auth = payload.keys.get("auth", "")
+    if not payload.endpoint or not p256dh or not auth:
+        return JSONResponse({"error": "Eksik abonelik bilgisi."}, status_code=400)
+
+    upsert_push_subscription(payload.endpoint, p256dh, auth)
+    return JSONResponse({"status": "ok"})
+
+
+class _PushUnsubscribePayload(BaseModel):
+    endpoint: str
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(payload: _PushUnsubscribePayload) -> JSONResponse:
+    """Kullanıcı dashboard'da bildirimleri kapattığında VEYA tarayıcı
+    aboneliği kendiliğinden geçersiz kıldığında çağrılır (bkz.
+    dashboard.html > unsubscribeFromPush)."""
+    remove_push_subscription(payload.endpoint)
+    return JSONResponse({"status": "ok"})

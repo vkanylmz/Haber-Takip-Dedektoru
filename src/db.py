@@ -254,6 +254,57 @@ class KeywordNotification(Base):
     __table_args__ = (UniqueConstraint("chat_id", "group_key", name="uq_keyword_notification_chat_group"),)
 
 
+class PushSubscription(Base):
+    """Bir tarayıcının Web Push aboneliği (bkz. src/web_push.py). Kullanıcı
+    dashboard'da "🔔 Bildirimleri Aç" ile abone olduğunda, tarayıcının
+    `PushManager.subscribe()` çağrısından dönen `endpoint` + `keys.p256dh`/
+    `keys.auth` burada saklanır - sekme/tarayıcı KAPALIYKEN bile bu bilgiyle
+    push gönderilebilir (Telegram'daki `Subscriber.chat_id`'nin tarayıcı
+    karşılığı).
+
+    `endpoint` (push servisinin verdiği benzersiz URL - ör.
+    fcm.googleapis.com/.../<id>) doğal birincil kimlik olarak kullanılır;
+    aynı tarayıcı/cihaz kombinasyonu HER ZAMAN aynı endpoint'i üretir, bu
+    yüzden tekil (UNIQUE)."""
+
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    endpoint = Column(Text, unique=True, index=True, nullable=False)
+    p256dh = Column(String(255), nullable=False)
+    auth = Column(String(255), nullable=False)
+
+    # Bu aboneliğin hangi haberler için bildirim almak istediğini belirten
+    # filtre - JSON: {"sources": [...], "sectors": [...], "regions": [...],
+    # "sentiments": [...], "min_importance": int|None}. Bir alan boş/None ise
+    # o boyutta filtre YOK (her değeri eşleşir) - bkz. src/web_push.py >
+    # _record_matches_filters. NULL -> kullanıcı henüz filtre kaydetmedi
+    # (Faz 1'de sadece abone olunur, Faz 2'de filtre eklenir).
+    filters = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    # Tarayıcı aynı endpoint'le TEKRAR subscribe ederse (ör. filtre
+    # güncellemesi) bu alan güncellenir - "hâlâ aktif" sinyali.
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class PushNotification(Base):
+    """Bir (endpoint, group_key) çiftine push bildirimi zaten gönderildiğini
+    işaretler - `KeywordNotification` ile AYNI desen, aynı haberin aynı
+    tarayıcıya birden fazla gönderilmesini engeller (bkz. src/web_push.py)."""
+
+    __tablename__ = "push_notifications"
+
+    id = Column(Integer, primary_key=True)
+    endpoint = Column(Text, index=True, nullable=False)
+    group_key = Column(String(64), index=True, nullable=False)
+    notified_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("endpoint", "group_key", name="uq_push_notification_endpoint_group"),
+    )
+
+
 class AppState(Base):
     """Genel amaçlı, tek satırlık key-value durum saklama tablosu. İLK
     kullanım amacı: haftalık emtia raporunun (bkz. src/commodity_report.py >
@@ -959,6 +1010,84 @@ def mark_keyword_notified(chat_id: str | int, group_key: str) -> None:
         session.add(
             KeywordNotification(
                 chat_id=chat_id_str,
+                group_key=group_key,
+                notified_at=datetime.now(timezone.utc),
+            )
+        )
+
+
+def upsert_push_subscription(
+    endpoint: str, p256dh: str, auth: str, filters: dict[str, Any] | None = None
+) -> None:
+    """Bir tarayıcının Web Push aboneliğini kaydeder/günceller (bkz.
+    src/web_push.py). Aynı `endpoint` zaten varsa (ör. kullanıcı filtresini
+    güncelledi/tarayıcı yeniden subscribe oldu) satır GÜNCELLENİR, yeni bir
+    kayıt oluşturulmaz - `filters` verilmezse (Faz 1: henüz filtre seçilmedi)
+    mevcut değer (varsa) KORUNUR, None'a sıfırlanmaz."""
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        existing = session.query(PushSubscription).filter_by(endpoint=endpoint).one_or_none()
+        if existing is None:
+            session.add(
+                PushSubscription(
+                    endpoint=endpoint,
+                    p256dh=p256dh,
+                    auth=auth,
+                    filters=json.dumps(filters, ensure_ascii=False) if filters is not None else None,
+                    created_at=now,
+                    last_seen_at=now,
+                )
+            )
+            logger.info("Yeni Web Push aboneliği: endpoint=...%s", endpoint[-24:])
+        else:
+            existing.p256dh = p256dh
+            existing.auth = auth
+            if filters is not None:
+                existing.filters = json.dumps(filters, ensure_ascii=False)
+            existing.last_seen_at = now
+
+
+def remove_push_subscription(endpoint: str) -> bool:
+    """Bir Web Push aboneliğini siler (kullanıcı bildirimleri kapattığında
+    VEYA push servisi 404/410 "artık geçerli değil" dediğinde - bkz.
+    src/web_push.py > send_push_notification). Döner: silindiyse True."""
+    with get_session() as session:
+        existing = session.query(PushSubscription).filter_by(endpoint=endpoint).one_or_none()
+        if existing is None:
+            return False
+        session.delete(existing)
+        logger.info("Web Push aboneliği silindi: endpoint=...%s", endpoint[-24:])
+        return True
+
+
+def get_all_push_subscriptions() -> list[PushSubscription]:
+    """Eşleşme kontrolü için TÜM tarayıcı push aboneliklerini döner (bkz.
+    src/web_push.py > notify_matching_push_subscriptions)."""
+    with get_session() as session:
+        return session.query(PushSubscription).all()
+
+
+def was_push_notified(endpoint: str, group_key: str) -> bool:
+    """Bu (endpoint, group_key) çiftine daha önce push bildirimi gönderilip
+    gönderilmediğini kontrol eder (tekrar bildirim önleme)."""
+    with get_session() as session:
+        return (
+            session.query(PushNotification)
+            .filter_by(endpoint=endpoint, group_key=group_key)
+            .one_or_none()
+            is not None
+        )
+
+
+def mark_push_notified(endpoint: str, group_key: str) -> None:
+    """(endpoint, group_key) çiftini "bildirildi" olarak işaretler (idempotent)."""
+    with get_session() as session:
+        existing = session.query(PushNotification).filter_by(endpoint=endpoint, group_key=group_key).one_or_none()
+        if existing is not None:
+            return
+        session.add(
+            PushNotification(
+                endpoint=endpoint,
                 group_key=group_key,
                 notified_at=datetime.now(timezone.utc),
             )

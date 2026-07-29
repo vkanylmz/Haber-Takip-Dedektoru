@@ -163,6 +163,31 @@
       border-color: var(--accent);
     }
 
+    /* Web Push bildirim düğmesi (bkz. src/web_push.py) - #theme-toggle ile
+       AYNI temel görünüm, ".push-active" durumunda vurgu rengiyle abone
+       olunduğu görsel olarak belli edilir. */
+    #push-toggle-btn {
+      background: var(--surface-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    #push-toggle-btn:hover {
+      border-color: var(--accent);
+    }
+
+    #push-toggle-btn.push-active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+    }
+
     form.filter {
       display: flex;
       flex-wrap: wrap;
@@ -1193,6 +1218,7 @@
         </details>
         <button type="submit">Uygula</button>
       </form>
+      <button type="button" id="push-toggle-btn" onclick="togglePushNotifications()" title="Sekme/tarayıcı kapalıyken bile bildirim al">🔔 Bildirimleri Aç</button>
       <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
     </div>
   </header>
@@ -1786,6 +1812,113 @@
     setInterval(refreshMarketTicker, 10000);
     setInterval(refreshSectorHeatmap, 300000);
     setInterval(loadCommodityPanel, 90000);
+
+    // ======================================================================
+    // Web Push bildirimleri (bkz. src/web_push.py, sw.js) - Telegram'a
+    // PARALEL, TAMAMEN AYRI bir kanal. Sekme/tarayıcı KAPALIYKEN bile
+    // çalışır. Faz 1: sadece izin isteme + ham abonelik (filtresiz - her
+    // yeni özetlenmiş habere bildirim gelir). Faz 2'de dashboard'un mevcut
+    // filtre formuna (bkz. yukarıdaki <form class="filter">) bağlı bir
+    // filtre seçimi eklenecek.
+    // ======================================================================
+
+    // VAPID genel anahtarı (base64url, '-'/'_' kullanır) tarayıcının
+    // `applicationServerKey`'in beklediği Uint8Array'e çevrilir - Web Push
+    // spesifikasyonunun standart dönüşümü budur.
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; i++) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    async function getExistingPushSubscription() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+      const registration = await navigator.serviceWorker.ready;
+      return registration.pushManager.getSubscription();
+    }
+
+    async function updatePushButtonState() {
+      const btn = document.getElementById('push-toggle-btn');
+      if (!btn) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        btn.style.display = 'none';
+        return;
+      }
+      const sub = await getExistingPushSubscription();
+      if (sub) {
+        btn.textContent = '🔔 Bildirimler Açık';
+        btn.classList.add('push-active');
+      } else {
+        btn.textContent = '🔔 Bildirimleri Aç';
+        btn.classList.remove('push-active');
+      }
+    }
+
+    async function togglePushNotifications() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        alert('Bu tarayıcı push bildirimlerini desteklemiyor.');
+        return;
+      }
+
+      const existing = await getExistingPushSubscription();
+      if (existing) {
+        // Zaten abone - düğme "kapat" işlevi görüyor.
+        try {
+          await fetch('/api/push/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: existing.endpoint }),
+          });
+          await existing.unsubscribe();
+        } catch (e) {
+          // Ağ hatası - sessizce yut, kullanıcı tekrar deneyebilir.
+        }
+        await updatePushButtonState();
+        return;
+      }
+
+      // Tarayıcının izin isteği KENDİ native UI'ı - kullanıcı reddederse
+      // (gereksinim: ZORLAMA) burada sessizce vazgeçilir, tekrar sormaya
+      // çalışılmaz (tarayıcı zaten "reddedildi" durumunda bir sonraki
+      // Notification.requestPermission() çağrısını da sessizce reddeder).
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const keyRes = await fetch('/api/push/vapid-public-key');
+        const keyData = await keyRes.json();
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+        });
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subscription.toJSON()),
+        });
+      } catch (e) {
+        console.error('Push aboneliği başarısız:', e);
+      }
+      await updatePushButtonState();
+    }
+
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.register('/sw.js').then(function () {
+        updatePushButtonState();
+      }).catch(function () {
+        const btn = document.getElementById('push-toggle-btn');
+        if (btn) btn.style.display = 'none';
+      });
+    } else {
+      const btn = document.getElementById('push-toggle-btn');
+      if (btn) btn.style.display = 'none';
+    }
   </script>
 </body>
 

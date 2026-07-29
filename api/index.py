@@ -44,7 +44,11 @@ from src.web.app import (
     detayli_inceleme_page as _detayli_inceleme_view,
     health as _health_view,
     market_data as _market_data_view,
+    push_subscribe as _push_subscribe_view,
+    push_unsubscribe as _push_unsubscribe_view,
+    push_vapid_public_key as _push_vapid_public_key_view,
     sector_heatmap as _sector_heatmap_view,
+    service_worker_file as _service_worker_view,
     source_health_page as _source_health_view,
     start_sector_heatmap_background_refresh,
     ticker_quotes_endpoint as _ticker_quotes_view,
@@ -107,7 +111,11 @@ app = FastAPI(title="Finansal Haber Dashboard (Salt-Okunur / Vercel)", lifespan=
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    # POST, Web Push abonelik uç noktaları için eklendi (bkz. aşağıdaki
+    # /api/push/subscribe, /api/push/unsubscribe) - bunlar da /sirket-profili
+    # gibi LLM/ücretli bir çağrı TETİKLEMEZ, sadece bir veritabanı satırı
+    # yazar/siler, bu yüzden aynı "herkese açık güvenli" mantık geçerli.
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -126,3 +134,13 @@ app.get("/api/commodity-weekly-report")(_commodity_weekly_report_view)
 # güvenle Render'a da yansıtılabilir.
 app.get("/api/company-detail")(_company_detail_view)
 app.get("/health")(_health_view)
+
+# Web Push (bkz. src/web_push.py) - kullanıcı Render'daki bu PUBLIC
+# dashboard'u ziyaret ettiğinde abone olur (bkz. dashboard.html), ama
+# GERÇEK gönderim (bkz. src/main.py > _persist_and_notify_single) SADECE
+# yerel `python main.py` worker'ında çalışır - Telegram bot'uyla AYNI
+# hibrit mimari (ikisi de AYNI paylaşımlı DATABASE_URL'i okur/yazar).
+app.get("/sw.js")(_service_worker_view)
+app.get("/api/push/vapid-public-key")(_push_vapid_public_key_view)
+app.post("/api/push/subscribe")(_push_subscribe_view)
+app.post("/api/push/unsubscribe")(_push_unsubscribe_view)

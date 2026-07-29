@@ -36,6 +36,13 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 jinja2>=3.1
 
+# Web Push bildirimleri (sekme/tarayıcı KAPALIYKEN bile çalışan tarayıcı
+# bildirimleri) - src/web_push.py. VAPID imzalama + mesaj şifrelemesi
+# (RFC 8291/8292) dahil, ek bir servis/API anahtarı GEREKMEZ (py-vapid
+# bağımlılığı ile anahtar çifti kendi kendine üretilir, bkz. src/web_push.py
+# > _get_or_create_vapid_keys).
+pywebpush>=2.0
+
 # IANA zaman dilimi veritabanı - haber saatlerini Türkiye saatine çevirmek
 # için (bkz. src/timezone_utils.py > to_turkey_time, zoneinfo.ZoneInfo
 # kullanır). Şu ana kadar (muhtemelen pandas gibi başka bir bağımlılık
