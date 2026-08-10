@@ -312,6 +312,17 @@ def run_once(
             )
             groups_to_summarize, group_keys = groups, {}
 
+        # `summarize_groups` her grubu özetler özetlemez KENDİ İÇİNDE hemen
+        # kaydeder/bildirir (bkz. o fonksiyonun docstring'i - "Özetlenen
+        # haberi beklemeden hemen kaydet ve bildir"). Bu yüzden aşağıdaki
+        # `persist_and_notify(groups, ...)` çağrısına bu gruplar TEKRAR
+        # verilmemeli - aksi halde her biri için DB okuma/yazma + push/anahtar
+        # kelime eşleşme kontrolü GEREKSİZ YERE iki kez çalışır (2026-08-10,
+        # Neon veri transfer denetiminde tespit edildi: bu, taze özetlenen
+        # HER grup için DB trafiğini haksız yere ikiye katlıyordu). `summarize`
+        # False geçilirse (ör. testte) `summarize_groups` hiç çalışmaz - bu
+        # durumda o gruplar hâlâ hiç kaydedilmemiştir, bu yüzden dışlanmazlar.
+        summarized_ids: set[int] = set()
         if summarize and groups_to_summarize:
             logger.info(
                 "%d/%d grup daha önce özetlenmemiş, Claude ile özetleniyor "
@@ -321,9 +332,11 @@ def run_once(
                 len(groups) - len(groups_to_summarize),
             )
             summarize_groups(groups_to_summarize, group_keys, config, notify=notify)
+            summarized_ids = {id(g) for g in groups_to_summarize}
 
+        remaining_groups = [g for g in groups if id(g) not in summarized_ids]
         try:
-            persist_and_notify(groups, group_keys, config, notify=notify)
+            persist_and_notify(remaining_groups, group_keys, config, notify=notify)
         except Exception:  # noqa: BLE001
             logger.exception("Veritabanına kaydetme/bildirim adımında beklenmeyen hata oluştu.")
 

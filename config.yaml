@@ -30,7 +30,15 @@ worker:
   # uyarılarıyla sürekli atlanmasına ve gereksiz yere her 12 kaynağın 60
   # saniyede bir yeniden çekilmesine yol açıyordu. 5 dakikaya çıkarıldı -
   # finans haberleri için hâlâ çok taze bir tarama sıklığı, ama israfı önlüyor.
-  interval_minutes: 5
+  #
+  # GÜNCELLEME (2026-08-10, Neon veri transfer kotası aşımı sonrası): her
+  # tarama, değişmemiş haberler için bile veritabanına bir SELECT+UPDATE
+  # round-trip'i yapıyor (bkz. src/main.py > _reuse_or_mark_for_summarization,
+  # persist_and_notify) - 5 dakikada bir bu, günde 288 tarama demek. 15
+  # dakikaya çıkarmak bu taban DB trafiğini ~3 kat azaltır, haber tazeliği
+  # açısından hâlâ kabul edilebilir bir gecikme (finans haberleri için 15 dk
+  # gecikme pratikte fark yaratmaz).
+  interval_minutes: 15
 
 summarizer:
   # Özetleme + önem skorlama için kullanılacak LLM sağlayıcısı: "gemini" veya

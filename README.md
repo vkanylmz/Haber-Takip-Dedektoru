@@ -1193,6 +1193,54 @@ thread'i) ve web sunucusu (istek thread'leri) **aynı SQLite dosyasını
 paylaşır** (`check_same_thread=False`); bu ölçekte (birkaç dakikada bir yazma,
 ara sıra okuma) bu yeterlidir, ayrı bir veritabanı sunucusuna gerek yoktur.
 
+### Neon Kota Aşımı Sonrası Geçiş (SQLite → Neon Senkronizasyonu)
+
+**Durum (2026-07-31):** Neon Postgres'in ücretsiz katmanındaki aylık veri
+transfer kotası aşıldı ("Your project has exceeded the data transfer quota").
+Kota sıfırlanana kadar `.env` içindeki `DATABASE_URL` satırı yorum satırına
+alındı - `src/db.py > init_db`'nin dual-backend desteği sayesinde (bkz.
+yukarıdaki bölüm) uygulama otomatik olarak yerel SQLite'a (`data/finans_haber.db`)
+döndü, hiçbir kod değişikliği gerekmedi. **Bu süre boyunca Render'daki canlı
+dashboard** (hâlâ Neon'a bağlı olduğundan) **eski/dondurulmuş veriyi
+gösterecek** - bu beklenen bir durumdur, worker/Telegram bot yerelde SQLite'a
+yazmaya devam eder.
+
+**Kota sıfırlandığında Neon'a geri dönüş adımları:**
+
+1. `.env` içindeki `# DATABASE_URL=...` satırının başındaki `# ` kaldırılıp
+   Neon bağlantısı tekrar aktif hale getirilir.
+2. **Bundan ÖNCE**, offline geçen sürede SQLite'a yazılmış YENİ satırları
+   Neon'a aktarmak gerekir - aksi halde bu veri sessizce kaybolur (worker,
+   `DATABASE_URL` tekrar Neon'u gösterdiğinde yerel SQLite dosyasına bir daha
+   hiç bakmaz). Bunun için henüz yazılmamış, ama gerektiğinde eklenecek basit
+   bir "diff & upsert" script'i şöyle çalışmalı:
+   - Aynı anda HEM yerel SQLite dosyasına HEM Neon'a bağlanan, tek seferlik,
+     elle çalıştırılan bir Python script'i (iki ayrı SQLAlchemy engine/session).
+   - Her tablo için kendi UNIQUE anahtarına göre "SQLite'da olup Neon'da
+     olmayan" satırları bulur ve SADECE onları Neon'a ekler (`INSERT ...
+     ON CONFLICT DO NOTHING` veya SQLAlchemy'nin
+     `insert(Model).on_conflict_do_nothing()`'i ile) - var olan hiçbir satırı
+     ELLEMEZ/ÜZERİNE YAZMAZ, sadece eksik olanları EKLER:
+     - `news_records` → anahtar `group_key` (zaten UNIQUE).
+     - `subscribers` → anahtar `chat_id` (zaten UNIQUE) - offline sürede botla
+       `/start` yazıp yeni abone olan varsa böylece Neon'a taşınır.
+     - `keyword_subscriptions`, `keyword_notifications` → kendi UNIQUE
+       alanlarına göre (bkz. `src/db.py` model tanımları).
+     - `source_health` → taşımaya GEREK YOK, sadece anlık bir durum
+       önbelleği - worker Neon'a geçer geçmez kendiliğinden yeniden dolar.
+     - `api_keys` → offline sürede yerel SQLite'ta elle yeni bir anahtar
+       OLUŞTURULMADIYSA taşımaya gerek yok.
+   - Tablolar bu ölçekte (birkaç bin satır) küçük olduğundan `pgloader` gibi
+     ağır bir araca gerek yok - ~40-50 satırlık bir script yeterli.
+3. Script çalıştırıldıktan sonra iki veritabanındaki `news_records` satır
+   sayıları (`SELECT COUNT(*)`) karşılaştırılıp makul şekilde örtüştüğü
+   doğrulanmalı.
+4. Son olarak `python main.py` yeniden başlatılıp worker'ın Neon'a sorunsuz
+   yazdığı gerçek bir taramayla teyit edilmeli (bkz. yukarıdaki "Render'a
+   Deploy" bölümü - Render zaten aynı `DATABASE_URL`'i okuduğundan, bu adımdan
+   sonra otomatik olarak güncel veriyi göstermeye başlar, ek bir Render
+   işlemi gerekmez).
+
 ## Loglama
 
 Tüm çalıştırmalar `data/logs/finans_haber.log` dosyasına (dönen/rotating, 5 yedek,

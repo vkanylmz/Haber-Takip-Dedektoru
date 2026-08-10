@@ -97,7 +97,17 @@ def _init_persistence_and_bot(config: dict) -> None:
         logger.exception("Veritabanı başlatılamadı (%s), abone kaydı ve bot dinleyicisi atlanıyor.", db_path)
         return
 
-    _seed_env_subscriber(config.get("importance", {}).get("threshold", 4))
+    # `init_db()` (yukarıda) motoru sadece HAZIRLAR - bağlantı havuzu tembel
+    # (lazy) olduğundan gerçek bağlantı hatası (ör. Neon kota aşımı) ancak
+    # İLK sorguda ortaya çıkar. Bu yüzden `init_db()`'nin BAŞARILI olması,
+    # aşağıdaki `add_subscriber` çağrısının da başarılı olacağını GARANTİ
+    # ETMEZ - kendi try/except'i olmadan bu satır patlarsa (gerçek bir olayda
+    # doğrulandı: Neon kota aşımı sırasında `python main.py` hiç açılmadan
+    # çöktü) TÜM uygulama (worker+bot+dashboard) hiç başlamadan çöker.
+    try:
+        _seed_env_subscriber(config.get("importance", {}).get("threshold", 4))
+    except Exception:  # noqa: BLE001
+        logger.exception("Sahibin chat_id'si abone olarak kaydedilemedi (DB erişilemiyor olabilir) - devam ediliyor.")
 
     if not config.get("telegram", {}).get("enabled", True):
         logger.info("config.yaml > telegram.enabled=false, Telegram bot dinleyicisi başlatılmadı.")

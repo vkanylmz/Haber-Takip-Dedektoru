@@ -8,4 +8,6 @@ data/reports/
 data/state/
 data/backups/
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite
