@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -259,6 +260,38 @@ def _ensure_credential(spec: CredentialSpec, env_path: Path, interactive: bool) 
         spec.feature_name,
     )
     return False
+
+
+# --------------------------------------------------------------------------
+# Kendi kendine üretilen sırlar (üçüncü taraf bir servisten ALINMAZ, bu
+# yüzden ensure_all_credentials'daki "sor/doğrula" akışına uymaz)
+# --------------------------------------------------------------------------
+
+
+def ensure_webhook_secret(env_path: str | Path | None = None) -> str:
+    """`WEBHOOK_INGEST_SECRET` .env'de yoksa kriptografik olarak güvenli
+    rastgele bir değer üretip kaydeder (bkz. src/web/app.py > POST
+    /api/webhook/kap-bildirim, src/fetchers/telegram_listener.py). Diğer
+    kimlik bilgilerinin (API anahtarları) AKSİNE bu üçüncü taraf bir
+    servisten ALINAN bir değer DEĞİL - kullanıcıya SORULMAZ/doğrulanmaz,
+    tıpkı `src/db.py > create_api_key` gibi kendi kendine üretilir. Zaten
+    tanımlıysa dokunmadan mevcut değeri döner (idempotent)."""
+    path = Path(env_path) if env_path else _DEFAULT_ENV_PATH
+    current = os.environ.get("WEBHOOK_INGEST_SECRET", "").strip()
+    if current:
+        return current
+
+    if not path.exists():
+        path.touch()
+
+    value = secrets.token_urlsafe(32)
+    _persist_to_env(path, "WEBHOOK_INGEST_SECRET", value)
+    os.environ["WEBHOOK_INGEST_SECRET"] = value
+    logger.info(
+        "WEBHOOK_INGEST_SECRET otomatik üretildi ve .env'e kaydedildi "
+        "(bkz. README > 'Event-Driven Ingestion: KAP Bildirimleri')."
+    )
+    return value
 
 
 # --------------------------------------------------------------------------

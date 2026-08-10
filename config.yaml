@@ -108,6 +108,29 @@ telegram:
   # bildirim gönderilmez (örn. test/geliştirme sırasında).
   enabled: true
 
+# İSTEĞE BAĞLI: KAP (kap.org.tr) gibi doğrudan scrape EDİLEMEYEN (bkz.
+# README > "Eklenmeyen Kaynaklar") kaynaklardan anlık bildirim almak için
+# Event-Driven Ingestion (bkz. src/fetchers/webhook.py, POST
+# /api/webhook/kap-bildirim). Bu bölüm SADECE src/fetchers/telegram_listener.py
+# (Telethon tabanlı, kullanıcının KENDİ Telegram hesabıyla bir kanalı dinleyen
+# İSTEĞE BAĞLI/AYRI bir servis) için geçerlidir - webhook endpoint'inin
+# kendisi bu ayarlardan BAĞIMSIZ olarak (WEBHOOK_INGEST_SECRET tanımlıysa)
+# her zaman aktiftir, herhangi bir dış istemciden (elle cURL dahil)
+# çağrılabilir. Detaylı kurulum talimatları için bkz. README >
+# "Event-Driven Ingestion: KAP Bildirimleri" ve src/fetchers/telegram_listener.py
+# modül docstring'i.
+telegram_listener:
+  # Dinlenecek Telegram kanal(lar)ı - kullanıcı adı ("@ornek_kanal") veya
+  # sayısal kanal ID'si olabilir. BİLİNÇLİ OLARAK boş bırakıldı: bu proje
+  # KAP içeriğini yeniden yayınlayan hiçbir üçüncü taraf kanalı önermez/
+  # doğrulamaz - kullanılacak kanal(lar)a kullanıcı kendisi karar verip
+  # buraya ekler.
+  channels: []
+  # Yakalanan mesajların iletileceği webhook adresi - varsayılan, AYNI
+  # makinede çalışan `python main.py`'nin dashboard'udur. Yalnızca
+  # dinleyiciyi FARKLI bir makinede/porttan çalıştırıyorsanız değiştirin.
+  webhook_url: "http://127.0.0.1:8000/api/webhook/kap-bildirim"
+
 database:
   # Haberlerin, özetlerin, önem skorlarının ve bildirim durumunun kalıcı
   # olarak tutulduğu SQLite dosyası. Worker ve web sunucusu aynı dosyayı

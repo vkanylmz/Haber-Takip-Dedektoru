@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -21,13 +22,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
 from src.company_profile import get_company_profile
+from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
 from src.timezone_utils import format_turkey_time
 from src.config import load_config
 from src.db import (
@@ -850,3 +852,95 @@ def push_subscription_status(endpoint: str = "") -> dict[str, Any]:
             except ValueError:
                 filters = None
         return {"subscribed": True, "filters": filters}
+
+
+# --------------------------------------------------------------------------
+# Event-Driven Ingestion: dış kaynaklardan (ör. src/fetchers/telegram_listener.py
+# - KAP bildirimlerini yayınlayan bir Telegram kanalı) PUSH edilen tekil
+# haber/bildirim webhook'u (bkz. src/fetchers/webhook.py). BİLİNÇLİ OLARAK
+# api/index.py'ye (Vercel/Render'daki salt-okunur public dashboard) YANSITILMAZ
+# - GERÇEK bir LLM çağrısı + TÜM abonelere Telegram/Web Push bildirimi
+# TETİKLER (tıpkı /sirket-profili gibi, bkz. api/index.py modül docstring'i),
+# bu yüzden yalnızca yerel `python main.py`'de (bu dosyada) kalır.
+# --------------------------------------------------------------------------
+
+
+class _WebhookDisclosurePayload(BaseModel):
+    """Dış bir kaynaktan (ör. src/fetchers/telegram_listener.py, veya
+    kullanıcının kendi elle çalıştırdığı bir cURL/otomasyon aracı) PUSH
+    edilen tekil bir KAP/BIST bildirimi. `title` DIŞINDA hepsi opsiyonel -
+    ör. yalnızca ham metin geldiğinde (ticker/tarih ayrıştırılamadığında)
+    bile pipeline'a sokulabilsin diye (bkz. src/fetchers/webhook.py >
+    process_incoming_disclosure - özetleyici zaten ham metinden bir özet
+    üretebiliyor)."""
+
+    title: str
+    text: str = ""
+    ticker: str | None = None
+    source: str = DEFAULT_SOURCE_NAME
+    link: str = ""
+    published_at: datetime | None = None
+
+
+def _check_webhook_secret(x_webhook_secret: str | None) -> None:
+    """`.env > WEBHOOK_INGEST_SECRET` ile eşleşen bir `X-Webhook-Secret`
+    header'ı zorunlu kılar. Bu endpoint GERÇEK bir LLM çağrısı + tüm
+    abonelere bildirim TETİKLEDİĞİNDEN (bkz. process_incoming_disclosure),
+    src/web/api_v1.py'deki genel/dış API'nin AKSİNE kimlik doğrulamasız
+    bırakılamaz - ama o API'nin veritabanı-destekli çok-kullanıcılı
+    `ApiKey` mekanizması burada GEREKSİZ karmaşıklık olurdu (bu endpoint
+    yalnızca kullanıcının KENDİ dinleyici script'i tarafından çağrılır) -
+    bu yüzden basit, tek bir paylaşılan sır yeterli.
+
+    Sır .env'de HİÇ tanımlanmamışsa (ör. kullanıcı henüz eklemedi) endpoint'i
+    "kimlik doğrulamasız açık" bırakmak yerine TAMAMEN kapalı tutar (503) -
+    varsayılan olarak güvenli taraf."""
+    expected = os.environ.get("WEBHOOK_INGEST_SECRET", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="WEBHOOK_INGEST_SECRET .env'de tanımlı değil, webhook endpoint'i devre dışı.",
+        )
+    if not x_webhook_secret or x_webhook_secret != expected:
+        raise HTTPException(status_code=401, detail="Geçersiz veya eksik X-Webhook-Secret header'ı.")
+
+
+@app.post("/api/webhook/kap-bildirim")
+def webhook_kap_bildirim(
+    payload: _WebhookDisclosurePayload,
+    background_tasks: BackgroundTasks,
+    x_webhook_secret: str | None = Header(default=None),
+) -> JSONResponse:
+    """Dış bir kaynaktan (bkz. src/fetchers/telegram_listener.py veya elle
+    bir cURL isteği) anlık KAP/BIST bildirimi kabul eder ve mevcut özetleme/
+    önem skorlama/kayıt/bildirim pipeline'ına sokar (bkz.
+    src/fetchers/webhook.py > process_incoming_disclosure).
+
+    İşleme (LLM çağrısı + rate-limit bekleme + Telegram/Web Push gönderimi,
+    saniyeler sürebilir) `BackgroundTasks` ile arka plana alınır - istek
+    hemen 202 döner, çağıran taraf (ör. Telegram dinleyicisi, tek bir
+    asyncio event loop'unda çalışıyor) saniyelerce bloklanmaz.
+
+    Örnek kullanım (elle test için):
+        curl -X POST http://127.0.0.1:8000/api/webhook/kap-bildirim \\
+             -H "Content-Type: application/json" \\
+             -H "X-Webhook-Secret: <WEBHOOK_INGEST_SECRET>" \\
+             -d '{"title": "Ornek Sirket A.S. onemli bir sozlesme imzaladi.", "ticker": "ORNEK"}'
+    """
+    _check_webhook_secret(x_webhook_secret)
+
+    if not payload.title.strip():
+        return JSONResponse({"error": "title alanı zorunlu ve boş olamaz."}, status_code=400)
+
+    config = load_config()
+    disclosure = IncomingDisclosure(
+        title=payload.title,
+        text=payload.text,
+        ticker=payload.ticker,
+        source=(payload.source or DEFAULT_SOURCE_NAME),
+        link=payload.link,
+        published_at=payload.published_at,
+    )
+    background_tasks.add_task(process_incoming_disclosure, disclosure, config)
+    logger.info("Webhook üzerinden dış bildirim kabul edildi (arka planda işlenecek): %s", payload.title)
+    return JSONResponse({"status": "accepted"}, status_code=202)

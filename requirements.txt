@@ -55,3 +55,11 @@ tzdata>=2024.1
 # Opsiyonel: JS ile render edilen siteler için (config.yaml'da render_js: true
 # yapılırsa gereklidir). Varsayılan olarak kurulu değildir.
 # playwright>=1.45
+
+# Opsiyonel: KAP (kap.org.tr) gibi doğrudan scrape edilemeyen kaynaklardan
+# anlık bildirim almak için Telegram kanal dinleyicisi (bkz.
+# src/fetchers/telegram_listener.py, README > "Event-Driven Ingestion: KAP
+# Bildirimleri"). Kullanıcının KENDİ Telegram hesabıyla giriş yapan bir
+# "user client" kütüphanesidir (bot API'sinden FARKLI) - yalnızca dinleyiciyi
+# çalıştırmak isterseniz kurun. Varsayılan olarak kurulu değildir.
+# telethon>=1.36

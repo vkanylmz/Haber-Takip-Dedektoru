@@ -285,6 +285,65 @@ def persist_and_notify(
         _persist_and_notify_single(group, group_key, config, notify)
 
 
+def summarize_and_persist_groups(
+    groups: list[NewsGroup],
+    config: dict[str, Any],
+    summarize: bool = True,
+    notify: bool = True,
+) -> None:
+    """Verilen haber gruplarını mevcut özetleme (varsa önbellekten yeniden
+    kullanma) + önem skorlama + veritabanına kayıt + bildirim (Telegram/
+    Web Push/anahtar kelime) pipeline'ından geçirir.
+
+    `run_once` (periyodik/toplu tarama - `fetch_all_sources` ile ÇEKİLEN
+    gruplar) İLE `src/fetchers/webhook.py` (dışarıdan tekil/anlık olarak
+    İTİLEN - push - bir grup, ör. bir Telegram kanal dinleyicisinden gelen
+    bir KAP bildirimi) TARAFINDAN PAYLAŞILAN TEK pipeline'dır - iki farklı
+    veri giriş yolunun (pull vs. push) aynı özetleme/kayıt/bildirim mantığını
+    kullanmasını sağlar, kod tekrarı olmadan.
+
+    NOT: `summarize_groups` her grubu özetler özetlemez KENDİ İÇİNDE hemen
+    kaydeder/bildirir (bkz. o fonksiyonun docstring'i). Bu yüzden buradaki
+    fallback `persist_and_notify` çağrısına SADECE gerçekten başarıyla
+    kaydedilmiş gruplar TEKRAR verilmez (bkz. summarize_groups'un döndürdüğü
+    küme) - aksi halde her biri için DB okuma/yazma + push/anahtar kelime
+    eşleşme kontrolü GEREKSİZ YERE iki kez çalışır (2026-08-10, Neon veri
+    transfer denetiminde tespit edildi). API anahtarı eksikse veya bir
+    grubun özetleme/kaydetme adımı hata verirse, o grup summarize_groups'un
+    döndürdüğü kümede OLMAZ - bu yüzden fallback çağrısına dahil olup yine
+    de kaydedilir (aksi halde o haber bu çalıştırmada tamamen kaybolurdu).
+    `summarize` False geçilirse `summarize_groups` hiç çalışmaz - bu durumda
+    gruplar hâlâ hiç kaydedilmemiştir, bu yüzden dışlanmazlar.
+    """
+    if not groups:
+        return
+
+    try:
+        groups_to_summarize, group_keys = _reuse_or_mark_for_summarization(groups)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Veritabanından önceki özetler okunamadı, tüm gruplar yeniden özetlenecek."
+        )
+        groups_to_summarize, group_keys = groups, {}
+
+    summarized_ids: set[int] = set()
+    if summarize and groups_to_summarize:
+        logger.info(
+            "%d/%d grup daha önce özetlenmemiş, Claude ile özetleniyor "
+            "(%d grup önbellekten/veritabanından yeniden kullanıldı).",
+            len(groups_to_summarize),
+            len(groups),
+            len(groups) - len(groups_to_summarize),
+        )
+        summarized_ids = summarize_groups(groups_to_summarize, group_keys, config, notify=notify)
+
+    remaining_groups = [g for g in groups if id(g) not in summarized_ids]
+    try:
+        persist_and_notify(remaining_groups, group_keys, config, notify=notify)
+    except Exception:  # noqa: BLE001
+        logger.exception("Veritabanına kaydetme/bildirim adımında beklenmeyen hata oluştu.")
+
+
 def run_once(
     config_path: str | None = None,
     summarize: bool = True,
@@ -316,48 +375,7 @@ def run_once(
     groups = sort_groups_by_recency(groups)
     logger.info("Haberler %d konuya gruplandı.", len(groups))
 
-    group_keys: dict[int, str] = {}
-    if groups:
-        try:
-            groups_to_summarize, group_keys = _reuse_or_mark_for_summarization(groups)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Veritabanından önceki özetler okunamadı, tüm gruplar yeniden özetlenecek."
-            )
-            groups_to_summarize, group_keys = groups, {}
-
-        # `summarize_groups` her grubu özetler özetlemez KENDİ İÇİNDE hemen
-        # kaydeder/bildirir (bkz. o fonksiyonun docstring'i - "Özetlenen
-        # haberi beklemeden hemen kaydet ve bildir"). Bu yüzden aşağıdaki
-        # `persist_and_notify(groups, ...)` çağrısına SADECE gerçekten
-        # başarıyla kaydedilmiş gruplar TEKRAR verilmemeli (bkz.
-        # summarize_groups'un döndürdüğü küme) - aksi halde her biri için DB
-        # okuma/yazma + push/anahtar kelime eşleşme kontrolü GEREKSİZ YERE iki
-        # kez çalışır (2026-08-10, Neon veri transfer denetiminde tespit
-        # edildi: bu, taze özetlenen HER grup için DB trafiğini haksız yere
-        # ikiye katlıyordu). API anahtarı eksikse veya bir grubun özetleme/
-        # kaydetme adımı hata verirse, o grup summarize_groups'un döndürdüğü
-        # kümede OLMAZ - bu yüzden aşağıdaki fallback çağrısına dahil olup
-        # yine de kaydedilir (aksi halde o haber bu çalıştırmada tamamen
-        # kaybolurdu). `summarize` False geçilirse (ör. testte)
-        # `summarize_groups` hiç çalışmaz - bu durumda o gruplar hâlâ hiç
-        # kaydedilmemiştir, bu yüzden dışlanmazlar.
-        summarized_ids: set[int] = set()
-        if summarize and groups_to_summarize:
-            logger.info(
-                "%d/%d grup daha önce özetlenmemiş, Claude ile özetleniyor "
-                "(%d grup önbellekten/veritabanından yeniden kullanıldı).",
-                len(groups_to_summarize),
-                len(groups),
-                len(groups) - len(groups_to_summarize),
-            )
-            summarized_ids = summarize_groups(groups_to_summarize, group_keys, config, notify=notify)
-
-        remaining_groups = [g for g in groups if id(g) not in summarized_ids]
-        try:
-            persist_and_notify(remaining_groups, group_keys, config, notify=notify)
-        except Exception:  # noqa: BLE001
-            logger.exception("Veritabanına kaydetme/bildirim adımında beklenmeyen hata oluştu.")
+    summarize_and_persist_groups(groups, config, summarize=summarize, notify=notify)
 
     print_report(groups)
     report_path = write_markdown(groups, config["app"].get("output_dir", "data"))

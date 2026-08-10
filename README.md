@@ -76,7 +76,9 @@ finans-haber-toplayici/
 │   │   ├── base.py                  # robots.txt kontrolü + rate-limit (ortak)
 │   │   ├── rss_fetcher.py           # RSS/Atom kaynakları
 │   │   ├── scrape_fetcher.py        # RSS'i olmayan kaynaklar için scraping iskeleti
-│   │   └── licensed_aggregator.py   # NewsAPI.ai üzerinden lisanslı Reuters/Bloomberg erişimi
+│   │   ├── licensed_aggregator.py   # NewsAPI.ai üzerinden lisanslı Reuters/Bloomberg erişimi
+│   │   ├── webhook.py               # Event-Driven Ingestion: dış kaynaklardan PUSH edilen tekil bildirim (ör. KAP)
+│   │   └── telegram_listener.py     # İSTEĞE BAĞLI: Telethon ile bir Telegram kanalını dinleyip webhook'a iletir
 │   ├── output/
 │   │   ├── cli_output.py      # terminal çıktısı
 │   │   └── markdown_output.py # data/reports/*.md raporu
@@ -915,6 +917,94 @@ Bu kaynak `type: licensed_aggregator` ile `config.yaml`'da tanımlı ve
 için tekilleştirme (`deduplicator.py`) ve özetleme (`summarizer.py`, Gemini/Claude)
 adımlarından herhangi bir özel kod gerekmeden geçer — pipeline'ın geri kalanı
 bu kaynağın "lisanslı bir aracı API" olduğunun farkında bile değildir.
+
+## Event-Driven Ingestion: KAP Bildirimleri (Webhook + Telegram Kanal Dinleyicisi)
+
+KAP (Kamuyu Aydınlatma Platformu, kap.org.tr) doğrudan scrape edilemiyor
+(bkz. yukarıdaki "Eklenmeyen Kaynaklar" tablosu — robots.txt WAF seviyesinde
+bot trafiğine kapalı, resmi/ücretsiz bir RSS yok). Bunun yerine (2026-08-10)
+mimariye bir **push tabanlı** giriş yolu eklendi: dış bir kaynak (siz kontrol
+edersiniz) yeni bir KAP bildirimini yakaladığında bunu bir webhook'a iletir,
+uygulama da bunu ANINDA mevcut özetleme/önem skorlama/kayıt/bildirim
+pipeline'ından geçirir — worker'ın periyodik (pull) taramasından TAMAMEN
+BAĞIMSIZ, paralel bir veri giriş yolu.
+
+### 1. Webhook Endpoint (`POST /api/webhook/kap-bildirim`)
+
+- Tanım: `src/web/app.py`, işleme mantığı: `src/fetchers/webhook.py`.
+- Yalnızca yerel `python main.py`'de çalışır (Vercel/Render'daki salt-okunur
+  `api/index.py`'ye BİLEREK yansıtılmadı — `/sirket-profili` gibi gerçek bir
+  LLM çağrısı + tüm abonelere bildirim tetikliyor, kimlik doğrulamasız
+  internete açık olamaz).
+- `X-Webhook-Secret` header'ı `.env > WEBHOOK_INGEST_SECRET` ile eşleşmelidir
+  — bu değer `python main.py` ilk çalıştığınızda **kendiliğinden üretilip**
+  `.env`'e kaydedilir (bkz. `src/config_setup.py > ensure_webhook_secret`),
+  elle bir şey yapmanıza gerek yok. Sır tanımsızsa endpoint tamamen kapalıdır
+  (503), yanlış/eksikse 401 döner.
+- Gövde (JSON): `title` (zorunlu), `text`, `ticker`, `source`, `link`,
+  `published_at` (hepsi opsiyonel).
+- İşleme (LLM özetleme + rate-limit bekleme + Telegram/Web Push gönderimi)
+  `BackgroundTasks` ile arka plana alınır — istek hemen `202 Accepted` döner.
+- Aynı başlığa sahip bir bildirim tekrar gelirse (retry/çift yakalama)
+  mevcut `group_key` + veritabanı kontrolü sayesinde otomatik olarak
+  idempotenttir — tekrar özetlenmez/tekrar bildirilmez.
+
+Elle test etmek için:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/webhook/kap-bildirim \
+     -H "Content-Type: application/json" \
+     -H "X-Webhook-Secret: <.env > WEBHOOK_INGEST_SECRET değeriniz>" \
+     -d '{"title": "Ornek Sirket A.S. onemli bir sozlesme imzaladi.", "ticker": "ORNEK"}'
+```
+
+### 2. Telegram Kanal Dinleyicisi (`src/fetchers/telegram_listener.py`, İSTEĞE BAĞLI)
+
+Webhook'un kendisi HERHANGİ bir dış kaynaktan (elle bir cURL, bir Zapier/
+Make senaryosu, kendi yazacağınız bir script) çağrılabilir. Bu proje ayrıca,
+KAP bildirimlerini anlık olarak yeniden yayınlayan bir Telegram kanalını
+dinleyip mesajları otomatik olarak webhook'a ileten hazır bir referans
+istemci sunar — [Telethon](https://docs.telethon.dev/) kütüphanesiyle,
+**kullanıcının kendi Telegram hesabıyla** ("user client", botla KARIŞTIRILMASIN)
+giriş yapar.
+
+**Veri güvenilirliği notu:** bu dinleyici yalnızca belirttiğiniz kanaldaki
+mesajları AYNEN iletir; KAP'ın kendisiyle hiçbir doğrudan bağlantısı yoktur.
+Kanalın doğruluğu/hızı/kapsamı tamamen o kanalı işleten üçüncü tarafa
+bağlıdır — bu proje hiçbir kanalı önermez/doğrulamaz, seçim size aittir.
+
+**Neden `python main.py`'nin içine otomatik entegre edilmedi (ayrı,
+opsiyonel bir süreçtir):**
+1. Telethon "user client"ı gerçek bir Telegram hesabıyla giriş yapar —
+   telefon numarası + SMS/uygulama koduyla **etkileşimli bir ilk girişi**
+   gerektirir; bu, `python main.py`'nin gözetimsiz/otomatik başlamasını bozar.
+2. Bot token'dan TAMAMEN FARKLI, kişisel bir `api_id`/`api_hash` gerektirir.
+3. `telethon` paketi varsayılan olarak KURULU DEĞİLDİR (bkz.
+   `requirements.txt` sonundaki İSTEĞE BAĞLI bölüm) — kurulu olmasa bile
+   `python main.py`/`worker.py` sorunsuz çalışmaya devam eder (diğer
+   opsiyonel bağımlılıklarla — `eventregistry`, `playwright` — AYNI "lazy
+   import" deseni).
+
+**Kurulum (tek seferlik):**
+
+1. `pip install telethon`
+2. [my.telegram.org/apps](https://my.telegram.org/apps) adresinden KENDİ
+   Telegram hesabınızla giriş yapıp yeni bir "uygulama" oluşturarak kişisel
+   bir `api_id`/`api_hash` alın.
+3. `.env`'e ekleyin: `TELEGRAM_LISTENER_API_ID`, `TELEGRAM_LISTENER_API_HASH`.
+4. `config.yaml > telegram_listener.channels`'a dinlenecek kanalın kullanıcı
+   adını/ID'sini ekleyin (ör. `["@ornek_kap_kanali"]`).
+5. `python main.py` ÇALIŞIRKEN, AYRI bir terminalde:
+   `python -m src.fetchers.telegram_listener`. İlk seferde telefon
+   numaranızı ve size gelen giriş kodunu (interaktif) soracaktır. Başarılı
+   girişten sonra oturum `data/state/telegram_listener.session`'a kaydedilir
+   — sonraki çalıştırmalarda tekrar sorulmaz (bir görev zamanlayıcısı/`pm2`/
+   `nssm` ile gözetimsiz servis olarak çalıştırılabilir).
+
+`data/state/telegram_listener.session` hesabınıza TAM erişim sağlayan bir
+oturum belirteci içerir (bir bot token'ından bile hassastır) — `data/state/`
+zaten `.gitignore`'da olduğundan repoya commit edilmez, yine de kimseyle
+paylaşmayın.
 
 ## Nasıl Çalışır (akış)
 

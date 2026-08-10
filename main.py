@@ -36,7 +36,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True, encoding="utf-8", errors="replace")
 
 from src.config import load_config
-from src.config_setup import ensure_all_credentials
+from src.config_setup import ensure_all_credentials, ensure_webhook_secret
 from src.logging_setup import setup_logging
 from src.singleton_lock import acquire_singleton_lock, release_singleton_lock
 from worker import start_background_scheduler
@@ -62,6 +62,12 @@ def main() -> None:
     # llm_provider: sadece config.yaml'da seçili sağlayıcının API anahtarı sorulur.
     llm_provider = config["summarizer"].get("llm_provider", "gemini")
     ensure_all_credentials(llm_provider=llm_provider)
+
+    # Webhook ingestion (bkz. src/web/app.py > POST /api/webhook/kap-bildirim,
+    # src/fetchers/telegram_listener.py) her istekte bu sırrı zorunlu kılar -
+    # etkileşimli sorulan API anahtarlarının AKSİNE kullanıcıdan hiçbir girdi
+    # gerekmez, kendi kendine üretilip .env'e kaydedilir (idempotent).
+    ensure_webhook_secret()
 
     scheduler = start_background_scheduler(config)
 
