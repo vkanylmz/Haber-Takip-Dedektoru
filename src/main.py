@@ -111,7 +111,7 @@ def fetch_all_sources(config: dict[str, Any]) -> list[NewsItem]:
     return all_items
 
 
-def summarize_groups(groups: list[NewsGroup], group_keys: dict[int, str], config: dict[str, Any], notify: bool = True) -> None:
+def summarize_groups(groups: list[NewsGroup], group_keys: dict[int, str], config: dict[str, Any], notify: bool = True) -> set[int]:
     """Her grubu seçili LLM sağlayıcısıyla (varsayılan Gemini, bkz.
     config.yaml > summarizer.llm_provider) özetler+skorlar. İlgili API anahtarı
     tanımlı değilse tüm çalıştırmayı durdurmak yerine ham başlık/metni özet
@@ -134,6 +134,17 @@ def summarize_groups(groups: list[NewsGroup], group_keys: dict[int, str], config
     (bkz. data/logs/finans_haber.log). Her grubun kendi kısa session'ı
     olması, yazma kilidinin sadece o grubun DB işlemi kadar (milisaniyeler)
     sürmesini sağlıyor.
+
+    Döner: gerçekten `_persist_and_notify_single` ile BAŞARIYLA kaydedilmiş
+    grupların `id(group)` kümesi - çağıran taraf (run_once), bu kümede
+    OLMAYAN grupları (API anahtarı eksikken erken dönülen durum DAHİL, ya da
+    özetleme/kayıt sırasında hata alıp aşağıdaki except'e düşen gruplar
+    DAHİL) kendi fallback `persist_and_notify` çağrısına dahil eder - aksi
+    halde böyle bir grup bu çalıştırmada HİÇ veritabanına yazılmaz (bkz. bu
+    fonksiyonun eskiden `None` döndürdüğü, çağıranın da `groups_to_summarize`
+    listesinin TAMAMINI - başarılı/başarısız ayrımı yapmadan - "zaten
+    kaydedildi" sayarak fallback'ten dışladığı sürüm; 2026-08-10'daki DB
+    trafiği optimizasyonuyla FARK EDİLMEDEN eklenmiş bir veri kaybı riskiydi).
     """
     summarizer_cfg = config["summarizer"]
     try:
@@ -143,18 +154,21 @@ def summarize_groups(groups: list[NewsGroup], group_keys: dict[int, str], config
         for group in groups:
             rep = group.representative
             group.summary = f"(Özetlenmedi - API anahtarı yok) {rep.raw_text[:280] or rep.title}"
-        return
+        return set()
 
     output_dir = config.get("app", {}).get("output_dir", "data")
     summarizer = Summarizer(summarizer_cfg, api_key=api_key, provider=provider, output_dir=output_dir)
+    persisted_ids: set[int] = set()
     for group in groups:
         try:
             summarizer.summarize_group(group)
             # Özetlenen haberi beklemeden hemen kaydet ve bildir
             group_key = group_keys.get(id(group)) or compute_group_key(group.representative.title)
             _persist_and_notify_single(group, group_key, config, notify)
+            persisted_ids.add(id(group))
         except Exception:  # noqa: BLE001
             logger.exception("Özetleme sırasında beklenmeyen hata: %s", group.representative.title)
+    return persisted_ids
 
 
 def _reuse_or_mark_for_summarization(
@@ -315,13 +329,19 @@ def run_once(
         # `summarize_groups` her grubu özetler özetlemez KENDİ İÇİNDE hemen
         # kaydeder/bildirir (bkz. o fonksiyonun docstring'i - "Özetlenen
         # haberi beklemeden hemen kaydet ve bildir"). Bu yüzden aşağıdaki
-        # `persist_and_notify(groups, ...)` çağrısına bu gruplar TEKRAR
-        # verilmemeli - aksi halde her biri için DB okuma/yazma + push/anahtar
-        # kelime eşleşme kontrolü GEREKSİZ YERE iki kez çalışır (2026-08-10,
-        # Neon veri transfer denetiminde tespit edildi: bu, taze özetlenen
-        # HER grup için DB trafiğini haksız yere ikiye katlıyordu). `summarize`
-        # False geçilirse (ör. testte) `summarize_groups` hiç çalışmaz - bu
-        # durumda o gruplar hâlâ hiç kaydedilmemiştir, bu yüzden dışlanmazlar.
+        # `persist_and_notify(groups, ...)` çağrısına SADECE gerçekten
+        # başarıyla kaydedilmiş gruplar TEKRAR verilmemeli (bkz.
+        # summarize_groups'un döndürdüğü küme) - aksi halde her biri için DB
+        # okuma/yazma + push/anahtar kelime eşleşme kontrolü GEREKSİZ YERE iki
+        # kez çalışır (2026-08-10, Neon veri transfer denetiminde tespit
+        # edildi: bu, taze özetlenen HER grup için DB trafiğini haksız yere
+        # ikiye katlıyordu). API anahtarı eksikse veya bir grubun özetleme/
+        # kaydetme adımı hata verirse, o grup summarize_groups'un döndürdüğü
+        # kümede OLMAZ - bu yüzden aşağıdaki fallback çağrısına dahil olup
+        # yine de kaydedilir (aksi halde o haber bu çalıştırmada tamamen
+        # kaybolurdu). `summarize` False geçilirse (ör. testte)
+        # `summarize_groups` hiç çalışmaz - bu durumda o gruplar hâlâ hiç
+        # kaydedilmemiştir, bu yüzden dışlanmazlar.
         summarized_ids: set[int] = set()
         if summarize and groups_to_summarize:
             logger.info(
@@ -331,8 +351,7 @@ def run_once(
                 len(groups),
                 len(groups) - len(groups_to_summarize),
             )
-            summarize_groups(groups_to_summarize, group_keys, config, notify=notify)
-            summarized_ids = {id(g) for g in groups_to_summarize}
+            summarized_ids = summarize_groups(groups_to_summarize, group_keys, config, notify=notify)
 
         remaining_groups = [g for g in groups if id(g) not in summarized_ids]
         try:
