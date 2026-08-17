@@ -135,8 +135,15 @@ _GUIDE_TEXT = (
     "/takiplerim — Takip listeni göster\n"
     "/takipsil &lt;kelime&gt; — Bir kelimeyi takip listenden çıkar\n"
     "/esik &lt;1-5&gt; — Anlık flaş haber bildirimlerin için önem eşiğini kendine göre ayarla (ör. /esik 3 — bu skor ve üzerinde bildirim alırsın)\n"
-    "/esikgoster — Şu anki bildirim eşiğini gösterir\n"
-    "/kap_sadece &lt;süre&gt; — Geçici olarak SADECE KAP (özel durum açıklaması) bildirimleri al, diğer haberler dursun (ör. /kap_sadece 2 saat, /kap_sadece bugün — argümansız yazarsan buton seçenekleri çıkar)\n"
+    "/esikgoster — Şu anki bildirim eşiğini gösterir\n\n"
+
+    "📋 <b>KAP Takibi:</b> Şirketlerin KAP (Kamuyu Aydınlatma Platformu) özel "
+    "durum açıklamaları artık otomatik taranıyor, yapay zekâ ile önem "
+    "derecesine göre puanlanıp özetleniyor — diğer haberlerle aynı akışa ve "
+    "eşik/bildirim ayarlarına tabi. Sadece bunlara odaklanmak istersen:\n"
+    "/kap_sadece &lt;süre&gt; — Geçici olarak SADECE KAP bildirimleri al, diğer "
+    "haberler dursun (ör. /kap_sadece 2 saat, /kap_sadece bugün — argümansız "
+    "yazarsan buton seçenekleri çıkar)\n"
     "/kap_durum — Sadece-KAP modunda olup olmadığını ve kalan süreyi gösterir\n"
     "/kap_bitir — Sadece-KAP modundan erken çık, normal bildirimlere dön\n\n"
 
