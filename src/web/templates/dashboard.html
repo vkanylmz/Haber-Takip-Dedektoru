@@ -22,8 +22,13 @@
        değişir. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- IBM Plex Mono (2026-08 finans tema güncellemesi): fiyat/rozet/skor gibi
+       sayısal alanlar için jenerik sistem mono yığını yerine, gerçek tabular
+       rakamlı, fintech/terminal araçlarında tanıdık bir mono webfont - CDN
+       erişilemezse `--font-mono` içindeki sistem mono fallback'i devreye
+       girer, sayfa KIRILMAZ (Space Grotesk/Inter ile AYNI desen). -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap"
     rel="stylesheet">
   <script>
     // Tema tercihini SAYFA BOYANMADAN ÖNCE uygula (FOUC/yanlış-tema
@@ -56,41 +61,57 @@
        bir görünüme geçildi: Space Grotesk (başlıklar, --font-heading -
        geometrik/köşeli, "yazılım/fintech" karakterli, serif DEĞİL) +
        Inter (gövde, --font-sans - yüksek okunabilirlik, tabular rakam
-       desteği). Fiyat/skor gibi sayısal alanlar hâlâ ayrı --font-mono
-       (sistem monospace) kullanıyor - hizalı rakamlar için zaten en
-       güvenilir seçenek, bu yüzden değiştirilmedi.
+       desteği). Fiyat/skor gibi sayısal alanlar ayrı --font-mono kullanıyor.
+
+       RENK/TEMA (2026-08 finans tema güncellemesi, bkz. kullanıcı isteği):
+       düz gri/siyah "jenerik koyu tema" yerine finans dünyasına özgü,
+       karakterli bir palet - detaylar aşağıdaki :root / :root[data-theme]
+       bloklarının yanındaki notlarda. --font-mono da bu güncellemeyle
+       jenerik sistem mono yığınından IBM Plex Mono'ya geçti (fallback
+       zinciri KORUNDU, CDN erişilemezse sayfa kırılmaz).
        ========================================================== */
     :root {
-      --bg: #f6f6f7;
+      /* Slate Paper / Terminal Ink paleti (2026-08 finans tema güncellemesi,
+         bkz. kullanıcı isteği): düz gri/siyah yerine AYNI soğuk-yeşilimsi hue
+         ailesini açık VE koyu temada paylaşan, karakterli bir nötr zemin -
+         canlılık (Ticker Green/Red/Amber) BİLEREK sadece veri noktalarına
+         (rozet/sentiment/ticker/flash) hapsedildi, zemine YAYILMADI. */
+      --bg: #f3f6f5;
       --surface: #ffffff;
-      --surface-alt: #f0f0f2;
-      --border: #e1e1e4;
-      --text-primary: #16181d;
-      --text-secondary: #4b4d55;
-      --text-muted: #85878f;
-      --accent: #1d4ed8;
+      --surface-alt: #eaeeed;
+      --border: #dde3e1;
+      --text-primary: #12181a;
+      --text-secondary: #48524f;
+      --text-muted: #828b88;
+      --accent: #2554e0;
       --accent-contrast: #ffffff;
-      --positive: #0a7a4c;
-      --negative: #b91c1c;
+      --positive: #0a8548;
+      --negative: #d92d20;
+      --warn: #c9860a;
+      --warn-contrast: #1a1206;
       --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06);
 
       --font-sans: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
       --font-heading: 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     :root[data-theme="dark"] {
-      --bg: #0b0b0d;
-      --surface: #18181b;
-      --surface-alt: #131316;
-      --border: #2a2a2e;
-      --text-primary: #f1f1f3;
-      --text-secondary: #b4b6bd;
-      --text-muted: #7c7e86;
-      --accent: #3b82f6;
+      /* Terminal Ink: düz siyah/lacivert (#0b0b0d) yerine hafif yeşil-antrasit
+         ton - "gece nöbeti terminali" hissi, Slate Paper ile AYNI hue ailesi. */
+      --bg: #0b1412;
+      --surface: #16201d;
+      --surface-alt: #121b18;
+      --border: #253330;
+      --text-primary: #eef4f2;
+      --text-secondary: #b4c0bc;
+      --text-muted: #7c8b87;
+      --accent: #4d7dff;
       --accent-contrast: #ffffff;
-      --positive: #22c55e;
-      --negative: #ef4444;
+      --positive: #2ee6a1;
+      --negative: #ff5c57;
+      --warn: #f5a623;
+      --warn-contrast: #14100a;
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 
@@ -417,10 +438,10 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.25rem 0.6rem;
+      padding: 0.3rem 0.7rem;
       border-radius: 6px;
       font-weight: 700;
-      font-size: 0.8rem;
+      font-size: 0.95rem;
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
     }
@@ -430,7 +451,16 @@
       color: #fff;
     }
 
-    .badge-important,
+    /* Kartın "en önemli sayısı" (önem skoru) artık 3 net kademede: kritik
+       (kırmızı dolgu, yukarıda) > önemli (amber dolgu) > geri kalanı (nötr
+       outline) - önceden important/medium/low/unknown BİREBİR AYNI nötr chip
+       olduğundan eşik geçen bir haberle geçmeyen görsel olarak ayırt
+       edilemiyordu (bkz. kullanıcı geri bildirimi, 2026-08). */
+    .badge-important {
+      background: var(--warn);
+      color: var(--warn-contrast);
+    }
+
     .badge-medium,
     .badge-low,
     .badge-unknown {
@@ -670,6 +700,8 @@
     .ticker-price {
       color: var(--text-primary);
       font-weight: 700;
+      border-radius: 3px;
+      padding: 0 0.15rem;
     }
 
     .ticker-up {
@@ -678,6 +710,41 @@
 
     .ticker-down {
       color: var(--negative);
+    }
+
+    /* Flash-on-update (2026-08, bkz. kullanıcı isteği "canlı veri" hissi):
+       refreshMarketTicker() (aşağıda) bir sembolün fiyatı ÖNCEKİ polldan
+       (10sn) farklıysa .ticker-price'a bu class'lardan birini ekliyor - yeni
+       oluşturulan DOM elemanına eklenen bir animasyon class'ı otomatik oynar,
+       ekstra JS state-machine/restart hack'i gerekmiyor. BİLEREK sadece
+       burada (piyasa ticker'ı) - kart/heatmap gibi diğer alanlar hareketsiz
+       kalıyor (aşırıya kaçmama isteği). */
+    @keyframes flash-up-bg {
+      from {
+        background: color-mix(in srgb, var(--positive) 45%, transparent);
+      }
+
+      to {
+        background: transparent;
+      }
+    }
+
+    @keyframes flash-down-bg {
+      from {
+        background: color-mix(in srgb, var(--negative) 45%, transparent);
+      }
+
+      to {
+        background: transparent;
+      }
+    }
+
+    .flash-up {
+      animation: flash-up-bg 900ms ease-out;
+    }
+
+    .flash-down {
+      animation: flash-down-bg 900ms ease-out;
     }
 
     .ticker-closed {
@@ -1438,6 +1505,11 @@
       });
     }
 
+    // Bir önceki refreshMarketTicker() çağrısındaki fiyatlar (sembol adına
+    // göre) - flash-on-update için "değişti mi" karşılaştırmasında kullanılır
+    // (bkz. aşağıdaki fonksiyon içi not).
+    const _tickerPrevPrices = {};
+
     async function refreshMarketTicker() {
       const container = document.getElementById('ticker-items');
       // `hasData`: konteynerde daha önce GERÇEK/başarılı bir veri gösterilip
@@ -1460,10 +1532,17 @@
           const arrow = up ? '▲' : '▼';
           const cls = up ? 'ticker-up' : 'ticker-down';
           const priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+          // Flash-on-update: bir önceki polldaki fiyattan FARKLIYSA (ve ilk
+          // yükleme DEĞİLSE, yani daha önce bir değer görülmüşse) kısa bir
+          // yeşil/kırmızı flash class'ı eklenir - bkz. yukarıdaki
+          // .flash-up/.flash-down (CSS).
+          const prevPrice = _tickerPrevPrices[item.label];
+          const flashCls = (prevPrice !== undefined && prevPrice !== item.price) ? (' ' + (item.price > prevPrice ? 'flash-up' : 'flash-down')) : '';
+          _tickerPrevPrices[item.label] = item.price;
           const closedTag = item.is_open ? '' : '<span class="ticker-closed" title="Piyasa şu an kapalı, gösterilen son kapanış fiyatı">kapalı</span>';
           const delayedTag = item.is_delayed ? '<span class="ticker-closed" title="Bu kaynak (Yahoo Finance) bu sembolü ücretsiz erişimde gecikmeli veriyor - borsanın gerçek zamanlı veri lisansı gerektirmesi nedeniyle">~' + item.delay_minutes + 'dk gecikmeli</span>' : '';
           return '<span class="ticker-item"><span class="ticker-label">' + item.label +
-            '</span><span class="ticker-price">' + priceStr + '</span><span class="' + cls + '">' +
+            '</span><span class="ticker-price' + flashCls + '">' + priceStr + '</span><span class="' + cls + '">' +
             arrow + ' ' + Math.abs(item.change_pct).toFixed(2) + '%</span>' + closedTag + delayedTag + '</span>';
         }).join('');
         // İçerik iki kez ardı ardına basılır: @keyframes ticker-scroll tam
