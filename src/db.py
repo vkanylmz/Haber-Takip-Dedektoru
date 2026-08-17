@@ -717,6 +717,7 @@ def get_recent_records(
     session: Session,
     limit: int = 100,
     source_filter: str | None = None,
+    exclude_source_filter: str | None = None,
     sector_filter: str | None = None,
     region_filter: str | None = None,
     sentiment_filter: str | None = None,
@@ -741,6 +742,13 @@ def get_recent_records(
         query = query.filter(NewsRecord.first_seen_at >= since)
     if source_filter:
         query = query.filter(NewsRecord.sources.contains(source_filter))
+    if exclude_source_filter:
+        # Ana dashboard'un iki-sütun düzeni için (bkz. src/web/app.py >
+        # dashboard() - sağ sütun/genel akış artık KAP'ı HİÇ göstermez, KAP
+        # kendi ayrı sol sütununda) - `source_filter` ile AYNI ANDA da
+        # verilebilir (pratikte kullanılmıyor ama birbirini dışlamıyor,
+        # ikisi de bağımsız AND koşulu).
+        query = query.filter(~NewsRecord.sources.contains(exclude_source_filter))
     if search_query:
         # Basit case-insensitive LIKE arama (başlık + özet). SQLite'ın
         # varsayılan LIKE'ı ASCII dışı karakterlerde (ör. Türkçe İ/ı) tam

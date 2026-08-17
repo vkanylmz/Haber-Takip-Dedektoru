@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
 from src.company_profile import get_company_profile
+from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
 from src.timezone_utils import format_turkey_time
 from src.config import load_config
@@ -117,7 +118,13 @@ _dashboard_default_lock = threading.Lock()
 def _get_cached_default_records(session, max_items: int) -> list[NewsRecord]:
     """Filtresiz/varsayılan ("en yeni", filtre yok) dashboard sorgusu için
     TTL önbelleği - `_get_cached_filter_options` ile AYNI thundering-herd
-    korumalı çift-kontrol kilit deseni (bkz. o fonksiyondaki not)."""
+    korumalı çift-kontrol kilit deseni (bkz. o fonksiyondaki not).
+
+    2026-08 iki-sütun düzeni (bkz. dashboard() > kap_records): bu, artık
+    SADECE genel/sağ sütunun listesidir - KAP hiç dönmez (`exclude_source_filter`),
+    KAP kendi ayrı `_get_cached_kap_records` önbelleğinden gelir. İkisi ayrı
+    tutulur çünkü tek bir "en yeni N kayıt" sorgusu KAP'ı, hacmi çok daha
+    yüksek diğer kaynakların arasında ezip neredeyse hiç göstermeyebilirdi."""
     now = time.monotonic()
     if _dashboard_default_cache["records"] is not None and (now - _dashboard_default_cache["fetched_at"]) < _DASHBOARD_DEFAULT_CACHE_TTL_SECONDS:
         return _dashboard_default_cache["records"]
@@ -126,9 +133,38 @@ def _get_cached_default_records(session, max_items: int) -> list[NewsRecord]:
         now = time.monotonic()
         if _dashboard_default_cache["records"] is not None and (now - _dashboard_default_cache["fetched_at"]) < _DASHBOARD_DEFAULT_CACHE_TTL_SECONDS:
             return _dashboard_default_cache["records"]
-        records = get_recent_records(session, limit=max_items, sort_order="newest")
+        records = get_recent_records(
+            session, limit=max_items, exclude_source_filter=KAP_SOURCE_NAME, sort_order="newest"
+        )
         _dashboard_default_cache["records"] = records
         _dashboard_default_cache["fetched_at"] = now
+        return records
+
+
+# --- KAP sütunu (sol) haber listesi önbelleği ---
+# Genel dashboard önbelleğiyle (yukarıda) AYNI TTL/kilit deseni, ama BAĞIMSIZ
+# bir önbellek - KAP fetcher'ı (bkz. worker.py > _add_kap_fast_poll_job) 120sn'de
+# bir çalıştığından, 30sn'lik bir TTL KAP sütununun "bayatlığını" pratikte hiç
+# fark ettirmez. Filtre formu (kaynak/sektör/bölge/duygu/önem/arama) BİLİNÇLİ
+# OLARAK bu sütunu ETKİLEMEZ - KAP sütunu her zaman filtresiz, en yeni N
+# özel durum açıklamasını gösterir (bkz. kullanıcı kararı, 2026-08-17).
+_DASHBOARD_KAP_CACHE_TTL_SECONDS = 30.0
+_dashboard_kap_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
+_dashboard_kap_lock = threading.Lock()
+
+
+def _get_cached_kap_records(session, max_items: int) -> list[NewsRecord]:
+    now = time.monotonic()
+    if _dashboard_kap_cache["records"] is not None and (now - _dashboard_kap_cache["fetched_at"]) < _DASHBOARD_KAP_CACHE_TTL_SECONDS:
+        return _dashboard_kap_cache["records"]
+
+    with _dashboard_kap_lock:
+        now = time.monotonic()
+        if _dashboard_kap_cache["records"] is not None and (now - _dashboard_kap_cache["fetched_at"]) < _DASHBOARD_KAP_CACHE_TTL_SECONDS:
+            return _dashboard_kap_cache["records"]
+        records = get_recent_records(session, limit=max_items, source_filter=KAP_SOURCE_NAME, sort_order="newest")
+        _dashboard_kap_cache["records"] = records
+        _dashboard_kap_cache["fetched_at"] = now
         return records
 
 
@@ -414,6 +450,11 @@ def dashboard(
         [source, sector, region, sentiment, min_importance_value, q]
     )
 
+    # KAP için makul bir üst sınır - sol sütun kompakt kartlarla, ana
+    # `max_items`in tamamına GEREK yok (KAP hacmi zaten çok daha düşük,
+    # bkz. src/fetchers/kap_fetcher.py); 30 pratikte fazlasıyla yeterli.
+    kap_max_items = min(max_items, 30)
+
     with get_session() as session:
         if is_default_view:
             records = _get_cached_default_records(session, max_items)
@@ -422,6 +463,7 @@ def dashboard(
                 session,
                 limit=max_items,
                 source_filter=source or None,
+                exclude_source_filter=KAP_SOURCE_NAME,
                 sector_filter=sector or None,
                 region_filter=region or None,
                 sentiment_filter=sentiment or None,
@@ -429,7 +471,15 @@ def dashboard(
                 search_query=q or None,
                 sort_order=sort_normalized,
             )
+        # KAP sütunu (sol) BİLİNÇLİ OLARAK yukarıdaki filtre formundan
+        # ETKİLENMEZ - her zaman filtresiz, en yeni özel durum açıklamaları
+        # (bkz. _get_cached_kap_records notu, kullanıcı kararı 2026-08-17).
+        kap_records = _get_cached_kap_records(session, kap_max_items)
         sources, sectors = _get_cached_filter_options(session)
+
+    # "KAP" dropdown'dan çıkarılır - sağ sütun onu artık hiç göstermediğinden
+    # (yukarıdaki exclude_source_filter), seçilebilir bırakmak kafa karıştırır.
+    sources = [s for s in sources if s != KAP_SOURCE_NAME]
 
     regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
     sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
@@ -437,12 +487,14 @@ def dashboard(
     fear_greed_index = _compute_fear_greed_index(records)
 
     views = [_record_to_view(r, threshold) for r in records]
+    kap_views = [_record_to_view(r, threshold) for r in kap_records]
 
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "records": views,
+            "kap_records": kap_views,
             "sources": sources,
             "selected_source": source or "",
             "sectors": sectors,
