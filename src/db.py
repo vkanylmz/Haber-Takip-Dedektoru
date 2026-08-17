@@ -212,6 +212,13 @@ class Subscriber(Base):
     # bir sonraki /kap_sadece veya /kap_bitir zaten üzerine yazar.
     kap_only_until = Column(DateTime(timezone=True), nullable=True)
 
+    # Botla en son ne zaman etkileşime girdiği (herhangi bir komut/serbest
+    # metin/buton - bkz. src/telegram_bot.py > _touch_last_active, TÜM gelen
+    # update'lerde tetiklenen düşük öncelikli bir handler). Admin görünümü
+    # (bkz. src/web/app.py > /admin/subscribers) için - kritik bir alan
+    # DEĞİLDİR, güncellenemezse (ör. abone DB'de henüz yoksa) sessizce atlanır.
+    last_active_at = Column(DateTime(timezone=True), nullable=True)
+
 
 class KeywordSubscription(Base):
     """Bir kullanıcının /takip <kelime> ile eklediği bir anahtar kelime/varlık
@@ -540,6 +547,9 @@ def _migrate_add_missing_columns(engine) -> None:
             # SQLAlchemy'nin dialect çevirisinden yararlanamaz.
             conn.exec_driver_sql("ALTER TABLE subscribers ADD COLUMN kap_only_until TIMESTAMP")
             logger.info("Veritabanı migrasyonu: subscribers.kap_only_until kolonu eklendi.")
+        if "last_active_at" not in existing_subscriber_columns:
+            conn.exec_driver_sql("ALTER TABLE subscribers ADD COLUMN last_active_at TIMESTAMP")
+            logger.info("Veritabanı migrasyonu: subscribers.last_active_at kolonu eklendi.")
 
 
 def _ensure_performance_indexes(engine) -> None:
@@ -1053,6 +1063,60 @@ def get_subscriber_kap_only(chat_id: str | int) -> datetime | None:
         if until <= datetime.now(timezone.utc):
             return None
         return until
+
+
+def touch_subscriber_last_active(chat_id: str | int) -> None:
+    """Bir abonenin `last_active_at` alanını ŞİMDİ (UTC) olarak günceller -
+    bkz. src/telegram_bot.py > _touch_last_active (TÜM gelen Telegram
+    update'lerinde, komut olsun olmasın, düşük öncelikli bir handler ile
+    tetiklenir), admin görünümü (bkz. src/web/app.py > /admin/subscribers,
+    get_all_subscribers_overview). Abone henüz DB'de yoksa (ör. bu update
+    TAM /start'ın kendisiyse ve add_subscriber henüz çalışmadıysa) sessizce
+    hiçbir şey yapmaz - kritik olmayan, "nice-to-have" bir alan, hata
+    fırlatmaz."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        if existing is None:
+            return
+        existing.last_active_at = datetime.now(timezone.utc)
+
+
+def get_all_subscribers_overview() -> list[dict[str, Any]]:
+    """Admin görünümü (bkz. /admin/subscribers) için TÜM abonelerin özet
+    bilgisini (en son abone olandan en eskiye doğru) döner: temel Subscriber
+    alanları + o abonenin KeywordSubscription tablosundaki takip ettiği
+    kelimeler (varsa). Sunum/biçimlendirme (ör. Türkiye saatine çevirme)
+    BİLEREK burada yapılmaz - bu katmanın işi değil (bkz. src/web/app.py >
+    admin_subscribers route'u, diğer _record_to_view gibi view-model
+    fonksiyonlarıyla AYNI ayrım)."""
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        subscribers = session.query(Subscriber).order_by(Subscriber.subscribed_at.desc()).all()
+
+        keywords_by_chat: dict[str, list[str]] = {}
+        for chat_id, keyword in session.query(KeywordSubscription.chat_id, KeywordSubscription.keyword).all():
+            keywords_by_chat.setdefault(chat_id, []).append(keyword)
+
+        result: list[dict[str, Any]] = []
+        for sub in subscribers:
+            kap_until = sub.kap_only_until
+            if kap_until is not None and kap_until.tzinfo is None:
+                kap_until = kap_until.replace(tzinfo=timezone.utc)
+            result.append(
+                {
+                    "chat_id": sub.chat_id,
+                    "username": sub.username,
+                    "first_name": sub.first_name,
+                    "importance_threshold": sub.importance_threshold,
+                    "kap_only_until": kap_until,
+                    "kap_only_active": kap_until is not None and kap_until > now,
+                    "subscribed_at": sub.subscribed_at,
+                    "last_active_at": sub.last_active_at,
+                    "keywords": sorted(keywords_by_chat.get(sub.chat_id, [])),
+                }
+            )
+        return result
 
 
 def set_subscriber_threshold(chat_id: str | int, threshold: int) -> bool:

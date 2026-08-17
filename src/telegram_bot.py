@@ -59,6 +59,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -79,6 +80,7 @@ from src.db import (
     search_records,
     set_subscriber_kap_only,
     set_subscriber_threshold,
+    touch_subscriber_last_active,
 )
 from src.summarizer import SECTOR_LABELS
 from src.telegram_format import chunk_messages, format_news_block
@@ -276,6 +278,20 @@ async def _send_and_pin_guide(bot, chat_id: str | int) -> bool:
     except Exception:  # noqa: BLE001 - sabitleme başarısız olsa da mesaj zaten gönderildi
         logger.exception("Kılavuz mesajı sabitlenemedi (mesaj yine de gönderildi): chat_id=%s", chat_id)
         return False
+
+
+async def _touch_last_active(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """TÜM gelen update'lerde (komut, serbest metin, buton tıklaması - hepsi)
+    tetiklenen düşük öncelikli bir "middleware" handler'ı (bkz.
+    build_application > group=-1) - aboneyi "son aktif" olarak işaretler
+    (bkz. src/db.py > touch_subscriber_last_active, admin görünümü >
+    /admin/subscribers). Abone DEĞİLSE (ör. tam /start'ın kendisiyse, DB
+    kaydı bu handler'dan SONRA oluşacaksa) sessizce hiçbir şey yapmaz - bir
+    sonraki mesajda yakalanır, kritik değil."""
+    chat = update.effective_chat
+    if chat is None:
+        return
+    touch_subscriber_last_active(chat.id)
 
 
 async def _subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -841,6 +857,10 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def build_application(bot_token: str) -> Application:
     application = Application.builder().token(bot_token).build()
+    # group=-1: diğer TÜM handler'lardan (varsayılan group=0) ÖNCE çalışır,
+    # onları ENGELLEMEZ (bkz. _touch_last_active docstring'i) - PTB'nin
+    # "middleware" için önerdiği standart desen.
+    application.add_handler(TypeHandler(Update, _touch_last_active), group=-1)
     application.add_handler(CommandHandler("start", _subscribe))
     application.add_handler(CommandHandler("stop", _unsubscribe))
     application.add_handler(CommandHandler(["yardim", "help"], _help))

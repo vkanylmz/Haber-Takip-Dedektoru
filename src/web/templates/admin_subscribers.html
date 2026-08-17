@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aboneler (Admin) — Finansal Haber Dashboard</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: rgba(24, 24, 27, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #2563eb;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 0 0 3rem 0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: rgba(9, 9, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .back-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .back-link:hover {
+      color: var(--text-main);
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .subscribers-table-wrap {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow-x: auto;
+      backdrop-filter: blur(16px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    td.chat-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--text-muted);
+    }
+
+    .keywords-cell {
+      white-space: normal;
+      max-width: 260px;
+    }
+
+    .keyword-tag {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      margin: 0.1rem 0.2rem 0.1rem 0;
+      font-size: 0.76rem;
+    }
+
+    .kap-only-badge {
+      display: inline-block;
+      background: rgba(234, 179, 8, 0.18);
+      color: #eab308;
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      border-radius: 4px;
+      padding: 0.1rem 0.5rem;
+      font-size: 0.76rem;
+      font-weight: 600;
+    }
+
+    .normal-mode {
+      color: var(--text-muted);
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 4rem 1rem;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>👤 Aboneler</h1>
+      <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Toplam {{ total_count }} abone
+      </div>
+    </div>
+    <a class="back-link" href="/">← Dashboard'a dön</a>
+  </header>
+
+  <main>
+    {% if not rows %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">📭</div>
+      Henüz hiç abone yok. Botla /start yazıldığında burada görünecek.
+    </div>
+    {% else %}
+    <div class="subscribers-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Chat ID</th>
+            <th>Kullanıcı</th>
+            <th>Önem Eşiği</th>
+            <th>Sadece-KAP Modu</th>
+            <th>Takip Ettiği Kelimeler</th>
+            <th>Abone Olma</th>
+            <th>Son Aktif</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="chat-id">{{ row.chat_id }}</td>
+            <td>
+              {{ row.first_name or '—' }}
+              {% if row.username %}<span style="color: var(--text-muted);">@{{ row.username }}</span>{% endif %}
+            </td>
+            <td>{{ row.importance_threshold }}/5</td>
+            <td>
+              {% if row.kap_only_active %}
+              <span class="kap-only-badge">🔔 {{ row.kap_only_until_display }}'e kadar</span>
+              {% else %}
+              <span class="normal-mode">Normal mod</span>
+              {% endif %}
+            </td>
+            <td class="keywords-cell">
+              {% if row.keywords %}
+              {% for kw in row.keywords %}<span class="keyword-tag">{{ kw }}</span>{% endfor %}
+              {% else %}
+              <span class="normal-mode">—</span>
+              {% endif %}
+            </td>
+            <td>{{ row.subscribed_at_display }}</td>
+            <td>{{ row.last_active_at_display }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </main>
+</body>
+
+</html>

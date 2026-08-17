@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -22,8 +23,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -35,6 +37,7 @@ from src.config import load_config
 from src.db import (
     NewsRecord,
     PushSubscription,
+    get_all_subscribers_overview,
     get_distinct_sectors,
     get_distinct_sources,
     get_records_by_company_ticker,
@@ -656,6 +659,70 @@ def source_health_page(request: Request) -> HTMLResponse:
         for row in raw_rows
     ]
     return templates.TemplateResponse(request, "source_health.html", {"rows": rows})
+
+
+_admin_basic_auth = HTTPBasic()
+
+
+def _check_admin_secret(credentials: HTTPBasicCredentials = Depends(_admin_basic_auth)) -> None:
+    """HTTP Basic Auth ile korur - kullanıcı adı ÖNEMSİZDİR (kontrol edilmez),
+    yalnızca ŞİFRE alanı mevcut `WEBHOOK_INGEST_SECRET` (.env) ile karşılaştırılır.
+    Webhook endpoint'inin (bkz. _check_webhook_secret) AYNI paylaşılan sırrını
+    yeniden kullanır - kullanıcı isteği gereği ayrı bir kullanıcı/parola
+    veritabanı/auth sistemi KURULMADI.
+
+    HTTP Basic (URL query param YERİNE) BİLİNÇLİ tercih edildi: tarayıcı
+    kimlik bilgilerini native bir login kutusuyla ister, sır bu sayede
+    URL'de/tarayıcı geçmişinde/sunucu access log'unda AÇIK METİN olarak
+    KALMAZ (bkz. Authorization header, URL'den ayrı taşınır).
+
+    Sır .env'de HİÇ tanımlanmamışsa (webhook endpoint'iyle AYNI davranış,
+    bkz. _check_webhook_secret) sayfa TAMAMEN kapalı tutulur (503) -
+    varsayılan olarak güvenli taraf. `secrets.compare_digest` ZAMANLAMA
+    SALDIRISINA karşı sabit-zamanlı karşılaştırma sağlar (basit `==` yerine).
+
+    AYRICA BİLEREK sadece BURADA (src/web/app.py) tanımlıdır, api/index.py'ye
+    (Render, herkese açık salt-okunur dashboard) KAYITLI DEĞİLDİR - abone
+    listesi kişisel veri (chat_id, kullanıcı adı) içerdiğinden, /sirket-profili'nin
+    dışarıda bırakılmasıyla AYNI desen (bkz. api/index.py modül docstring'i)
+    kullanılarak bu sayfa hiçbir zaman herkese açık deploy'a taşınmaz."""
+    expected = os.environ.get("WEBHOOK_INGEST_SECRET", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="WEBHOOK_INGEST_SECRET .env'de tanımlı değil, admin sayfası devre dışı.",
+        )
+    if not secrets.compare_digest(credentials.password, expected):
+        raise HTTPException(status_code=401, detail="Geçersiz şifre.", headers={"WWW-Authenticate": "Basic"})
+
+
+@app.get("/admin/subscribers", response_class=HTMLResponse)
+def admin_subscribers(request: Request, _: None = Depends(_check_admin_secret)) -> HTMLResponse:
+    """Telegram abonelerinin (chat_id, kullanıcı adı, önem eşiği, "sadece
+    KAP" modu, takip ettiği kelimeler, abone olma/son aktif olma zamanı)
+    tablo halinde listelendiği admin görünümü - bkz. src/db.py >
+    get_all_subscribers_overview. HTTP Basic Auth ile korunur (bkz.
+    _check_admin_secret) - kullanıcı adı: (boş bırakılabilir), şifre:
+    WEBHOOK_INGEST_SECRET."""
+    raw_rows = get_all_subscribers_overview()
+
+    def _fmt(dt: datetime | None) -> str:
+        return format_turkey_time(dt) if dt else "—"
+
+    rows = [
+        {
+            **row,
+            "subscribed_at_display": _fmt(row["subscribed_at"]),
+            "last_active_at_display": _fmt(row["last_active_at"]),
+            "kap_only_until_display": _fmt(row["kap_only_until"]) if row["kap_only_active"] else None,
+        }
+        for row in raw_rows
+    ]
+    return templates.TemplateResponse(
+        request,
+        "admin_subscribers.html",
+        {"rows": rows, "total_count": len(rows)},
+    )
 
 
 @app.get("/api/market-data")
