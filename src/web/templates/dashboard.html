@@ -591,11 +591,14 @@
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
-      /* Sağ sütun kartları scroll ile uzadıkça sol sütun sayfa başında
-         "yapışık" kalsın diye - dar/kompakt bir sütun için doğal bir his,
-         KAP'ın "her an göz atılabilir" olması isteniyor. */
-      position: sticky;
-      top: 5.5rem;
+      /* ÖNCEDEN position: sticky ile sol sütun sayfa başında "yapışık"
+         tutuluyordu - ama KAP en fazla 30, sağ sütun ise 100'e kadar kart
+         gösterebildiğinden (bkz. app.py > kap_max_items = min(max_items, 30))
+         sol sütun cok daha kisa kaliyor, sticky bu yuzden sol sutunun
+         erken "kilitlenip" sayfada asili kalmasina, sag sutunla kayma
+         senkronunun bozuk gorunmesine yol aciyordu (kullanici geri
+         bildirimi, 2026-08-17). Sticky KALDIRILDI - iki sutun da artik
+         sayfayla birlikte dogal akista birlikte kayiyor. */
       /* grid item'ın minmax(0) OLMADAN taşan içerikle (uzun başlıklar vb.)
          sütunu genişletmesini önler - standart bir CSS grid tuzağı. */
       min-width: 0;
@@ -639,10 +642,6 @@
     @media (max-width: 860px) {
       .dashboard-columns {
         grid-template-columns: 1fr;
-      }
-
-      .kap-column {
-        position: static;
       }
     }
 
