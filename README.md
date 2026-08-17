@@ -785,6 +785,15 @@ Aşağıdaki kaynaklar **hiç eklenmedi** (config.yaml'da hiçbir satırları yo
 
 ## KAP Entegrasyonu (Kamuyu Aydınlatma Platformu, `kap.org.tr`)
 
+**DÜZELTME (2026-08-17):** İlk sürüm yanlış endpoint'i (`/tr/api/disclosure/list/main`)
+kullanıyordu - bu, hata vermeden HTTP 200 dönmeye devam ediyor ama İÇERİĞİ
+DONMUŞTU (istenen tarih aralığı ne olursa olsun hep 14 Ağustos'ta kalan aynı
+birkaç kaydı döndürüyordu - sessiz bir başarısızlık). Gerçek kap.org.tr
+sitesi izlenerek doğru endpoint (`/tr/api/disclosure/members/byCriteria`,
+farklı payload şekli: `fromDate`/`toDate` "YYYY-MM-DD", `memberType` tekil
+string) tespit edilip düzeltildi - aynı gün için 0 yerine 73 güncel kayıt
+döndüğü doğrulandı. Detay: `src/fetchers/kap_fetcher.py` modül docstring'i.
+
 **Bilinçli bir politika istisnası** (2026-08-17): bu proje normalde robots.txt'i
 okunamayan (WAF tarafından engellenen) kaynakları eklemez - yukarıdaki
 Investing.com/Handelsblatt/Telegraph hücreleri ve KAP'ın kendisi de önce bu

@@ -359,7 +359,7 @@ sources:
     # neredeyse tamamen gürültü olduğu görüldü).
     disclosure_classes: ["ODA", "FR", "CA"]
     # Sadece BIST şirketleri (fon/aracı kurum/düzenleyici gürültüsü hariç).
-    member_types: ["IGS"]
+    member_type: "IGS"
     # Her istekte SADECE bu kadar dakika geriye bakılır - KAP API'sinin geniş
     # tarih aralıklarında ~30 kayıtta kesildiği canlı testle tespit edildi, dar
     # bir pencere bu sınırın altında kalmayı garantiler. Bu kaynak AYRICA çok

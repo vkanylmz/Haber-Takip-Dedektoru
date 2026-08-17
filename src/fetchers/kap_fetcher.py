@@ -30,6 +30,24 @@ ZARARSIZDIR: mevcut `group_key`/`notified` idempotency mekanizması (bkz.
 src/db.py, src/main.py > _reuse_or_mark_for_summarization) zaten aynı haberi
 iki kez özetlemez/bildirmez - webhook.py'nin push yoluyla paylaştığı AYNI
 garanti.
+
+DÜZELTME (2026-08-17, "sessiz başarısızlık" teşhisi): İLK sürüm
+`/tr/api/disclosure/list/main` endpoint'ini (GitHub'daki `enciyo/kap-tr-sdk`
+projesinden alınmıştı) kullanıyordu - bu endpoint HTTP 200 dönmeye devam
+ediyordu ama İÇERİĞİ DONMUŞTU: istenen tarih aralığı ne olursa olsun (son
+30dk, son 48 saat, son 3 gün) hep AYNI, en yenisi 14 Ağustos 18:06'da kalan
+birkaç kaydı döndürüyordu - hata/timeout YOKTU, bu yüzden fark edilmesi zordu.
+Gerçek kap.org.tr sitesi (`/tr/bildirim-sorgu` sayfası, tarayıcı ile Network
+sekmesi izlenerek) GERÇEKTE `/tr/api/disclosure/members/byCriteria`
+endpoint'ini, TAMAMEN FARKLI bir payload şekliyle (`fromDate`/`toDate`
+"YYYY-MM-DD" formatında - "DD.MM.YYYY" DEĞİL, `memberType` TEKİL string -
+liste DEĞİL, ~15 ek zorunlu boş alan) kullandığı tespit edildi - bu doğru
+endpoint canlı testte AYNI gün için 73 kayıt döndürdü (eskisi 0). Yanıt şekli
+de FARKLI: eski `{"disclosureBasic": {...}}` iç içe yapısı yerine düz bir
+obje (`kapTitle`, `summary`, `subject`, `disclosureIndex` üst seviyede).
+Cursor/state TEMİZLENMESİ GEREKMEDİ - bu proje zaten cursor kullanmıyor
+(group_key idempotency'sine güveniyor) ve kırık dönemde DB'ye hiç KAP kaydı
+YAZILMAMIŞTI (0 kayıt) - temiz bir geçiş.
 """
 
 from __future__ import annotations
@@ -51,16 +69,22 @@ logger = logging.getLogger(__name__)
 # girdisinin `name:` alanıyla AYNI kalmalıdır.
 KAP_SOURCE_NAME = "KAP"
 
-_DISCLOSURE_LIST_URL = "https://www.kap.org.tr/tr/api/disclosure/list/main"
+# kap.org.tr'nin "bildirim-sorgu" sayfasının GERÇEKTE kullandığı endpoint
+# (bkz. yukarıdaki "DÜZELTME" notu - eski `/tr/api/disclosure/list/main`
+# donmuş/bayat veri döndürüyordu, BUNUNLA değiştirildi).
+_DISCLOSURE_LIST_URL = "https://www.kap.org.tr/tr/api/disclosure/members/byCriteria"
 _DETAIL_URL_TEMPLATE = "https://www.kap.org.tr/tr/Bildirim/{disclosure_index}"
 
 # Varsayılan disclosureClass filtresi: ODA=Özel Durum Açıklaması,
 # FR=Finansal Rapor, CA=Kurumsal İşlem. DUY (düzenleyici/idari duyuru) ve
 # DG (diğer - ör. "Takasbank Günlük Bülten" gibi bültenler) BİLEREK
 # dışarıda bırakılır - canlı testle (2026-08-17) bu ikisinin neredeyse
-# tamamen gürültü olduğu doğrulandı.
+# tamamen gürültü olduğu doğrulandı. `disclosureClass` filtresi endpoint'in
+# KENDİSİNE (request body'sinde) tek bir string olarak verilebiliyor ama
+# BİRDEN FAZLA sınıf istediğimizden (ODA+FR+CA) request'te boş bırakılıp
+# (`""` = tümü) SONRADAN client-side filtrelenir.
 _DEFAULT_DISCLOSURE_CLASSES = ["ODA", "FR", "CA"]
-_DEFAULT_MEMBER_TYPES = ["IGS"]
+_DEFAULT_MEMBER_TYPE = "IGS"
 _DEFAULT_LOOKBACK_MINUTES = 30
 
 
@@ -91,7 +115,7 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
     max_items = app_cfg.get("max_articles_per_source", 15)
 
     disclosure_classes = set(source_cfg.get("disclosure_classes", _DEFAULT_DISCLOSURE_CLASSES))
-    member_types = source_cfg.get("member_types", _DEFAULT_MEMBER_TYPES)
+    member_type = source_cfg.get("member_type", _DEFAULT_MEMBER_TYPE)
     lookback_minutes = source_cfg.get("lookback_minutes", _DEFAULT_LOOKBACK_MINUTES)
 
     # robots.txt kontrolü BİLEREK yok (bkz. modül docstring'i) - ama alan adı
@@ -104,15 +128,35 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(minutes=lookback_minutes)
-    # KAP API'si Türkiye yerel saatiyle DD.MM.YYYY bekliyor (canlı testle
-    # doğrulandı, 2026-08-17).
+    # KAP'ın GERÇEK sitesinin kullandığı format: Türkiye yerel tarihiyle
+    # "YYYY-MM-DD" (bkz. modül başındaki "DÜZELTME" notu - eski endpoint/format
+    # "DD.MM.YYYY" bekliyordu, YANLIŞTI/donmuş veri döndürüyordu). Diğer ~15
+    # alan, sitenin kendi isteğinde de hep boş/varsayılan gönderilen zorunlu
+    # alanlar - eksik bırakılırsa endpoint'in nasıl davrandığı test edilmedi,
+    # bu yüzden TAM olarak sitenin gönderdiği şekliyle dahil edildi.
     payload = {
-        "fromDate": since.astimezone(TURKEY_TZ).strftime("%d.%m.%Y"),
-        "toDate": now.astimezone(TURKEY_TZ).strftime("%d.%m.%Y"),
-        "disclosureType": None,
-        "fundTypes": [],
-        "memberTypes": member_types,
-        "mkkMemberOid": None,
+        "fromDate": since.astimezone(TURKEY_TZ).strftime("%Y-%m-%d"),
+        "toDate": now.astimezone(TURKEY_TZ).strftime("%Y-%m-%d"),
+        "memberType": member_type,
+        "mkkMemberOidList": [],
+        "inactiveMkkMemberOidList": [],
+        "disclosureClass": "",
+        "subjectList": [],
+        "isLate": "",
+        "mainSector": "",
+        "sector": "",
+        "subSector": "",
+        "marketOid": "",
+        "index": "",
+        "bdkReview": "",
+        "bdkMemberOidList": [],
+        "year": "",
+        "term": "",
+        "ruleType": "",
+        "period": "",
+        "fromSrc": False,
+        "srcCategory": "",
+        "disclosureIndexList": [],
     }
 
     try:
@@ -134,25 +178,32 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
 
     items: list[NewsItem] = []
     for raw in raw_items:
-        basic = (raw or {}).get("disclosureBasic") or {}
+        raw = raw or {}
 
-        if basic.get("disclosureClass") not in disclosure_classes:
+        if raw.get("disclosureClass") not in disclosure_classes:
             continue
 
-        disclosure_index = basic.get("disclosureIndex")
-        title = (basic.get("title") or "").strip()
+        disclosure_index = raw.get("disclosureIndex")
+        # Yeni yanıt şemasında `subject` sabit bir taksonomi kategorisi (ör.
+        # "Pay Dışında Sermaye Piyasası Aracı İşlemlerine İlişkin Bildirim"),
+        # `summary` ise İLGİLİ KAYDA ÖZGÜ asıl içerik (ör. "TRSGFYHK2614 ISIN
+        # Kodlu İhraç Kupon Ödemesi") - bu yüzden `summary` varsa asıl başlık
+        # olarak o kullanılır, yoksa (nadiren boş olabilir) `subject`'e
+        # düşülür. `raw_text`'e her zaman `subject` konur - LLM'e ek bağlam
+        # (bu kaydın hangi genel kategoriye girdiği) sağlar.
+        content = (raw.get("summary") or "").strip()
+        subject = (raw.get("subject") or "").strip()
+        title = content or subject
         if disclosure_index is None or not title:
             continue
 
-        publish_dt = _parse_publish_date(basic.get("publishDate"))
-        # Dar pencereden (fromDate/toDate) daha eski bir kayıt döndüyse atla
-        # - KAP API'si geniş aralıklarda ~30 kayıtta kesildiğinden (canlı
-        # testle tespit edildi), dar pencere zaten bunu büyük ölçüde önlüyor;
-        # bu ek kontrol savunmacı bir son kat.
+        publish_dt = _parse_publish_date(raw.get("publishDate"))
+        # Dar pencereden (fromDate/toDate) daha eski bir kayıt döndüyse atla -
+        # savunmacı bir son kat (normalde zaten dar pencere bunu önler).
         if publish_dt is not None and publish_dt < since:
             continue
 
-        company = (basic.get("companyTitle") or "").strip()
+        company = (raw.get("kapTitle") or "").strip()
         display_title = (
             f"{company}: {title}" if company and not title.upper().startswith(company.upper()) else title
         )
@@ -163,7 +214,7 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
                 link=_DETAIL_URL_TEMPLATE.format(disclosure_index=disclosure_index),
                 source=name,
                 published_at=publish_dt,
-                raw_text=(basic.get("summary") or "").strip(),
+                raw_text=subject if content else "",
             )
         )
 
