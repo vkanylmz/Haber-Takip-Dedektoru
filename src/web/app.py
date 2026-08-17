@@ -90,6 +90,68 @@ _HEATMAP_MIN_COUNT_FOR_COLOR = 2
 _FILTER_OPTIONS_CACHE_TTL_SECONDS = 60.0
 _filter_options_cache: dict[str, Any] = {"sources": None, "sectors": None, "fetched_at": 0.0}
 
+# --- Ana dashboard (filtresiz varsayılan görünüm) haber listesi önbelleği ---
+# GERÇEK teşhisle bulundu (2026-08, "dashboard 1.4-3.2sn'de yükleniyor"
+# şikayeti soruşturulurken): yerel profilleme, config yükleme + DB sorgusu +
+# Jinja render'ın TOPLAMININ bile SQLite'ta 30-140ms olduğunu gösterdi -
+# yani üretimdeki 1.4-3.2sn'lik farkın kaynağı ne şablon render'ı ne de
+# Python tarafı hesaplama; sektör ısı haritasındakiyle AYNI kök neden
+# (Render/Oregon <-> Neon/Frankfurt kıtalararası DB round-trip, ~200ms-2sn)
+# burada da geçerli - dashboard() HER istekte CANLI bir Postgres sorgusu
+# yapıyordu, market-data/heatmap/ticker-quotes'un aksine önbelleksiz.
+#
+# Yalnızca FİLTRESİZ varsayılan görünüm (kaynak/sektör/bölge/duygu/önem/arama
+# YOK, sıralama=en yeni) önbelleklenir - ziyaretçilerin BÜYÜK ÇOĞUNLUĞU bu
+# görünümü görür (ilk ziyaret, yer imi, paylaşılan link). Aktif olarak
+# filtre/arama uygulayan kullanıcı için önbellek atlanır, CANLI sorgu
+# çalışır (o durumda "en fazla 30sn eski" bir sonuç yerine kullanıcının
+# az önce uyguladığı filtrenin GERÇEKTEN yansıdığından emin olunur).
+_DASHBOARD_DEFAULT_CACHE_TTL_SECONDS = 30.0
+_dashboard_default_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
+_dashboard_default_lock = threading.Lock()
+
+
+def _get_cached_default_records(session, max_items: int) -> list[NewsRecord]:
+    """Filtresiz/varsayılan ("en yeni", filtre yok) dashboard sorgusu için
+    TTL önbelleği - `_get_cached_filter_options` ile AYNI thundering-herd
+    korumalı çift-kontrol kilit deseni (bkz. o fonksiyondaki not)."""
+    now = time.monotonic()
+    if _dashboard_default_cache["records"] is not None and (now - _dashboard_default_cache["fetched_at"]) < _DASHBOARD_DEFAULT_CACHE_TTL_SECONDS:
+        return _dashboard_default_cache["records"]
+
+    with _dashboard_default_lock:
+        now = time.monotonic()
+        if _dashboard_default_cache["records"] is not None and (now - _dashboard_default_cache["fetched_at"]) < _DASHBOARD_DEFAULT_CACHE_TTL_SECONDS:
+            return _dashboard_default_cache["records"]
+        records = get_recent_records(session, limit=max_items, sort_order="newest")
+        _dashboard_default_cache["records"] = records
+        _dashboard_default_cache["fetched_at"] = now
+        return records
+
+
+# --- Web rotaları için config önbelleği ---
+# `load_config()` (bkz. src/config.py) HER çağrıda .env'i disk'ten okuyup
+# config.yaml'ı (19KB) yeniden YAML-parse ediyor - yerel ölçümle bu tek
+# başına ~20-30ms (bkz. yukarıdaki dashboard önbelleği notu, aynı
+# soruşturma). worker/main.py/lifespan gibi diğer çağıranlar İÇİN
+# `load_config()`'in kendisi BİLEREK değiştirilmedi (config.yaml çalışırken
+# değişebilir, o yollarda "her zaman taze" davranışı korunmalı) - burada
+# yalnızca web istek işleyicileri için 60sn'lik (filter-options önbelleğiyle
+# TUTARLI) bir TTL sarmalayıcı eklendi.
+_WEB_CONFIG_CACHE_TTL_SECONDS = 60.0
+_web_config_cache: dict[str, Any] = {"config": None, "fetched_at": 0.0}
+
+
+def _get_cached_web_config() -> dict[str, Any]:
+    now = time.monotonic()
+    if _web_config_cache["config"] is not None and (now - _web_config_cache["fetched_at"]) < _WEB_CONFIG_CACHE_TTL_SECONDS:
+        return _web_config_cache["config"]
+    config = load_config()
+    _web_config_cache["config"] = config
+    _web_config_cache["fetched_at"] = now
+    return config
+
+
 # --- Sektör ısı haritası önbelleği ---
 # GERÇEK teşhisle bulundu (2026-07, çoklu kullanıcı performans soruşturması
 # devamı): bu sorgunun Neon Postgres SUNUCUSUNDAKİ çalışma süresi sadece
@@ -330,7 +392,7 @@ def dashboard(
     q: str | None = None,
     sort: str = "newest",
 ) -> HTMLResponse:
-    config = load_config()
+    config = _get_cached_web_config()
     threshold = config.get("importance", {}).get("threshold", 4)
     max_items = config.get("web", {}).get("max_items", 100)
 
@@ -343,18 +405,27 @@ def dashboard(
 
     sort_normalized = "oldest" if sort == "oldest" else "newest"
 
+    # Filtresiz/varsayılan görünüm (bkz. _get_cached_default_records notu)
+    # önbellekten okunur - aktif filtre/arama varsa CANLI sorguya düşülür.
+    is_default_view = sort_normalized == "newest" and not any(
+        [source, sector, region, sentiment, min_importance_value, q]
+    )
+
     with get_session() as session:
-        records = get_recent_records(
-            session,
-            limit=max_items,
-            source_filter=source or None,
-            sector_filter=sector or None,
-            region_filter=region or None,
-            sentiment_filter=sentiment or None,
-            min_importance=min_importance_value,
-            search_query=q or None,
-            sort_order=sort_normalized,
-        )
+        if is_default_view:
+            records = _get_cached_default_records(session, max_items)
+        else:
+            records = get_recent_records(
+                session,
+                limit=max_items,
+                source_filter=source or None,
+                sector_filter=sector or None,
+                region_filter=region or None,
+                sentiment_filter=sentiment or None,
+                min_importance=min_importance_value,
+                search_query=q or None,
+                sort_order=sort_normalized,
+            )
         sources, sectors = _get_cached_filter_options(session)
 
     regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
@@ -766,6 +837,17 @@ def service_worker_file() -> FileResponse:
     özellikle geliştirme/güncelleme sırasında yeni sürümün hemen
     yakalanmasını garanti eder."""
     return FileResponse(_SW_JS_PATH, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+
+_VY_LOGO_PATH = Path(__file__).resolve().parent / "static" / "vy-logo.svg"
+
+
+@app.get("/vy-logo.svg")
+def vy_logo_file() -> FileResponse:
+    """Header'daki küçük VY logosu - sw.js ile AYNI nedenle (basit tek
+    dosyalık statik varlıklar için tam bir StaticFiles mount'u yerine
+    doğrudan bir route) kök yoldan servis edilir."""
+    return FileResponse(_VY_LOGO_PATH, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/api/push/vapid-public-key")

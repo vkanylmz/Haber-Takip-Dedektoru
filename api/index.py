@@ -55,6 +55,7 @@ from src.web.app import (
     start_sector_heatmap_background_refresh,
     ticker_quotes_endpoint as _ticker_quotes_view,
     trend_summary as _trend_summary_view,
+    vy_logo_file as _vy_logo_view,
 )
 from src.web.market_data import start_background_refresh
 
@@ -143,6 +144,7 @@ app.get("/health")(_health_view)
 # yerel `python main.py` worker'ında çalışır - Telegram bot'uyla AYNI
 # hibrit mimari (ikisi de AYNI paylaşımlı DATABASE_URL'i okur/yazar).
 app.get("/sw.js")(_service_worker_view)
+app.get("/vy-logo.svg")(_vy_logo_view)
 app.get("/api/push/vapid-public-key")(_push_vapid_public_key_view)
 app.post("/api/push/subscribe")(_push_subscribe_view)
 app.post("/api/push/unsubscribe")(_push_unsubscribe_view)

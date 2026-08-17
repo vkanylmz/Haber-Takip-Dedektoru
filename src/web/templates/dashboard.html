@@ -132,6 +132,31 @@
       gap: 0.5rem;
     }
 
+    header h1 .brand-logo {
+      display: block;
+      height: 26px;
+      width: 26px;
+      border-radius: 7px;
+    }
+
+    /* Sol alt köşe "Powered by VY" etiketi - dekoratif, mevcut sabit
+       konumlu widget'larla (ör. tema/push düğmeleri header'da, scroll-top
+       gibi bileşenler sağda) çakışmaması için sol alt köşeye ve düşük
+       z-index'e sabitlendi. pointer-events:none tıklanamaz/etkileşimsiz
+       olmasını garanti eder (kullanıcı isteği). */
+    .powered-by-tag {
+      position: fixed;
+      left: 12px;
+      bottom: 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+      opacity: 0.65;
+      pointer-events: none;
+      user-select: none;
+      z-index: 10;
+      font-family: var(--font-sans);
+    }
+
     header .meta {
       color: var(--text-muted);
       font-size: 0.82rem;
@@ -1171,7 +1196,7 @@
 
   <header>
     <div>
-      <h1><span class="live-indicator"></span> Finansal Haber Terminali</h1>
+      <h1><img src="/vy-logo.svg" alt="" width="26" height="26" class="brand-logo"><span class="live-indicator"></span> Finansal Haber Terminali</h1>
       <div class="meta">
         {{ total_count }} haber · Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif ·
         <a href="/detayli-inceleme">Detaylı İnceleme</a> ·
@@ -2059,6 +2084,8 @@
       if (filterBtn) filterBtn.style.display = 'none';
     }
   </script>
+
+  <div class="powered-by-tag" aria-hidden="true">Powered by VY</div>
 </body>
 
 </html>
