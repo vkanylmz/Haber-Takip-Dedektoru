@@ -18,6 +18,11 @@ konuşan HERKESİN kendi kendine abone olabildiği çok-kullanıcılı bir model
     kelime/varlık takibi (bkz. src/keyword_alerts.py) - önem skoru eşiğinden
     BAĞIMSIZ, takip edilen kelime geçen her yeni haberde o kullanıcıya özel
     bildirim gider.
+  - /kap_sadece <süre>, /kap_durum, /kap_bitir: abone geçici olarak "sadece
+    KAP" moduna geçebilir - bu süre boyunca KAP-dışı hiçbir haber bildirimi
+    gitmez (bkz. src/db.py > Subscriber.kap_only_until, src/notifier.py >
+    _is_kap_record). Süre dolunca AYRI bir işlem/job GEREKMEDEN otomatik
+    olarak normal moda döner (lazy-expiry, bkz. o alanın docstring'i).
   - /yardim (veya /help): kullanılabilir komutları listeler. (Not: Telegram
     bot komutları yalnızca [a-z0-9_] içerebilir - "ı" gibi Türkçe karakterler
     içeremez, bu yüzden "/yardım" değil "/yardim" kullanılır.)
@@ -41,13 +46,21 @@ import asyncio
 import html
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from src.company_profile import get_company_profile
 from src.config import load_config
@@ -59,15 +72,17 @@ from src.db import (
     get_records_since,
     get_records_since_by_region,
     get_source_health_summary,
+    get_subscriber_kap_only,
     get_subscriber_threshold,
     remove_keyword_subscription,
     remove_subscriber,
     search_records,
+    set_subscriber_kap_only,
     set_subscriber_threshold,
 )
 from src.summarizer import SECTOR_LABELS
 from src.telegram_format import chunk_messages, format_news_block
-from src.timezone_utils import format_turkey_time
+from src.timezone_utils import TURKEY_TZ, format_turkey_time
 from src.web.market_data import get_ticker_detail
 
 logger = logging.getLogger(__name__)
@@ -118,7 +133,10 @@ _GUIDE_TEXT = (
     "/takiplerim — Takip listeni göster\n"
     "/takipsil &lt;kelime&gt; — Bir kelimeyi takip listenden çıkar\n"
     "/esik &lt;1-5&gt; — Anlık flaş haber bildirimlerin için önem eşiğini kendine göre ayarla (ör. /esik 3 — bu skor ve üzerinde bildirim alırsın)\n"
-    "/esikgoster — Şu anki bildirim eşiğini gösterir\n\n"
+    "/esikgoster — Şu anki bildirim eşiğini gösterir\n"
+    "/kap_sadece &lt;süre&gt; — Geçici olarak SADECE KAP (özel durum açıklaması) bildirimleri al, diğer haberler dursun (ör. /kap_sadece 2 saat, /kap_sadece bugün — argümansız yazarsan buton seçenekleri çıkar)\n"
+    "/kap_durum — Sadece-KAP modunda olup olmadığını ve kalan süreyi gösterir\n"
+    "/kap_bitir — Sadece-KAP modundan erken çık, normal bildirimlere dön\n\n"
 
     "<b>⚙️ Hesap</b>\n"
     "/start — Abone ol / karşılama mesajını tekrar gör\n"
@@ -137,6 +155,68 @@ _GUIDE_TEXT = (
 
 _MIN_THRESHOLD = 1
 _MAX_THRESHOLD = 5
+
+# --- "Sadece KAP" modu (bkz. /kap_sadece, /kap_durum, /kap_bitir) ---
+# Süre serbest metin OLARAK da girilebilir (ör. "/kap_sadece 2 saat") - bu
+# yüzden bir regex parser var; argümansız çağrıldığında ("/kap_sadece") ise
+# aşağıdaki 3 buton (InlineKeyboardMarkup) gösterilir - ikisi birden (hem
+# hızlı tıklama hem esneklik) kullanıcı isteğiydi (bkz. sohbet, 2026-08-17).
+_KAP_ONLY_DURATION_UNIT_SECONDS = {
+    "dk": 60,
+    "dakika": 60,
+    "sa": 3600,
+    "saat": 3600,
+    "g": 86400,
+    "gun": 86400,
+    "gün": 86400,
+}
+_KAP_ONLY_DURATION_RE = re.compile(r"^\s*(\d+)\s*([a-zçğıöşü]+)\s*$", re.IGNORECASE)
+
+# callback_data içindeki kod -> (buton etiketi, timedelta üretici). "bugun"
+# özel bir durum (Türkiye saatiyle günün geri kalanı) olduğundan timedelta
+# yerine None + ayrı bir dal kullanılır (bkz. _kap_only_duration_for_code).
+_KAP_ONLY_PRESETS = [
+    ("1s", "1 Saat"),
+    ("bugun", "Bugün"),
+    ("3g", "3 Gün"),
+]
+
+
+def _kap_only_end_of_today_turkey() -> datetime:
+    """Türkiye saatiyle "bugünün sonu" (23:59:59) - UTC'ye çevrilmiş olarak
+    döner. `/kap_sadece bugün` ve inline "Bugün" butonu tarafından kullanılır."""
+    now_tr = datetime.now(TURKEY_TZ)
+    end_of_day_tr = now_tr.replace(hour=23, minute=59, second=59, microsecond=0)
+    return end_of_day_tr.astimezone(timezone.utc)
+
+
+def _parse_kap_only_duration(text: str) -> datetime | None:
+    """Serbest metin bir süre ifadesini ("1 saat", "3 gün", "bugün" gibi)
+    ayrıştırıp UTC bir bitiş zamanına çevirir. Anlaşılamazsa None döner."""
+    normalized = text.strip().lower()
+    if normalized in ("bugun", "bugün"):
+        return _kap_only_end_of_today_turkey()
+
+    match = _KAP_ONLY_DURATION_RE.match(normalized)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit_seconds = _KAP_ONLY_DURATION_UNIT_SECONDS.get(match.group(2))
+    if unit_seconds is None or amount <= 0:
+        return None
+    return datetime.now(timezone.utc) + timedelta(seconds=amount * unit_seconds)
+
+
+def _kap_only_duration_for_code(code: str) -> datetime | None:
+    """Inline buton callback_data kodunu ("1s", "bugun", "3g") bir UTC bitiş
+    zamanına çevirir - bkz. _KAP_ONLY_PRESETS."""
+    if code == "bugun":
+        return _kap_only_end_of_today_turkey()
+    if code == "1s":
+        return datetime.now(timezone.utc) + timedelta(hours=1)
+    if code == "3g":
+        return datetime.now(timezone.utc) + timedelta(days=3)
+    return None
 
 
 def _welcome_text(first_name: str, already_subscribed: bool) -> str:
@@ -626,6 +706,122 @@ async def _show_threshold(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+def _kap_only_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(label, callback_data=f"kap_only:{code}") for code, label in _KAP_ONLY_PRESETS]]
+    )
+
+
+async def _kap_only_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/kap_sadece [süre]: aboneyi geçici olarak "sadece KAP" moduna alır -
+    bu süre boyunca KAP dışı hiçbir haber bildirimi gitmez (bkz.
+    src/notifier.py > _is_kap_record, src/db.py > Subscriber.kap_only_until).
+
+    Argüman verilmezse (`/kap_sadece`) hızlı seçim için 3 buton gösterilir;
+    argüman serbest metinse ("2 saat", "3 gün", "bugün" gibi) ayrıştırılmaya
+    çalışılır (bkz. _parse_kap_only_duration)."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    arg = " ".join(context.args).strip() if context.args else ""
+    logger.info("/kap_sadece alındı: chat_id=%s, arg=%r", chat.id, arg)
+
+    if not arg:
+        await update.message.reply_text(
+            "Ne kadar süreyle sadece KAP (özel durum açıklaması) bildirimleri "
+            "almak istersin? Aşağıdan seç, ya da serbest metin yaz "
+            "(ör. /kap_sadece 2 saat).",
+            reply_markup=_kap_only_keyboard(),
+        )
+        return
+
+    until = _parse_kap_only_duration(arg)
+    if until is None:
+        await update.message.reply_text(
+            "Anlayamadım. Örnekler: /kap_sadece 1 saat, /kap_sadece 3 gün, "
+            "/kap_sadece bugün — ya da argümansız /kap_sadece yazıp butonlardan seç."
+        )
+        return
+
+    updated = set_subscriber_kap_only(chat.id, until)
+    if not updated:
+        await update.message.reply_text("Önce /start yazıp abone olman gerekiyor.")
+        return
+
+    await update.message.reply_text(
+        f"✅ Sadece KAP moduna geçtin. {format_turkey_time(until)}'e kadar (Türkiye saati) "
+        "SADECE özel durum açıklamaları bildirimi alacaksın, diğer haberler durdu. "
+        "Erken bitirmek için: /kap_bitir"
+    )
+
+
+async def _kap_only_callback(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """Yukarıdaki `_kap_only_keyboard()` butonlarına basıldığında tetiklenir
+    (bkz. build_application > CallbackQueryHandler, pattern="^kap_only:")."""
+    query = update.callback_query
+    if query is None or query.message is None or query.data is None:
+        return
+    await query.answer()
+
+    code = query.data.split(":", 1)[-1]
+    until = _kap_only_duration_for_code(code)
+    chat_id = query.message.chat_id
+    logger.info("kap_only butonu alındı: chat_id=%s, code=%s", chat_id, code)
+
+    if until is None:
+        return
+
+    updated = set_subscriber_kap_only(chat_id, until)
+    if not updated:
+        await query.edit_message_text("Önce /start yazıp abone olman gerekiyor.")
+        return
+
+    await query.edit_message_text(
+        f"✅ Sadece KAP moduna geçtin. {format_turkey_time(until)}'e kadar (Türkiye saati) "
+        "SADECE özel durum açıklamaları bildirimi alacaksın, diğer haberler durdu. "
+        "Erken bitirmek için: /kap_bitir"
+    )
+
+
+async def _kap_only_status(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """/kap_durum: aboneye şu an sadece-KAP modunda olup olmadığını ve
+    (öyleyse) kalan süreyi gösterir."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    until = get_subscriber_kap_only(chat.id)
+    logger.info("/kap_durum alındı: chat_id=%s, kap_only_until=%s", chat.id, until)
+    if until is None:
+        await update.message.reply_text(
+            "Şu an normal moddasın (tüm önemli haberleri alıyorsun). Sadece KAP "
+            "moduna geçmek için: /kap_sadece <süre>"
+        )
+        return
+
+    await update.message.reply_text(
+        f"🔔 Şu an SADECE KAP modundasın, {format_turkey_time(until)}'e kadar (Türkiye saati). "
+        "Erken bitirmek için: /kap_bitir"
+    )
+
+
+async def _kap_only_stop(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """/kap_bitir: sadece-KAP modunu erken sonlandırır (süresi zaten dolmuşsa
+    da zararsız - normal moda geri döner)."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    updated = set_subscriber_kap_only(chat.id, None)
+    logger.info("/kap_bitir alındı: chat_id=%s, guncellendi=%s", chat.id, updated)
+    if not updated:
+        await update.message.reply_text("Önce /start yazıp abone olman gerekiyor.")
+        return
+
+    await update.message.reply_text("Sadece-KAP modundan çıkıldı, artık tüm önemli haberleri alacaksın. 📰")
+
+
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Herhangi bir handler'da yakalanmamış bir hata olursa (ör. geçici bir
     veritabanı kilidi - artık db.py > _configure_sqlite_for_concurrency ile
@@ -660,6 +856,10 @@ def build_application(bot_token: str) -> Application:
     application.add_handler(CommandHandler("takipsil", _untrack_keyword))
     application.add_handler(CommandHandler("esik", _set_threshold))
     application.add_handler(CommandHandler("esikgoster", _show_threshold))
+    application.add_handler(CommandHandler("kap_sadece", _kap_only_mode))
+    application.add_handler(CommandHandler("kap_durum", _kap_only_status))
+    application.add_handler(CommandHandler("kap_bitir", _kap_only_stop))
+    application.add_handler(CallbackQueryHandler(_kap_only_callback, pattern=r"^kap_only:"))
     # Yukarıdaki komutlardan biri olmayan serbest metin -> bot sahibine iletilir.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _forward_feedback))
     application.add_error_handler(_error_handler)

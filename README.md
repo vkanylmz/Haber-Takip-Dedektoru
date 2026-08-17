@@ -780,7 +780,61 @@ Aşağıdaki kaynaklar **hiç eklenmedi** (config.yaml'da hiçbir satırları yo
 | **Investing.com** (`investing.com`, `tr.investing.com`) | Kullanıcının belirttiği resmi RSS duyuru sayfası (`tr.investing.com/webmaster-tools/rss`) kontrol edildi ve kendisi erişilebilir olsa da, **robots.txt'in kendisi projenin bot User-Agent'ına 403 Forbidden döndürdü** — hatta standart bir tarayıcı User-Agent'ı ile bile aynı sonuç alındı (`www.investing.com` ayrıca Cloudflare JS bot-koruma sayfası gösteriyor). `src/fetchers/base.py`'nin kendi politikası gereği (401/403 → "tamamen yasak" olarak yorumlanır, bkz. kod içi yorum), bu kaynak robots.txt seviyesinde net şekilde engellenmiş sayılır. Bu yüzden **eklenmedi**. Site ileride bot erişimine izin verecek şekilde değişirse (veya resmi bir API/lisanslı erişim yolu bulunursa) yeniden değerlendirilebilir.
 | **Handelsblatt** (`handelsblatt.com`) | Resmi RSS feed'leri var (`feeds.cms.handelsblatt.com/finanzen` — 200 OK, çalışıyor) ve o alt alan adının kendi robots.txt'i bile yok. Ancak ana domainin (`www.handelsblatt.com`) robots.txt'i, `anthropic-ai`, `ClaudeBot`, `Claude-Web`, `Claude-SearchBot` gibi AI botlarını **isim isim** `Disallow: /` ile tüm siteden yasaklıyor. Teknik olarak farklı bir alt alan adı/User-Agent üzerinden erişim mümkün olsa da, yayıncının AI botlarına karşı **açık niyeti** göz önünde bulundurularak (kullanıcı kararıyla) bu kaynak **eklenmedi**. |
 | **The Telegraph (Business)** (`telegraph.co.uk`) | robots.txt, `ClaudeBot`, `Claude-Web`, `Claude-SearchBot`, `Claude-User`, `anthropic-ai` gibi AI botlarını **her biri ayrı bir grupta** `Disallow: /` ile tüm siteden yasaklıyor — Handelsblatt'takinden de açık bir engelleme. Aynı gerekçeyle (kullanıcı kararıyla) **eklenmedi**. |
-| **KAP - Kamuyu Aydınlatma Platformu** (`kap.org.tr`) | BIST şirketlerinin resmi bildirimleri (2026-08-10'da değerlendirildi). `www.kap.org.tr/robots.txt`'e yapılan İSTEKLERİN TAMAMI (düz curl, tam tarayıcı header'larıyla, hatta önce ana sayfadan alınmış geçerli bir oturum çerezi ile bile — birden fazla deneme) standart olmayan bir **HTTP 666** durum koduyla, her seferinde FARKLI bir "hata numarası" (ör. "58102857-PPE10") içeren özel bir WAF/anti-bot engelleme sayfasıyla sonuçlandı — yani robots.txt'in İÇERİĞİNE bakılamadı bile. Buna karşın aynı domaindeki normal sayfalar (`/tr`, `/tr/bildirim-sorgu`) düz `curl` ile sorunsuz 200 OK döndü — bu, `/robots.txt`'in KENDİSİNİN özel olarak bot-tespit/engelleme amacıyla firewall'landığını gösteriyor (tipik bir "otomatik tarayıcı robots.txt'e önce bakar" imzasına karşı önlem). Resmi/kamuya açık bir RSS feed'i de yok — MKK'nın sunduğu tek yapılandırılmış/toplu erişim yolu, kullanıcının da belirttiği gibi ücretli kurumsal "Veri Yayın Servisi" aboneliği (bu proje kuralları gereği kullanılmadı). `src/fetchers/base.py > _fetch_robots_parser`'ın MEVCUT davranışı yalnızca 401/403'ü "tamamen yasak" sayıyor, 666 gibi standart dışı kodları >=400 dalına düşürüp **"robots.txt yok say, tamamen izinli kabul et"** sonucuna varıyor — yani kod bu siteyi otomatik olarak (yanlışlıkla) izinli sayardı. Bu, sitenin robots.txt'e erişimi bizzat firewall'layarak gösterdiği AÇIK anti-otomasyon niyetiyle çelişiyor; Investing.com hücresindeki gerekçeyle tutarlı olacak şekilde (kullanıcı kararıyla) **eklenmedi**. WAF davranışı değişip robots.txt normal şekilde okunabilir hale gelirse (veya resmi/ücretsiz bir RSS/API yolu ortaya çıkarsa) yeniden değerlendirilebilir. |
+
+**KAP (Kamuyu Aydınlatma Platformu, `kap.org.tr`)** artık eklendi - bkz. aşağıdaki "KAP Entegrasyonu" bölümü. Yukarıdaki tablodaki diğer kaynaklarla AYNI kök nedenle (WAF-engellenmiş robots.txt) normalde eklenmezdi; KAP için kullanıcı kararıyla BİLİNÇLİ bir istisna tanındı (2026-08-17) - gerekçe ve kapsam için aşağıya bakın.
+
+## KAP Entegrasyonu (Kamuyu Aydınlatma Platformu, `kap.org.tr`)
+
+**Bilinçli bir politika istisnası** (2026-08-17): bu proje normalde robots.txt'i
+okunamayan (WAF tarafından engellenen) kaynakları eklemez - yukarıdaki
+Investing.com/Handelsblatt/Telegraph hücreleri ve KAP'ın kendisi de önce bu
+gerekçeyle (2026-08-10, sonra 2026-08-17'de yeniden doğrulanarak) **eklenmedi**
+kararı almıştı: `www.kap.org.tr/robots.txt` standart dışı bir HTTP 666 WAF
+bloğu döndürüyor (her denemede farklı bir hata numarası - aktif bot tespiti),
+resmi/ücretsiz bir RSS de yok.
+
+Kullanıcı, KAP için KENDİ kararıyla bu politikaya bilinçli bir istisna
+tanımıştır: `src/fetchers/kap_fetcher.py`, kap.org.tr'nin kendi
+(dokümante edilmemiş) iç JSON endpoint'ini (`/tr/api/disclosure/list/main`,
+kap.org.tr'nin "bildirim-sorgu" sayfasının kullandığı AYNI uç nokta -
+GitHub'daki `cemsinano/pykap`/`enciyo/kap-tr-sdk`/`saidsurucu/borsa-mcp`
+projelerinde de aynı yaklaşım görüldü, hiçbiri resmi bir API kullanmıyor)
+doğrudan çekerek özel durum açıklamalarını (disclosureClass: ODA/FR/CA -
+DUY/DG idari bültenleri bilerek dışlanır) mevcut özetleme/bildirim
+pipeline'ına sokar.
+
+**Bu GEÇİCİ bir çözümdür:** ayrıca resmi/self-servis bir yol olabilecek **MKK
+API Portal** (`apiportal.mkk.com.tr`) keşfedildi - hesap başvurusuyla
+ücretsiz erişim sunan, 12 KAP veri servisini kapsayan bir portal gibi
+görünüyor, ama ürün detayları hesap girişi gerektirdiğinden gerçek zamanlı
+özel durum açıklamalarının bu 12 servise dahil olup olmadığı dışarıdan
+DOĞRULANAMADI. **Bu başvuru yapılıp resmi endpoint'in gerçek zamanlı bildirim
+verisi içerdiği doğrulanırsa, `kap_fetcher.py` o resmi/belgelenmiş endpoint'e
+geçirilecek** - bu istisna kalıcı bir mimari karar değil, o yol açılana kadarki
+bir köprüdür.
+
+**Nezaket/rate-limit değerlendirmesi:** özel durum açıklamaları genel RSS
+taramasından (15 dk) çok daha sık kontrol edilmeli diye ayrı bir job (bkz.
+`worker.py > _add_kap_fast_poll_job`, `config.yaml > kap_fast_poll`) 120
+saniyede bir çalışır (saatte 30 istek). Başlangıçta 90sn düşünüldü, kullanıcıyla
+birlikte yeniden değerlendirilip 120sn'ye çıkarıldı: kap-notifier gibi açık
+kaynak projelerin varsayılanı olan 3 saniyeye kıyasla zaten çok nazik bir yük,
+120sn'de "anlık" hissi neredeyse hiç kaybolmadan sunucuya ek bir nezaket payı
+kazandırıyor.
+
+**Telegram entegrasyonu:** KAP bildirimleri, mevcut önem-skoru/özetleme
+pipeline'ından (aynı LLM özetleme, `src/notifier.py`) geçerek diğer haberlerle
+AYNI şekilde gönderilir. Ek olarak abone, `/kap_sadece <süre>` komutuyla
+(ör. "2 saat", "3 gün", "bugün" - argümansız yazarsa 3 buton çıkar) geçici
+olarak SADECE KAP bildirimi almaya geçebilir; `/kap_durum` kalan süreyi
+gösterir, `/kap_bitir` erken sonlandırır. Süre dolunca AYRI bir job/adım
+gerekmeden otomatik olarak normal moda döner (bkz. `src/db.py >
+Subscriber.kap_only_until` - lazy-expiry).
+
+Mevcut Event-Driven Ingestion (webhook + `src/fetchers/telegram_listener.py`,
+bkz. aşağıdaki bölüm) bu değişiklikle **kaldırılmadı** - KAP'a özel değildir,
+başka dış kaynaklar için hâlâ kullanılabilir; sadece KAP için artık birincil
+yol bu doğrudan çekim.
 
 ## Lisanslı Kaynaklar (NewsAPI.ai)
 
@@ -918,7 +972,16 @@ için tekilleştirme (`deduplicator.py`) ve özetleme (`summarizer.py`, Gemini/C
 adımlarından herhangi bir özel kod gerekmeden geçer — pipeline'ın geri kalanı
 bu kaynağın "lisanslı bir aracı API" olduğunun farkında bile değildir.
 
-## Event-Driven Ingestion: KAP Bildirimleri (Webhook + Telegram Kanal Dinleyicisi)
+## Event-Driven Ingestion: Webhook + Telegram Kanal Dinleyicisi
+
+**GÜNCELLEME (2026-08-17):** KAP için artık birincil yol yukarıdaki "KAP
+Entegrasyonu" bölümünde açıklanan **doğrudan çekim** (`src/fetchers/kap_fetcher.py`,
+periyodik pull) - bu bölümdeki webhook/Telegram dinleyicisi yolu KAP'a ÖZGÜ
+değildir ve kaldırılmadı, başka herhangi bir dış kaynaktan (KAP dışı da
+olabilir) anlık/push tabanlı bildirim almak isterseniz hâlâ kullanılabilir.
+
+Aşağıdaki metin, bu push-tabanlı yolun (2026-08-10'da, KAP doğrudan scrape
+edilemediği için) KAP'ı hedefleyerek yazıldığı ORİJİNAL haliyle korunmuştur:
 
 KAP (Kamuyu Aydınlatma Platformu, kap.org.tr) doğrudan scrape edilemiyor
 (bkz. yukarıdaki "Eklenmeyen Kaynaklar" tablosu — robots.txt WAF seviyesinde

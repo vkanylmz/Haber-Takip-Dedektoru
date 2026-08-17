@@ -7,6 +7,10 @@ Bu dosya, projenin eski `scheduler.py`'sinin yerini alır ve onu genişletir —
 artık sadece `src.main.run_once()`'u çağırmakla kalmıyor, run_once() da
 kendi içinde DB kaydı + bildirim adımlarını yürütüyor (bkz. src/main.py).
 
+KAP (bkz. src/fetchers/kap_fetcher.py), yukarıdaki genel taramaya EK olarak
+çok daha sık (varsayılan 120sn, bkz. config.yaml > kap_fast_poll) AYRI bir
+job ile de yoklanır - bkz. _add_kap_fast_poll_job.
+
 Bağımsız (worker'ı TEK BAŞINA, web dashboard olmadan) çalıştırma:
     python worker.py
 
@@ -28,8 +32,9 @@ from src.commodity_report import send_weekly_commodity_report
 from src.config import load_config
 from src.daily_digest import send_daily_digest
 from src.db import add_subscriber, init_db
+from src.deduplicator import group_similar_news
 from src.logging_setup import setup_logging
-from src.main import run_once
+from src.main import fetch_source, run_once, summarize_and_persist_groups
 from src.telegram_bot import start_bot_listener_thread, stop_bot_listener_thread
 from src.trend_report import send_monthly_trend_report, send_weekly_trend_report
 
@@ -126,6 +131,64 @@ def _job() -> None:
         # dış katmanı da koruyarak zamanlayıcının bir sonraki çalışmayı
         # atlamasını önlüyoruz.
         logger.exception("Zamanlanmış tarama sırasında beklenmeyen bir hata oluştu.")
+
+
+def _find_kap_source_cfg(config: dict) -> dict | None:
+    """`config.yaml > sources` içinde `type: kap` olan, etkin girdiyi bulur
+    (bkz. src/fetchers/kap_fetcher.py). Yoksa/kapalıysa None döner - çağıran
+    taraf (_kap_fast_poll_job) bu durumda sessizce hiçbir şey yapmaz."""
+    for source_cfg in config.get("sources", []):
+        if source_cfg.get("type") == "kap" and source_cfg.get("enabled", True):
+            return source_cfg
+    return None
+
+
+def _kap_fast_poll_job() -> None:
+    """KAP'ı (bkz. src/fetchers/kap_fetcher.py) genel `_job` taramasından
+    (15 dk, bkz. periyodik_tarama) BAĞIMSIZ, çok daha sık (varsayılan 120sn,
+    bkz. config.yaml > kap_fast_poll) yoklar - özel durum açıklamaları
+    dakikalar içinde piyasayı etkileyebileceğinden genel tarama aralığı
+    "anlık" hissi için yetersiz kalır.
+
+    `fetch_source` (src/main.py) üzerinden çağrılır - böylece diğer
+    kaynaklarla AYNI hata izolasyonu ve kaynak-sağlığı kaydı (bkz.
+    /kaynak-sagligi) otomatik olarak devreye girer. Aynı disclosure'ın hem
+    burada hem genel taramada tekrar görülmesi ZARARSIZDIR (bkz.
+    src/fetchers/kap_fetcher.py modül docstring'i - group_key/notified
+    idempotency'si)."""
+    try:
+        config = load_config()
+        kap_fast_poll_cfg = config.get("kap_fast_poll", {})
+        if not kap_fast_poll_cfg.get("enabled", True):
+            return
+
+        source_cfg = _find_kap_source_cfg(config)
+        if source_cfg is None:
+            return
+
+        items = fetch_source(source_cfg, config["app"])
+        if not items:
+            return
+
+        dedup_cfg = config["app"]
+        groups = group_similar_news(
+            items,
+            similarity_threshold=dedup_cfg.get("dedup_similarity_threshold", 0.55),
+            window_hours=dedup_cfg.get("dedup_window_hours", 12),
+        )
+        summarize_and_persist_groups(groups, config)
+    except Exception:  # noqa: BLE001 - hızlı KAP yoklaması diğer görevleri/zamanlayıcıyı etkilemesin
+        logger.exception("KAP hızlı yoklaması sırasında beklenmeyen bir hata oluştu.")
+
+
+def _add_kap_fast_poll_job(scheduler, config: dict) -> None:
+    kap_fast_poll_cfg = config.get("kap_fast_poll", {})
+    if not kap_fast_poll_cfg.get("enabled", True):
+        logger.info("config.yaml > kap_fast_poll.enabled=false, KAP hızlı yoklama job'ı eklenmedi.")
+        return
+    interval_seconds = kap_fast_poll_cfg.get("interval_seconds", 120)
+    scheduler.add_job(_kap_fast_poll_job, "interval", seconds=interval_seconds, id="kap_hizli_yoklama")
+    logger.info("KAP hızlı yoklama job'ı eklendi: her %s saniyede bir.", interval_seconds)
 
 
 def _daily_digest_job() -> None:
@@ -262,6 +325,7 @@ def start_background_scheduler(config: dict | None = None) -> BackgroundSchedule
     scheduler = BackgroundScheduler()
     scheduler.add_job(_job, "interval", minutes=interval_minutes, id="periyodik_tarama")
     scheduler.add_job(_job, id="ilk_tarama")  # tetikleyici verilmezse hemen (arka planda) çalışır
+    _add_kap_fast_poll_job(scheduler, config)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)
@@ -288,6 +352,7 @@ def main() -> None:
 
     scheduler = BlockingScheduler()
     scheduler.add_job(_job, "interval", minutes=interval_minutes, id="periyodik_tarama")
+    _add_kap_fast_poll_job(scheduler, config)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)

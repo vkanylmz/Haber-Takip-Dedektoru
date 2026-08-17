@@ -40,6 +40,20 @@ worker:
   # gecikme pratikte fark yaratmaz).
   interval_minutes: 15
 
+# KAP (aşağıdaki `sources` listesindeki `type: kap` girdisi, bkz.
+# src/fetchers/kap_fetcher.py), yukarıdaki genel `interval_minutes` (15 dk)
+# taramasına DA dahildir (kaynak sağlığı panelinde görünmesi için), AMA
+# ayrıca (bkz. worker.py > _add_kap_fast_poll_job) çok daha sık, BAĞIMSIZ bir
+# job ile de yoklanır - özel durum açıklamaları dakikalar içinde piyasayı
+# etkileyebileceğinden 15 dk'lık genel tarama "anlık" hissi için çok yavaş
+# kalır. 120 saniye = kap-notifier gibi açık kaynak projelerin varsayılanı
+# olan 3 saniyeye göre ÇOK daha nazik bir yük, ama yine de "yakın-anlık" bir
+# denge (kullanıcı kararı, 2026-08-17: 90sn-3dk aralığı değerlendirilip 120sn
+# seçildi - saatte 30 istek, kap.org.tr için önemsiz bir yük).
+kap_fast_poll:
+  enabled: true
+  interval_seconds: 120
+
 summarizer:
   # Özetleme + önem skorlama için kullanılacak LLM sağlayıcısı: "gemini" veya
   # "anthropic". Varsayılan "gemini" (GEMINI_API_KEY gerekir, bkz. README).
@@ -151,7 +165,7 @@ web:
 # Her kaynak için:
 #   name    : ekranda/raporda görünecek isim
 #   id      : dahili kısa kimlik (benzersiz olmalı)
-#   type    : "rss" | "scrape"
+#   type    : "rss" | "scrape" | "licensed_aggregator" | "kap"
 #   enabled : true/false — kaynağı kod değiştirmeden açıp kapatabilirsiniz
 sources:
   - name: "Bloomberg HT"
@@ -325,6 +339,33 @@ sources:
     # döner. Ücretsiz planın aylık 2000 istek limitinin oldukça altında,
     # temkinli bir varsayılan.
     monthly_call_quota: 200
+
+  # KAP (Kamuyu Aydınlatma Platformu, kap.org.tr) - BIST şirketlerinin özel
+  # durum açıklamaları. BİLİNÇLİ BİR POLİTİKA İSTİSNASI (2026-08-17, bkz.
+  # README > "Eklenen Kaynaklar" > KAP satırı): bu kaynak robots.txt
+  # seviyesinde bir WAF ile engellenmiş durumda, bu proje kuralları gereği
+  # normalde eklenmezdi - kullanıcı kararıyla, kap.org.tr'nin kendi
+  # (dokümante edilmemiş) iç JSON endpoint'i kullanılarak eklendi (bkz.
+  # src/fetchers/kap_fetcher.py modül docstring'i - GEÇİCİ bir çözüm, MKK
+  # API Portal başvurusu sonuçlanır ve gerçek zamanlı özel durum
+  # açıklamalarını kapsadığı doğrulanırsa resmi endpoint'e geçilecek).
+  - name: "KAP"
+    id: kap
+    type: kap
+    enabled: true
+    # ODA=Özel Durum Açıklaması, FR=Finansal Rapor, CA=Kurumsal İşlem - DUY
+    # (düzenleyici/idari duyuru) ve DG (diğer, ör. "Takasbank Günlük Bülten"
+    # gibi bültenler) BİLEREK dışarıda bırakıldı (canlı testte bu ikisinin
+    # neredeyse tamamen gürültü olduğu görüldü).
+    disclosure_classes: ["ODA", "FR", "CA"]
+    # Sadece BIST şirketleri (fon/aracı kurum/düzenleyici gürültüsü hariç).
+    member_types: ["IGS"]
+    # Her istekte SADECE bu kadar dakika geriye bakılır - KAP API'sinin geniş
+    # tarih aralıklarında ~30 kayıtta kesildiği canlı testle tespit edildi, dar
+    # bir pencere bu sınırın altında kalmayı garantiler. Bu kaynak AYRICA çok
+    # daha sık yoklandığından (bkz. yukarıdaki kap_fast_poll), 30 dk'lık bir
+    # pencere pratikte hiçbir bildirimi kaçırmaz.
+    lookback_minutes: 30
 
   # --- Aşağıdaki kaynaklar scraping/kısıtlı RSS ile çalışır ve VARSAYILAN OLARAK KAPALIDIR ---
 

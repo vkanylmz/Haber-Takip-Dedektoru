@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine, or_
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -200,6 +200,17 @@ class Subscriber(Base):
     # global config.yaml > importance.threshold artık yalnızca yeni abonelerin
     # VARSAYILAN eşiği olarak kullanılır (bkz. src/notifier.py).
     importance_threshold = Column(Integer, nullable=False, default=4)
+
+    # "Sadece KAP" modu (bkz. Telegram /kap_sadece komutu, 2026-08-17) - bu
+    # zamana KADAR (UTC) aktifse, abone KAP DIŞI hiçbir bildirim almaz (bkz.
+    # src/notifier.py, get_subscriber_chat_ids_for_score > is_kap parametresi).
+    # None = normal mod (varsayılan, tüm kaynaklardan bildirim alır). Süre
+    # dolduğunda AYRI bir "moddan çıkar" işlemi/scheduler job'ı GEREKMEZ -
+    # lazy-expiry: bu alan geçmiş bir zamana işaret ediyorsa sorgu tarafında
+    # otomatik olarak "normal mod" sayılır (bu projede zaten yaygın bir desen,
+    # bkz. src/web/app.py'deki TTL-cache'ler) - eski değer DB'de kalabilir,
+    # bir sonraki /kap_sadece veya /kap_bitir zaten üzerine yazar.
+    kap_only_until = Column(DateTime(timezone=True), nullable=True)
 
 
 class KeywordSubscription(Base):
@@ -520,6 +531,15 @@ def _migrate_add_missing_columns(engine) -> None:
                 "ALTER TABLE subscribers ADD COLUMN importance_threshold INTEGER NOT NULL DEFAULT 4"
             )
             logger.info("Veritabanı migrasyonu: subscribers.importance_threshold kolonu eklendi.")
+        if "kap_only_until" not in existing_subscriber_columns:
+            # TIMESTAMP (SQLAlchemy'nin DateTime(timezone=True) için dialect'e
+            # özgü DDL'i YERİNE) BİLİNÇLİ OLARAK portable/ANSI bir tip -
+            # diğer migrasyon satırlarıyla AYNI yaklaşım (bkz. yukarıdaki
+            # TEXT/VARCHAR/INTEGER'lar): hem SQLite hem Postgres'te (bkz.
+            # DATABASE_URL) çalışır, exec_driver_sql ham SQL çalıştırdığından
+            # SQLAlchemy'nin dialect çevirisinden yararlanamaz.
+            conn.exec_driver_sql("ALTER TABLE subscribers ADD COLUMN kap_only_until TIMESTAMP")
+            logger.info("Veritabanı migrasyonu: subscribers.kap_only_until kolonu eklendi.")
 
 
 def _ensure_performance_indexes(engine) -> None:
@@ -979,18 +999,60 @@ def get_all_subscriber_chat_ids(session: Session | None = None) -> list[str]:
         return [chat_id for (chat_id,) in s.query(Subscriber.chat_id).all()]
 
 
-def get_subscriber_chat_ids_for_score(score: int) -> list[str]:
+def get_subscriber_chat_ids_for_score(score: int, is_kap: bool = False) -> list[str]:
     """Verilen önem skorunu ALACAK abonelerin chat_id'lerini döner: yani
     kendi `importance_threshold` değeri `score`'a eşit veya küçük olanlar
     (ör. skor 3 olan bir haber, eşiği 3 VEYA daha düşük olan herkese gider,
-    eşiği 4 olanlara gitmez). Bkz. Telegram /esik komutu, src/notifier.py."""
+    eşiği 4 olanlara gitmez). Bkz. Telegram /esik komutu, src/notifier.py.
+
+    `is_kap=True` verilirse (bildirim KAP kaynaklıysa) `kap_only_until`
+    filtresi UYGULANMAZ - "sadece KAP" modundaki abone zaten KAP bildirimi
+    almaya devam etmeli. `is_kap=False` (varsayılan, KAP-dışı bir haber)
+    olduğunda ise, `kap_only_until` alanı SÜRESİ DOLMAMIŞ (şimdiden büyük)
+    olan aboneler sonuçtan ÇIKARILIR - bkz. Telegram /kap_sadece komutu,
+    Subscriber.kap_only_until alanındaki lazy-expiry notu (süresi geçmiş bir
+    değer otomatik olarak "normal mod" sayılır, ekstra bir sorgu/temizlik
+    gerekmez)."""
+    now = datetime.now(timezone.utc)
     with get_session() as session:
-        return [
-            chat_id
-            for (chat_id,) in session.query(Subscriber.chat_id)
-            .filter(Subscriber.importance_threshold <= score)
-            .all()
-        ]
+        query = session.query(Subscriber.chat_id).filter(Subscriber.importance_threshold <= score)
+        if not is_kap:
+            query = query.filter(or_(Subscriber.kap_only_until.is_(None), Subscriber.kap_only_until <= now))
+        return [chat_id for (chat_id,) in query.all()]
+
+
+def set_subscriber_kap_only(chat_id: str | int, until: datetime | None) -> bool:
+    """Bir abonenin "sadece KAP" modunu ayarlar (`until` = bu zamana KADAR
+    aktif, UTC) veya kaldırır (`until=None`, bkz. /kap_bitir komutu). Döner:
+    abone kayıtlıysa ve güncellendiyse True, abone değilse False (bkz.
+    set_subscriber_threshold ile AYNI desen)."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        if existing is None:
+            return False
+        existing.kap_only_until = until
+        logger.info("Abone 'sadece KAP' modu güncellendi: chat_id=%s, kap_only_until=%s", chat_id_str, until)
+        return True
+
+
+def get_subscriber_kap_only(chat_id: str | int) -> datetime | None:
+    """Bir abonenin AKTİF "sadece KAP" bitiş zamanını (UTC) döner - süresi
+    geçmişse (lazy-expiry, bkz. Subscriber.kap_only_until notu) None döner,
+    yani çağıran taraf için "normal mod" ile ayırt edilemez (bu bilinçli -
+    /kap_durum komutu bu iki durumu zaten aynı şekilde göstermeli). Bu
+    salt-okunur bir sorgudur, süresi geçmiş eski değeri DB'de SİLMEZ/temizlemez."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        if existing is None or existing.kap_only_until is None:
+            return None
+        until = existing.kap_only_until
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        if until <= datetime.now(timezone.utc):
+            return None
+        return until
 
 
 def set_subscriber_threshold(chat_id: str | int, threshold: int) -> bool:

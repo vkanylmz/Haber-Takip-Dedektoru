@@ -26,6 +26,7 @@ from src.db import (
     upsert_group,
 )
 from src.deduplicator import group_similar_news, sort_groups_by_recency
+from src.fetchers.kap_fetcher import fetch_kap
 from src.fetchers.licensed_aggregator import fetch_licensed_aggregator
 from src.fetchers.rss_fetcher import fetch_rss
 from src.fetchers.scrape_fetcher import fetch_scrape
@@ -70,6 +71,8 @@ def fetch_source(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[Ne
             items = fetch_scrape(source_cfg, app_cfg)
         elif source_type == "licensed_aggregator":
             items = fetch_licensed_aggregator(source_cfg, app_cfg)
+        elif source_type == "kap":
+            items = fetch_kap(source_cfg, app_cfg)
         else:
             logger.error("%s: bilinmeyen kaynak türü '%s'", name, source_type)
             record_source_health(name, success=False, error_message=f"Bilinmeyen kaynak türü: {source_type}")

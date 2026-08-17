@@ -23,6 +23,10 @@ Davranış (gereksinim):
     `python-telegram-bot` paketi kurulu değilse: exception fırlatmadan uyarı
     loglanır ve gönderim atlanır (diğer tüm entegrasyonlarla aynı hata
     izolasyonu mantığı).
+  - "Sadece KAP" modundaki aboneler (bkz. Telegram /kap_sadece komutu,
+    src/db.py > Subscriber.kap_only_until) KAP-DIŞI kaynaklı haberleri BU
+    MODÜL SEVİYESİNDE almaz - bkz. _is_kap_record + get_subscriber_chat_ids_for_score
+    > is_kap parametresi.
 """
 
 from __future__ import annotations
@@ -44,6 +48,22 @@ logger = logging.getLogger(__name__)
 # limiti vardır; abone sayısı arttıkça bu limite takılmamak için art arda
 # gönderimler arasına küçük bir bekleme koyuyoruz.
 _SEND_DELAY_SECONDS = 0.05
+
+# src/fetchers/kap_fetcher.py > KAP_SOURCE_NAME ile AYNI değer olmalıdır -
+# "sadece KAP" modundaki abonelerin (bkz. /kap_sadece komutu) KAP DIŞI
+# bildirimleri almaması için bir kaydın KAP kaynaklı olup olmadığını
+# belirlemede kullanılır (bkz. _is_kap_record). Burada webhook.py'deki
+# DEFAULT_SOURCE_NAME gibi yerel bir sabit olarak tutulur (bu modülün
+# src.fetchers.kap_fetcher'a bağımlı olmasını gerektirmez).
+_KAP_SOURCE_NAME = "KAP"
+
+
+def _is_kap_record(record: "NewsRecord") -> bool:
+    """Kaydın `sources` alanında (virgülle ayrılmış, ör. "Bloomberg HT,
+    CNBC-e") tam olarak `_KAP_SOURCE_NAME` geçip geçmediğini kontrol eder -
+    basit bir substring kontrolü DEĞİL (ör. yanlışlıkla "KAPİTAL" gibi bir
+    kaynak adını eşleştirmesin diye)."""
+    return _KAP_SOURCE_NAME in (s.strip() for s in (record.sources or "").split(","))
 
 
 def _format_message(record: "NewsRecord") -> str:
@@ -139,7 +159,7 @@ def send_telegram_notification(record: "NewsRecord") -> bool:
     from src.db import get_subscriber_chat_ids_for_score
 
     score = record.importance_score if record.importance_score is not None else 0
-    chat_ids = get_subscriber_chat_ids_for_score(score)
+    chat_ids = get_subscriber_chat_ids_for_score(score, is_kap=_is_kap_record(record))
     if not chat_ids:
         logger.info(
             "Bu skoru (%s) karşılayan (kendi eşiğine göre) hiç abone yok, bildirim "
