@@ -34,6 +34,13 @@ from src.models import NewsGroup
 
 logger = logging.getLogger(__name__)
 
+# src/fetchers/kap_fetcher.py > KAP_SOURCE_NAME ile AYNI değer olmalıdır - bir
+# grubun KAP kaynaklı olup olmadığına (bkz. summarize_group, _build_user_prompt)
+# karar vermede kullanılır. src/notifier.py > _KAP_SOURCE_NAME'deki AYNI desen:
+# yerel bir sabit olarak tutulur, bu modülün kap_fetcher'a bağımlı olmasını
+# gerektirmez.
+_KAP_SOURCE_NAME = "KAP"
+
 # Google'ın Gemini ücretsiz katman GÜNLÜK (RPD) kotası Pasifik saatine göre
 # resetlenir (gerçek çalıştırmada gözlemlendi/doğrulandı, bkz. README) -
 # bu yüzden "gün" sınırı UTC/yerel saat değil, bu saat dilimine göre hesaplanır.
@@ -164,6 +171,67 @@ olmadan döndür:
 
 {"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": "", "title_tr": ""}
 """
+
+# KAP (Kamuyu Aydınlatma Platformu) özel durum açıklamaları için AYRI bir
+# önem skorlama rubriği (2026-08, kullanıcı isteği): SYSTEM_PROMPT'taki genel
+# ölçütler (Fed faiz kararı, savaş/jeopolitik kriz, büyük emtia hareketi vb.)
+# bir şirket özel durum açıklamasına doğrudan uygulanamıyordu - ör. bir
+# "temettü dağıtımı" veya "sermaye artırımı" kararının genel rubrikte hangi
+# puana denk geldiği BELİRSİZDİ, KAP kayıtları da genel haberlerle AYNI
+# ölçütle (ve dolayısıyla genelde düşük/rastgele skorlarla) değerlendiriliyordu.
+#
+# KAP_SYSTEM_PROMPT, SYSTEM_PROMPT'un KENDİSİ üzerinde bir .replace() ile
+# üretilir - bu YENİ bir string döndürür, SYSTEM_PROMPT'u DEĞİŞTİRMEZ. Böylece
+# özetleme/bölge/sektör/duygu/top_category/ticker/title_tr kuralları ve JSON
+# şeması BİREBİR AYNI kalır, SADECE "Önem skorlama kuralları" bölümü KAP'a
+# özgü, yatırımcı-kritikliğine göre sıralanmış bir rubrikle değiştirilir (bkz.
+# summarize_group > system_prompt seçimi). Genel/KAP-dışı haberlerin
+# skorlaması bu değişiklikten HİÇ ETKİLENMEZ (bkz. scratch_kap_prompt_test.py
+# regresyon kontrolü: SYSTEM_PROMPT nesnesi bu dosyada başka hiçbir yerde
+# mutasyona uğramaz).
+_GENERAL_IMPORTANCE_RUBRIC = """Önem skorlama kuralları (importance_score, 1-5 arası tam sayı):
+- 5 = Piyasayı doğrudan ve güçlü şekilde etkileyebilecek gelişme: merkez \
+bankası faiz kararı, beklenmedik enflasyon/işsizlik verisi, büyük bir döviz/\
+piyasa şoku, savaş/jeopolitik kriz, sistemik önemde bir şirketin iflası vb.
+- 4 = Önemli ama 5 kadar acil olmayan gelişme: büyük bir şirketin çeyreklik \
+sonuçları beklentilerden ciddi sapıyorsa, önemli bir düzenleyici karar, \
+büyük çaplı birleşme/satın alma, kritik bir emtia (petrol, altın vb.) \
+fiyatında sert hareket.
+- 3 = Orta düzeyde ilgi çekici, piyasa katılımcılarının bilmesi faydalı ama \
+acil aksiyon gerektirmeyen haber.
+- 2 = Rutin şirket/sektör haberi, küçük ölçekli gelişme.
+- 1 = Genel/ilgisiz/finansal önemi düşük haber (yaşam tarzı, spor, dizi/\
+film vb. finans sitesinde görünse bile).
+- importance_reason: skoru 1 kısa cümleyle (Türkçe) gerekçelendir."""
+
+_KAP_IMPORTANCE_RUBRIC = """Önem skorlama kuralları — KAP (Kamuyu Aydınlatma Platformu) özel durum \
+açıklaması (importance_score, 1-5 arası tam sayı):
+- 5 = Şirketin gidişatını temelden değiştirebilecek açıklama: iflas/\
+tasfiye/konkordato, halka arz (IPO) onayı/kesinleşmesi, büyük çaplı \
+birleşme/devralma kesinleşmesi, önemli bir soruşturma/yaptırım/kayyum \
+ataması, şirket cirosunun büyük kısmını etkileyecek ölçekte kritik \
+sözleşme/ihale kazanımı-kaybı, CEO/YK başkanı gibi üst düzey ani istifa/\
+görevden alma.
+- 4 = Yatırımcı kararını doğrudan etkileyebilecek önemli açıklama: bedelli/\
+bedelsiz sermaye artırımı, temettü dağıtım kararı (özellikle ilk kez veya \
+beklenmedik), önemli bir stratejik ortaklık/yatırım anlaşması, beklenmedik \
+ölçüde büyük finansal sonuç sapması, kredi derecelendirme değişikliği, \
+önemli bir yönetim kurulu üyesi değişikliği.
+- 3 = Bilgilendirici ama acil olmayan: rutin yönetim kurulu kararları, \
+orta ölçekli sözleşme/ihale kazanımları, olağan genel kurul toplantı \
+sonuçları (sürpriz içermeyen), şube açılışı/kapanışı.
+- 2 = Prosedürel/rutin şirket işlemi: unvan değişikliği tescili, imza \
+sirküleri, bağımsız denetim firması seçimi/onayı, standart bilgilendirme \
+güncellemesi.
+- 1 = Tamamen prosedürel/gündem niteliğinde, yatırımcı için pratik bilgi \
+taşımayan: toplantı çağrısı/gündemi, teknik/idari düzeltme bildirimi.
+- importance_reason: skoru 1 kısa cümleyle (Türkçe) gerekçelendir."""
+
+assert _GENERAL_IMPORTANCE_RUBRIC in SYSTEM_PROMPT, (
+    "SYSTEM_PROMPT metni beklenenden farklı - _GENERAL_IMPORTANCE_RUBRIC "
+    "bulunamadı, KAP_SYSTEM_PROMPT türetilemez."
+)
+KAP_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(_GENERAL_IMPORTANCE_RUBRIC, _KAP_IMPORTANCE_RUBRIC, 1)
 
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
 VALID_REGIONS = ("turkiye", "abd", "avrupa", "asya", "diger")
@@ -411,7 +479,16 @@ class Summarizer:
             # Aşırı uzun ham metinleri kırp (token/maliyet kontrolü)
             if len(snippet) > 1500:
                 snippet = snippet[:1500] + "..."
-            parts.append(f"Kaynak: {item.source}\nBaşlık: {item.title}\nMetin: {snippet or '(açıklama yok)'}")
+            # KAP kayıtlarında raw_text, KAP'ın kendi RESMİ taksonomi kategori
+            # metnini taşır (bkz. src/fetchers/kap_fetcher.py > subject) - bu
+            # serbest metin bir "açıklama" değil, bildirimin resmi türü. Genel
+            # "Metin:" etiketi bunu ayırt etmiyordu; LLM'e (özellikle
+            # KAP_SYSTEM_PROMPT'taki rubrikle) daha net bir sinyal vermek için
+            # ayrı bir etiket kullanılır (kullanıcı isteği, 2026-08).
+            text_label = (
+                "Bildirim Konusu (KAP taksonomisi)" if item.source == _KAP_SOURCE_NAME and snippet else "Metin"
+            )
+            parts.append(f"Kaynak: {item.source}\nBaşlık: {item.title}\n{text_label}: {snippet or '(açıklama yok)'}")
         return "\n\n---\n\n".join(parts)
 
     def summarize_group(self, group: NewsGroup) -> None:
@@ -440,8 +517,17 @@ class Summarizer:
             return
 
         user_prompt = self._build_user_prompt(group)
+        # Grup KAP kaynaklıysa (bkz. _KAP_SOURCE_NAME) KAP'a özgü önem
+        # skorlama rubriğini kullanan KAP_SYSTEM_PROMPT seçilir; aksi halde
+        # (KAP-dışı TÜM haberler) davranış AYNEN ÖNCEKİ GİBİDİR - varsayılan
+        # SYSTEM_PROMPT (bkz. _call_model_with_retry'nin varsayılan parametresi).
+        # group.sources (bkz. src/models.py) kaynak listesidir - bir grup
+        # nadiren birden fazla kaynaktan birleşmiş olabilir (bkz.
+        # deduplicator.py), bu yüzden tam eşitlik yerine "içeriyor mu"
+        # kontrolü yapılır (notifier.py > _is_kap_record ile AYNI desen).
+        system_prompt = KAP_SYSTEM_PROMPT if _KAP_SOURCE_NAME in group.sources else SYSTEM_PROMPT
         try:
-            raw_text = self._call_model_with_retry(user_prompt)
+            raw_text = self._call_model_with_retry(user_prompt, system_prompt=system_prompt)
         except Exception as exc:  # noqa: BLE001
             logger.error("Özetleme API çağrısı başarısız (%s): %s", group.representative.title, exc)
             self._apply_fallback(group)
