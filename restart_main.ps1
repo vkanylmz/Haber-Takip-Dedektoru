@@ -43,36 +43,72 @@ function Write-Log {
     Add-Content -Path $logFile -Value $line -Encoding utf8
 }
 
+# main.py'nin bir .tmp dosyasina AKTIF yazilmakta olan stdout/stderr'inden
+# YENI (Position'dan sonraki) baytlari okuyup kalici log dosyasina ekler ve
+# yeni pozisyonu dondurur. FileShare.ReadWrite ile tmp dosyasi, onu ayni anda
+# yazmakta olan cocuk surecle CAKISMADAN okunabiliyor.
+#
+# NEDEN BOYLE (basit "Start-Process -Wait, bitince kopyala" veya .NET
+# Process + OutputDataReceived/ErrorDataReceived event'leri YERINE): main.py
+# surekli calisan bir servis oldugu icin normalde HIC cikmiyor, "bitince
+# kopyala" yaklasimi loglari surec cikana kadar hic gostermezdi. Event tabanli
+# yaklasim ise denendi ama bu ortamda (venv python.exe + uzun sureli
+# multi-thread uvicorn sureci) OutputDataReceived/ErrorDataReceived hicbir
+# satir tetiklemedi (sebebi belirsiz, muhtemelen bu Python 3.14 kurulumunun
+# python.exe'sinin kendini bir alt surece yeniden baslatmasiyla ilgili) - bu
+# polling tabanli yontem basit dosya okuma/yazmaya dayandigi icin bu tuhafliktan
+# etkilenmiyor ve test edilip DOGRULANDI.
+function Copy-NewContent {
+    param([string]$Path, [string]$Destination, [long]$Position)
+    if (-not (Test-Path $Path)) { return $Position }
+    try {
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    } catch {
+        return $Position
+    }
+    try {
+        if ($fs.Length -le $Position) { return $Position }
+        $fs.Seek($Position, [System.IO.SeekOrigin]::Begin) | Out-Null
+        $toRead = $fs.Length - $Position
+        $buffer = New-Object byte[] $toRead
+        $fs.Read($buffer, 0, $toRead) | Out-Null
+        $text = [System.Text.Encoding]::UTF8.GetString($buffer)
+        Add-Content -Path $Destination -Value $text -Encoding utf8 -NoNewline
+        return $fs.Length
+    } finally {
+        $fs.Close()
+    }
+}
+
 Write-Log "restart_main.ps1 baslatildi (izleyici dongu calisiyor)."
 
 while ($true) {
     Write-Log "python main.py baslatiliyor..."
 
-    # Start-Process -RedirectStandardOutput/-RedirectStandardError her
-    # calistirmada dosyayi SIFIRLAR (append yok) - bu yuzden gecici dosyaya
-    # yazip, calisma bitince zaman damgali basligiyla birlikte kalici
-    # main_stdout.log/main_stderr.log'a EKLENIYOR (Add-Content). Boylece "&"
-    # cagri operatoru ile dogrudan yonlendirmede (2>>) PowerShell'in native
-    # stderr'i ErrorRecord'a sarmasi sorunu da yasanmiyor.
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $stdoutLog -Value "=== $timestamp python main.py baslatildi ===" -Encoding utf8
+    Add-Content -Path $stderrLog -Value "=== $timestamp python main.py baslatildi ===" -Encoding utf8
+
     $tmpOut = Join-Path $appLogDir "main_stdout.tmp"
     $tmpErr = Join-Path $appLogDir "main_stderr.tmp"
+    Remove-Item -Path $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
 
-    $proc = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "main.py" `
-        -WorkingDirectory $scriptDir -NoNewWindow -Wait -PassThru `
+    $proc = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-u main.py" `
+        -WorkingDirectory $scriptDir -NoNewWindow -PassThru `
         -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
-    $exitCode = $proc.ExitCode
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Add-Content -Path $stdoutLog -Value "=== $timestamp python main.py baslatildi (exit code: $exitCode) ===" -Encoding utf8
-    if (Test-Path $tmpOut) {
-        Get-Content -Path $tmpOut -Raw -ErrorAction SilentlyContinue | Add-Content -Path $stdoutLog -Encoding utf8
-        Remove-Item -Path $tmpOut -Force -ErrorAction SilentlyContinue
+    $outPos = 0
+    $errPos = 0
+    while (-not $proc.HasExited) {
+        Start-Sleep -Seconds 5
+        $outPos = Copy-NewContent -Path $tmpOut -Destination $stdoutLog -Position $outPos
+        $errPos = Copy-NewContent -Path $tmpErr -Destination $stderrLog -Position $errPos
     }
-    Add-Content -Path $stderrLog -Value "=== $timestamp python main.py baslatildi (exit code: $exitCode) ===" -Encoding utf8
-    if (Test-Path $tmpErr) {
-        Get-Content -Path $tmpErr -Raw -ErrorAction SilentlyContinue | Add-Content -Path $stderrLog -Encoding utf8
-        Remove-Item -Path $tmpErr -Force -ErrorAction SilentlyContinue
-    }
+    # Surec ciktiktan sonra tmp dosyasinda kalmis olabilecek son baytlari da yaz.
+    $outPos = Copy-NewContent -Path $tmpOut -Destination $stdoutLog -Position $outPos
+    $errPos = Copy-NewContent -Path $tmpErr -Destination $stderrLog -Position $errPos
+    $exitCode = $proc.ExitCode
+    Remove-Item -Path $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
 
     Write-Log "python main.py durdu (exit code: $exitCode). 10 saniye sonra yeniden baslatilacak."
     Start-Sleep -Seconds 10
