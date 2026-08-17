@@ -1264,6 +1264,53 @@ haberleri veritabanından okuyup en yeniden en eskiye doğru listeler:
   gerektirmez).
 - `/health` uç noktası basit bir sağlık kontrolü döner.
 
+## Dashboard Performansı
+
+Prod'da (Render free tier) ana sayfa (`/`) 1.4-3.2sn'de yükleniyordu, tek
+kullanıcıda bile. Kök neden analizi (2026-08):
+
+- **Şablon render'ı/kart sayısı darboğaz DEĞİL.** Yerel profilleme: config
+  yükleme + DB sorgusu + Jinja2 render toplamı 30-140ms. `dashboard.html`
+  100 kartı (varsayılan `web.max_items`) tek seviyeli `{% for r in records %}`
+  döngüsüyle basıyor, kart başına birkaç küçük iç liste (sektör etiketleri,
+  linkler) dışında ağır bir hesap/döngü yok.
+- **Asıl maliyet: her istekte CANLI bir Postgres sorgusu.** `dashboard()`
+  route'u, `/api/market-data`/`/api/sector-heatmap`'in aksine önbelleksizdi;
+  Render (Oregon) ile Neon (Frankfurt) arası kıtalararası ağ gecikmesi
+  (~200ms-2sn) sektör ısı haritasında daha önce teşhis edilenle AYNI kök
+  neden.
+
+Uygulanan düzeltme (`src/web/app.py`): market-data/ticker-quotes/
+sector-heatmap'te zaten kullanılan önbellekleme deseni, filtresiz/varsayılan
+görünüm için dashboard'a da uygulandı:
+
+- `_get_cached_default_records` — filtresiz (kaynak/sektör/bölge/duygu/önem/
+  arama yok, sıralama=en yeni) görünüm için 30sn TTL'li kayıt önbelleği.
+  Aktif filtre/arama varsa canlı sorguya düşülür.
+- `_get_cached_web_config` — `load_config()`'in web istekleri için 60sn
+  TTL'li sarmalayıcısı (disk I/O + YAML parse ~20-30ms).
+- `_get_cached_filter_options` — kaynak/sektör dropdown listeleri için
+  60sn TTL (önceden mevcuttu).
+
+Bilinçli tercih edilmeyen alternatifler:
+
+- **Lazy-load/sayfalama:** 100 kart tek seferde render zaten ucuz — darboğaz
+  DOM boyutu değil ağ gecikmesiydi, bu yüzden gereksiz istemci-taraflı
+  karmaşıklık eklenmedi.
+- **Ayrı async endpoint'e taşıma:** Ana haber listesi sayfanın birincil
+  içeriği (ilk anlamlı boya için önemli) — market-data/ticker-quotes gibi
+  "ikincil zenginleştirme" verisi değil, bu yüzden sunucu tarafı önbellekleme
+  tercih edildi. Sector-heatmap'in aksine (orada eşzamanlı istek yığılması
+  nedeniyle reaktif TTL'den proaktif arka plan yenilemeye geçildi), burada
+  trafik ölçeği (tekil/az sayıda kullanıcı) için basit TTL+kilit deseni
+  yeterli görüldü.
+
+Canlı ölçüm (Render, `https://finans-haber-dashboard.onrender.com/`,
+2026-08-17): önbellek isabetinde 0.30-0.75sn, 30sn'lik TTL yenileme anında
+1.4-1.7sn — soğuk başlangıç hariç 8 isteğin ortalaması ~0.79sn, eski
+1.4-3.2sn aralığına göre yaklaşık %55-75 iyileşme; en kötü durum (önbellek
+yenileme) bile artık eski aralığın üst ucuna değil alt ucuna denk geliyor.
+
 ## Veritabanı
 
 `src/db.py`, SQLAlchemy ile bir SQLite dosyasına (`config.yaml → database.path`,
