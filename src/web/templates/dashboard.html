@@ -582,7 +582,7 @@
        grid SADECE haber kartları bölümünü ikiye ayırır. */
     .dashboard-columns {
       display: grid;
-      grid-template-columns: minmax(280px, 340px) 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 1.25rem;
       align-items: start;
     }
@@ -590,12 +590,15 @@
     .kap-column {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 1.25rem;
       /* Sağ sütun kartları scroll ile uzadıkça sol sütun sayfa başında
          "yapışık" kalsın diye - dar/kompakt bir sütun için doğal bir his,
          KAP'ın "her an göz atılabilir" olması isteniyor. */
       position: sticky;
       top: 5.5rem;
+      /* grid item'ın minmax(0) OLMADAN taşan içerikle (uzun başlıklar vb.)
+         sütunu genişletmesini önler - standart bir CSS grid tuzağı. */
+      min-width: 0;
     }
 
     .general-column {
@@ -628,88 +631,6 @@
       font-size: 0.78rem;
       margin-top: 0.35rem;
       opacity: 0.8;
-    }
-
-    .kap-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.85rem;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .kap-card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.4rem;
-      margin-bottom: 0.4rem;
-    }
-
-    .kap-card-title {
-      font-family: var(--font-heading);
-      font-size: 0.92rem;
-      font-weight: 700;
-      line-height: 1.35;
-      margin: 0 0 0.3rem 0;
-      color: var(--text-primary);
-    }
-
-    .kap-card-meta {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-    }
-
-    .kap-card-summary {
-      font-size: 0.82rem;
-      color: var(--text-secondary);
-      line-height: 1.45;
-      margin: 0.4rem 0 0.5rem 0;
-    }
-
-    .kap-card-link {
-      font-size: 0.78rem;
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 600;
-    }
-
-    .kap-card-link:hover {
-      text-decoration: underline;
-    }
-
-    /* Duygu rozeti - mevcut sentiment-positive/-negative/-neutral/-unknown
-       class'ları (bkz. _record_to_view > sentiment_class) TEKRAR KULLANILIR,
-       yeni bir Jinja alanı/mantığı GEREKMEZ - sadece bu rozet bağlamında
-       renkli bir DOLGU olarak (genel akıştaki gibi düz metin renginden
-       farklı) stillendirilir. Yeşil=pozitif, kırmızı=negatif, gri=nötr
-       (kullanıcı kararı - --warn/amber BİLEREK kullanılmadı, o zaten
-       badge-important için ayrı bir anlam taşıyor). */
-    .kap-sentiment-badge {
-      display: inline-flex;
-      align-items: center;
-      flex-shrink: 0;
-      padding: 0.15rem 0.5rem;
-      border-radius: 6px;
-      font-size: 0.7rem;
-      font-weight: 700;
-    }
-
-    .kap-sentiment-badge.sentiment-positive {
-      background: var(--positive);
-      color: #fff;
-    }
-
-    .kap-sentiment-badge.sentiment-negative {
-      background: var(--negative);
-      color: #fff;
-    }
-
-    .kap-sentiment-badge.sentiment-neutral,
-    .kap-sentiment-badge.sentiment-unknown {
-      background: var(--surface-alt);
-      color: var(--text-secondary);
-      border: 1px solid var(--border);
     }
 
     /* Mobil: sekme YERİNE alt alta (stack) - bkz. plan gerekçesi (mevcut
@@ -1556,42 +1477,13 @@
         </div>
       </div>
 
-      <div class="dashboard-columns">
-        <section class="kap-column" aria-label="KAP Özel Durum Açıklamaları">
-          <h2 class="column-title">📋 KAP Bildirimleri</h2>
-
-          {% if not kap_records %}
-          <div class="empty kap-empty">
-            <div class="empty-icon">📋</div>
-            Henüz yeni bir KAP bildirimi yok.
-            <div class="empty-sub">Yeni özel durum açıklamaları geldikçe burada görünecek.</div>
-          </div>
-          {% endif %}
-
-          {% for r in kap_records %}
-          <div class="kap-card">
-            <div class="kap-card-top">
-              <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-              <span class="kap-sentiment-badge {{ r.sentiment_class }}">{{ r.sentiment_label or '—' }}</span>
-            </div>
-            <h3 class="kap-card-title">{{ r.title }}</h3>
-            <div class="kap-card-meta">{{ r.published_at }}</div>
-            <div class="kap-card-summary">{{ r.summary }}</div>
-            {% if r.links %}
-            <a class="kap-card-link" href="{{ r.links[0].link }}" target="_blank" rel="noopener">Detay ↗</a>
-            {% endif %}
-          </div>
-          {% endfor %}
-        </section>
-
-        <section class="general-column" aria-label="Genel Haber Akışı">
-          {% if not records %}
-          <div class="empty">
-            Henüz haber yok. Otomatik tarama devam ediyor…
-          </div>
-          {% endif %}
-
-          {% for r in records %}
+      {# KAP sütunu ve genel haber sütunu AYNI kart görünümünü paylaşır -
+         tek bir macro, iki farklı veri kaynağı (bkz. app.py > kap_records/
+         records, ikisi de aynı _record_to_view() ile üretiliyor, bu yüzden
+         alan yapıları zaten özdeş). Ayrı bir "kompakt KAP kartı" template'i
+         KASITLI OLARAK yok - kullanıcı isteği (2026-08-17): iki sütun görsel
+         olarak birebir aynı kart tipini kullanmalı, sadece veri farklı. #}
+      {% macro render_news_card(r) %}
       <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
         <summary class="card-top">
           <div>
@@ -1667,7 +1559,35 @@
           {% endif %}
         </div>
       </details>
-      {% endfor %}
+      {% endmacro %}
+
+      <div class="dashboard-columns">
+        <section class="kap-column" aria-label="KAP Özel Durum Açıklamaları">
+          <h2 class="column-title">📋 KAP Bildirimleri</h2>
+
+          {% if not kap_records %}
+          <div class="empty kap-empty">
+            <div class="empty-icon">📋</div>
+            Henüz yeni bir KAP bildirimi yok.
+            <div class="empty-sub">Yeni özel durum açıklamaları geldikçe burada görünecek.</div>
+          </div>
+          {% endif %}
+
+          {% for r in kap_records %}
+          {{ render_news_card(r) }}
+          {% endfor %}
+        </section>
+
+        <section class="general-column" aria-label="Genel Haber Akışı">
+          {% if not records %}
+          <div class="empty">
+            Henüz haber yok. Otomatik tarama devam ediyor…
+          </div>
+          {% endif %}
+
+          {% for r in records %}
+          {{ render_news_card(r) }}
+          {% endfor %}
         </section>
       </div>
   </main>
