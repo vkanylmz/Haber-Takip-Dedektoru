@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine, or_
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine, func, or_
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -888,6 +888,34 @@ def get_records_by_company_ticker(company_ticker: str, limit: int = 10, since: d
         if since is not None:
             query = query.filter(NewsRecord.first_seen_at >= since)
         return query.order_by(NewsRecord.first_seen_at.desc()).limit(limit).all()
+
+
+def get_latest_published_at(session: Session | None = None) -> datetime | None:
+    """Tüm veritabanındaki (aktif filtre/sıralama görünümünden BAĞIMSIZ) en
+    yeni `published_at` değerini döner - dashboard'un "bu veri güncel mi"
+    tazelik uyarısı için kullanılır (bkz. src/web/app.py > _is_data_stale).
+    `published_at` NULL olan kayıtlar (bkz. yayın tarihi bilinmiyor durumu)
+    MAX() tarafından zaten otomatik göz ardı edilir. Hiç kayıt yoksa/hepsi
+    NULL ise None döner.
+
+    ÖNEMLİ: SQLite backend'inde `func.max()` gibi agregat fonksiyonlar,
+    `DateTime(timezone=True)` kolonunun kendi tip dönüştürücüsünü (result
+    processor) ATLAYIP tz-naive bir datetime döndürebiliyor (SQLite gerçekte
+    tz bilgisi SAKLAMAZ, bu sütun tipi sadece SQLAlchemy seviyesinde bir
+    soyutlama) - canlı testte doğrulandı. Bu proje tüm datetime'ları HER ZAMAN
+    UTC olarak üretir (bkz. src/timezone_utils.py > to_turkey_time'daki AYNI
+    savunmacı normalizasyon) - o yüzden burada da tz-naive gelirse UTC kabul
+    edilip tz-aware'e çevrilir; aksi halde çağıran taraf tz-aware `datetime.now()`
+    ile çıkarma yaparken `TypeError: can't subtract offset-naive and
+    offset-aware datetimes` alır (gerçek bir hatayla yakalandı, bkz. testler)."""
+    if session is not None:
+        result = session.query(func.max(NewsRecord.published_at)).scalar()
+    else:
+        with get_session() as s:
+            result = s.query(func.max(NewsRecord.published_at)).scalar()
+    if result is not None and result.tzinfo is None:
+        result = result.replace(tzinfo=timezone.utc)
+    return result
 
 
 def get_records_since(since: datetime) -> list[NewsRecord]:

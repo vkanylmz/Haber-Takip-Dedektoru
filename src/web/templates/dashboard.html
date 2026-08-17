@@ -702,6 +702,23 @@
       background-color: var(--positive);
     }
 
+    /* Veri tazeliği uyarısı (2026-08-17) - Render'ın Neon DATABASE_URL kota
+       aşımı yüzünden donmuş veri gösterebildiği fark edilmesi üzerine
+       eklendi (bkz. src/web/app.py > is_data_stale). Kök nedeni ÇÖZMEZ,
+       sadece ziyaretçiyi "bu veri güncel" sanmaktan kurtarır. Mevcut
+       --warn/--warn-contrast token'ları (bkz. .badge-important) TEKRAR
+       KULLANILIR - hem açık hem koyu temada zaten tanımlı, yeni bir renk
+       çifti icat etmeye gerek yok. */
+    .stale-data-banner {
+      background: var(--warn);
+      color: var(--warn-contrast);
+      border-radius: 8px;
+      padding: 0.7rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: center;
+    }
+
     .fear-greed-container {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1462,6 +1479,13 @@
   </header>
 
   <main>
+    {% if is_data_stale %}
+    <div class="stale-data-banner">
+      ⚠️ Bu veri senkronizasyon beklediği için güncel olmayabilir (en son {{ latest_published_at_display }}
+      itibarıyla).
+    </div>
+    {% endif %}
+
     <div class="fear-greed-container">
       <div class="fear-greed-title">Piyasa Duygusu</div>
       <div class="fear-greed-bar">

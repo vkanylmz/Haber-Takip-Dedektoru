@@ -41,6 +41,7 @@ from src.db import (
     get_all_subscribers_overview,
     get_distinct_sectors,
     get_distinct_sources,
+    get_latest_published_at,
     get_records_by_company_ticker,
     get_records_since,
     get_recent_records,
@@ -255,6 +256,31 @@ def _get_cached_filter_options(session) -> tuple[list[str], list[dict[str, str]]
     _filter_options_cache["sectors"] = sectors
     _filter_options_cache["fetched_at"] = now
     return sources, sectors
+
+
+# --- Veri tazeliği uyarısı (2026-08-17, bkz. kullanıcı isteği - Render'ın
+# Neon'daki DATABASE_URL kota aşımı yüzünden 19 gün donmuş veri gösterdiğinin
+# fark edilmesi üzerine): kök nedeni (Neon senkronizasyonu) ÇÖZMEZ - sadece
+# ziyaretçiyi "bu veri güncel" sanmaktan kurtaran dürüst bir uyarı şeridi.
+# `get_latest_published_at` filtreden BAĞIMSIZ, tüm tabloyu tarar - aktif
+# filtre/sıralama ne olursa olsun tazelik durumu doğru hesaplanır. Diğer
+# önbelleklerle (bkz. yukarıdaki _FILTER_OPTIONS_CACHE_TTL_SECONDS) AYNI
+# TTL deseni - her istekte ekstra bir DB round-trip'e gerek yok, "6 saat"
+# gibi kaba bir eşik zaten saniyelik hassasiyet gerektirmiyor.
+_STALE_DATA_THRESHOLD_HOURS = 6
+_STALE_CHECK_CACHE_TTL_SECONDS = 60.0
+_stale_check_cache: dict[str, Any] = {"latest_published_at": None, "fetched_at": 0.0}
+
+
+def _get_cached_latest_published_at(session) -> datetime | None:
+    now = time.monotonic()
+    if (now - _stale_check_cache["fetched_at"]) < _STALE_CHECK_CACHE_TTL_SECONDS:
+        return _stale_check_cache["latest_published_at"]
+
+    latest = get_latest_published_at(session)
+    _stale_check_cache["latest_published_at"] = latest
+    _stale_check_cache["fetched_at"] = now
+    return latest
 
 
 @asynccontextmanager
@@ -494,6 +520,7 @@ def dashboard(
         else:
             kap_records = _get_cached_kap_records(session, kap_max_items)
         sources, sectors = _get_cached_filter_options(session)
+        latest_published_at = _get_cached_latest_published_at(session)
 
     # "KAP" dropdown'dan çıkarılır - sağ sütun onu artık hiç göstermediğinden
     # (yukarıdaki exclude_source_filter), seçilebilir bırakmak kafa karıştırır.
@@ -503,6 +530,16 @@ def dashboard(
     sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
 
     fear_greed_index = _compute_fear_greed_index(records)
+
+    # bkz. yukarıdaki "Veri tazeliği uyarısı" notu - latest_published_at
+    # NULL olabilir (ör. veritabanı tamamen boşsa) - bu durumda uyarı
+    # gösterilmez (henüz karşılaştırılacak bir "en yeni kayıt" yok, bu
+    # "eski veri" değil "hiç veri yok" durumudur, farklı bir sorun).
+    is_data_stale = (
+        latest_published_at is not None
+        and (datetime.now(timezone.utc) - latest_published_at) > timedelta(hours=_STALE_DATA_THRESHOLD_HOURS)
+    )
+    latest_published_at_display = format_turkey_time(latest_published_at) if latest_published_at else None
 
     views = [_record_to_view(r, threshold) for r in records]
     kap_views = [_record_to_view(r, threshold) for r in kap_records]
@@ -530,6 +567,8 @@ def dashboard(
             "fear_greed_index": fear_greed_index,
             "kap_categories": [{"slug": c, "label": KAP_CATEGORY_LABELS.get(c, c)} for c in VALID_KAP_CATEGORIES],
             "selected_kap_category": kap_category or "",
+            "is_data_stale": is_data_stale,
+            "latest_published_at_display": latest_published_at_display,
         },
     )
 
