@@ -636,6 +636,55 @@
       opacity: 0.8;
     }
 
+    /* KAP kategori filtre çipleri (2026-08) - link tabanlı (JS gerektirmez,
+       mevcut minimal-JS felsefesiyle tutarlı), sayfa navigasyonuyla filtre
+       uygular (bkz. dashboard() > kap_category, src/web/app.py). */
+    .kap-category-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .kap-category-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .kap-category-chip:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .kap-category-chip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Ticker rozeti (2026-08) - KAP kayıtlarında KAP API'sinin OTORİTER
+       stockCodes alanından, genel haberlerde LLM tahmininden (bkz.
+       src/summarizer.py > company_ticker) - kart meta satırında, sektör
+       etiketleriyle AYNI hizada ama ayırt edici (monospace, hafif dolgu). */
+    .ticker-badge {
+      font-family: var(--font-mono, monospace);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--surface-alt);
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+    }
+
     /* Mobil: sekme YERİNE alt alta (stack) - bkz. plan gerekçesi (mevcut
        minimal-JS felsefesiyle tutarlı, ekstra state/JS gerektirmez). KAP
        DOM'da zaten önce geldiğinden otomatik olarak üstte görünür. */
@@ -1492,6 +1541,14 @@
               <span>{{ r.published_at }}</span>
               <span class="meta-divider">|</span>
               <span>Kaynak: {{ r.sources }}</span>
+              {% if r.company_ticker %}
+              <span class="meta-divider">|</span>
+              <span class="ticker-badge">{{ r.company_ticker }}</span>
+              {% endif %}
+              {% if r.kap_category_label %}
+              <span class="meta-divider">|</span>
+              <span class="sector-tag">{{ r.kap_category_label }}</span>
+              {% endif %}
               {% if r.sentiment_label %}
               <span class="meta-divider">|</span>
               <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
@@ -1560,15 +1617,39 @@
       </details>
       {% endmacro %}
 
+      {# KAP kategori filtre linklerinde, sağ sütunun mevcut genel filtrelerini
+         (kaynak/sektör/bölge/duygu/önem/arama/sıralama) KORUYAN ortak bir
+         query-string parçası - KAP filtresi kendi ekseninde bağımsız olsa da
+         (bkz. dashboard() > kap_category notu) bir kategori çipine tıklamak
+         kullanıcının sağ sütunda az önce uyguladığı filtreleri SIFIRLAMAMALI. #}
+      {% set _kap_chip_base_qs = "source=" ~ (selected_source|urlencode) ~ "&sector=" ~ (selected_sector|urlencode) ~
+         "&region=" ~ (selected_region|urlencode) ~ "&sentiment=" ~ (selected_sentiment|urlencode) ~
+         "&min_importance=" ~ (selected_min_importance or '') ~ "&q=" ~ (selected_query|urlencode) ~
+         "&sort=" ~ (selected_sort|urlencode) %}
+
       <div class="dashboard-columns">
         <section class="kap-column" aria-label="KAP Özel Durum Açıklamaları">
           <h2 class="column-title">📋 KAP Bildirimleri</h2>
 
+          <div class="kap-category-filters">
+            <a href="/?{{ _kap_chip_base_qs }}&kap_category="
+              class="kap-category-chip {% if not selected_kap_category %}active{% endif %}">Tümü</a>
+            {% for c in kap_categories %}
+            <a href="/?{{ _kap_chip_base_qs }}&kap_category={{ c.slug }}"
+              class="kap-category-chip {% if selected_kap_category == c.slug %}active{% endif %}">{{ c.label }}</a>
+            {% endfor %}
+          </div>
+
           {% if not kap_records %}
           <div class="empty kap-empty">
             <div class="empty-icon">📋</div>
+            {% if selected_kap_category %}
+            Bu kategoride henüz bir KAP bildirimi yok.
+            <div class="empty-sub">Farklı bir kategori dene veya "Tümü"ne dön.</div>
+            {% else %}
             Henüz yeni bir KAP bildirimi yok.
             <div class="empty-sub">Yeni özel durum açıklamaları geldikçe burada görünecek.</div>
+            {% endif %}
           </div>
           {% endif %}
 

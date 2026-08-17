@@ -105,6 +105,12 @@ class NewsRecord(Base):
     # belirlenemedi ya da bu özellik eklenmeden önce özetlenmiş eski bir haber.
     company_ticker = Column(String(64), nullable=True)
 
+    # SADECE KAP kaynaklı kayıtlarda dolu (bkz. src/summarizer.py >
+    # VALID_KAP_CATEGORIES/KAP_CATEGORY_LABELS, src/models.py >
+    # NewsGroup.kap_category) - 8 sabit kategoriden biri. KAP-dışı
+    # kayıtlarda/bu özellik eklenmeden önceki KAP kayıtlarında None.
+    kap_category = Column(String(32), nullable=True)
+
     notified = Column(Boolean, nullable=False, default=False)
     notified_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -527,6 +533,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "title_tr" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN title_tr TEXT")
             logger.info("Veritabanı migrasyonu: news_records.title_tr kolonu eklendi.")
+        if "kap_category" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN kap_category VARCHAR(32)")
+            logger.info("Veritabanı migrasyonu: news_records.kap_category kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -673,6 +682,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             market_impact=group.market_impact,
             top_category=group.top_category,
             company_ticker=group.company_ticker,
+            kap_category=group.kap_category,
             notified=False,
             first_seen_at=now,
             last_seen_at=now,
@@ -692,6 +702,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.market_impact = group.market_impact or record.market_impact
         record.top_category = group.top_category or record.top_category
         record.company_ticker = group.company_ticker or record.company_ticker
+        record.kap_category = group.kap_category or record.kap_category
         record.title_tr = group.title_tr or record.title_tr
         record.last_seen_at = now
 
@@ -727,8 +738,14 @@ def get_recent_records(
     sort_order: str = "newest",
     category_filter: str | None = None,
     additional_sector_filter: str | None = None,
+    kap_category_filter: str | None = None,
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
+    if kap_category_filter:
+        # KAP sütunu için (bkz. src/web/app.py > dashboard() > kap_category
+        # query param) - `top_category` gibi düz bir string kolon, JSON liste
+        # DEĞİL (bkz. src/summarizer.py > VALID_KAP_CATEGORIES).
+        query = query.filter(NewsRecord.kap_category == kap_category_filter)
     if category_filter:
         # `top_category` sector/regions'ın AKSİNE düz bir string kolon
         # (JSON listesi DEĞİL, TEK bir değer) - bkz. src/summarizer.py >

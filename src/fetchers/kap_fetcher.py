@@ -208,6 +208,14 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
             f"{company}: {title}" if company and not title.upper().startswith(company.upper()) else title
         )
 
+        # stockCodes: KAP API'sinin kendi, OTORİTER hisse kodu alanı (bazen
+        # virgülle ayrılmış birden fazla kod - ör. "YKB, YKBNK" - eski+yeni
+        # kod veya farklı enstrüman sınıfı için, bkz. 2026-08-17 canlı test).
+        # kap_subject/kap_stock_codes ayrı, DAİMA dolu alanlar olarak taşınır
+        # (raw_text'in aksine - o sadece content varsa subject taşır) - bkz.
+        # src/models.py > NewsItem, src/summarizer.py > kap_category/ticker.
+        stock_codes = (raw.get("stockCodes") or "").strip()
+
         items.append(
             NewsItem(
                 title=display_title,
@@ -215,6 +223,8 @@ def fetch_kap(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
                 source=name,
                 published_at=publish_dt,
                 raw_text=subject if content else "",
+                kap_subject=subject,
+                kap_stock_codes=stock_codes,
             )
         )
 

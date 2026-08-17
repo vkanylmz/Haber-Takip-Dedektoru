@@ -233,8 +233,124 @@ assert _GENERAL_IMPORTANCE_RUBRIC in SYSTEM_PROMPT, (
 )
 KAP_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(_GENERAL_IMPORTANCE_RUBRIC, _KAP_IMPORTANCE_RUBRIC, 1)
 
+# KAP bildirim türü/kategori sınıflandırması (2026-08, kullanıcı isteği - bkz.
+# VALID_KAP_CATEGORIES). Bu bölüm SADECE KAP_SYSTEM_PROMPT'a eklenir (bir
+# sonraki .replace() ile) - genel SYSTEM_PROMPT'a HİÇ dokunulmaz. Kategori
+# ataması ÖNCELİKLE kural tabanlıdır (bkz. _rule_based_kap_category, KAP'ın
+# kendi `subject` taksonomisine dayanır - ~%77'yi ücretsiz/güvenilir şekilde
+# kapsar, 3 aylık gerçek veriyle doğrulandı). Bu blok, kural eşleşmediğinde
+# (ör. subject="Özel Durum Açıklaması (Genel)" gibi KAP'ın kendisinin de
+# genel bir kovaya attığı ~%23'lük kesim, ya da Birleşme/Yeni İş İlişkisi
+# gibi ayrı bir kova AÇILMAYIP "diger"e dahil edilen az sayıdaki tür)
+# devreye giren LLM YEDEĞİ içindir - AYNI çağrıda, ek bir API isteği YOK.
+_KAP_CATEGORY_INSTRUCTIONS = """KAP bildirim türü sınıflandırma kuralları (kap_category, TEK bir değer):
+- "sermaye_artirimi": Sermaye artırımı/azaltımı, bedelli/bedelsiz sermaye \
+artırımı, ihraç tavanı, kayıtlı sermaye tavanı ile ilgili bildirimler.
+- "temettu": Kâr payı/temettü dağıtım kararı veya dağıtılmama kararı \
+bildirimleri.
+- "genel_kurul": Genel kurul toplantı çağrısı, gündemi veya sonuçlarına \
+ilişkin bildirimler.
+- "finansal_rapor": Finansal rapor, faaliyet raporu, sorumluluk beyanı, \
+sürdürülebilirlik raporu gibi periyodik/rutin raporlama bildirimleri.
+- "borclanma_araci": Tahvil/bono gibi pay dışı sermaye piyasası araçlarının \
+ihracı, kupon ödemesi, itfası ile ilgili bildirimler.
+- "hukuki": Dava açılması/gelişmeleri, kayyım ataması/kaldırılması, tedbir \
+kararı, faaliyetin durdurulması, soruşturma/yaptırım gibi hukuki/idari \
+süreçler.
+- "yonetim_kurumsal": Yönetim kurulu üye/komite değişiklikleri, esas \
+sözleşme tadili, bağımsız denetim kuruluşu seçimi, unvan/merkez değişikliği \
+gibi kurumsal yapı bildirimleri.
+- "diger": Yukarıdakilerin hiçbirine net şekilde girmiyorsa (ör. birleşme/\
+devralma, yeni iş ilişkisi/sözleşme, ihale, pay alım-satımı, kredi \
+derecelendirmesi, olağandışı fiyat hareketi gibi daha az sık görülen veya \
+karma içerikli bildirimler)."""
+
+_JSON_SCHEMA_LINE = (
+    '{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, '
+    '"importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], '
+    '"sentiment": "notr", "market_impact": "...", "top_category": "makro", '
+    '"company_ticker": "", "title_tr": ""}'
+)
+_KAP_JSON_SCHEMA_LINE = (
+    '{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, '
+    '"importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], '
+    '"sentiment": "notr", "market_impact": "...", "top_category": "makro", '
+    '"company_ticker": "", "title_tr": "", "kap_category": "diger"}'
+)
+
+for _label, _needle in (("_JSON_SCHEMA_LINE", _JSON_SCHEMA_LINE),):
+    assert _needle in SYSTEM_PROMPT, f"SYSTEM_PROMPT metni beklenenden farklı - {_label} bulunamadı."
+
+KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(
+    "\nBölge etiketleme kuralları", f"\n{_KAP_CATEGORY_INSTRUCTIONS}\n\nBölge etiketleme kuralları", 1
+)
+KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(_JSON_SCHEMA_LINE, _KAP_JSON_SCHEMA_LINE, 1)
+
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
 VALID_REGIONS = ("turkiye", "abd", "avrupa", "asya", "diger")
+
+# KAP bildirim türü kategorileri (bkz. _KAP_CATEGORY_INSTRUCTIONS,
+# src/models.py > NewsGroup.kap_category) - kullanıcı kararı (2026-08),
+# 3 aylık gerçek KAP verisi analiziyle belirlendi.
+VALID_KAP_CATEGORIES = (
+    "sermaye_artirimi",
+    "temettu",
+    "genel_kurul",
+    "finansal_rapor",
+    "borclanma_araci",
+    "hukuki",
+    "yonetim_kurumsal",
+    "diger",
+)
+
+KAP_CATEGORY_LABELS = {
+    "sermaye_artirimi": "💰 Sermaye Artırımı",
+    "temettu": "💵 Temettü/Kâr Payı",
+    "genel_kurul": "🏛️ Genel Kurul",
+    "finansal_rapor": "📊 Finansal/Faaliyet Raporu",
+    "borclanma_araci": "📄 Borçlanma Aracı/Tahvil",
+    "hukuki": "⚖️ Hukuki/Yaptırım",
+    "yonetim_kurumsal": "🏢 Yönetim/Kurumsal Yapı",
+    "diger": "📋 Diğer",
+}
+
+# KAP'ın KENDİ `subject` taksonomisinden (bkz. src/fetchers/kap_fetcher.py >
+# kap_subject) bizim 8 kategorimize KURAL TABANLI eşleme - 3 aylık gerçek
+# veri analiziyle (2026-08-17) belirlendi, ~%77'lik kesimi ücretsiz/%100
+# tutarlı şekilde kapsar. Burada OLMAYAN bir subject (ör. "Özel Durum
+# Açıklaması (Genel)", "Yeni İş İlişkisi", "Birleşme İşlemlerine İlişkin
+# Bildirim") KASITLI OLARAK eşlenmez - bunlar için LLM'in kap_category
+# yanıtına düşülür (bkz. _rule_based_kap_category, summarize_group).
+_KAP_SUBJECT_CATEGORY_MAP = {
+    "Sermaye Artırımı - Azaltımı İşlemlerine İlişkin Bildirim": "sermaye_artirimi",
+    "İhraç Tavanına İlişkin Bildirim": "sermaye_artirimi",
+    "Kayıtlı Sermaye Tavanı İşlemlerine İlişkin Bildirim": "sermaye_artirimi",
+    "Kar Payı Dağıtım İşlemlerine İlişkin Bildirim": "temettu",
+    "Genel Kurul İşlemlerine İlişkin Bildirim": "genel_kurul",
+    "Genel Kurul Bildirimi": "genel_kurul",
+    "Finansal Rapor": "finansal_rapor",
+    "Sorumluluk Beyanı (Konsolide Olmayan)": "finansal_rapor",
+    "Sorumluluk Beyanı (Konsolide)": "finansal_rapor",
+    "Faaliyet Raporu (Konsolide Olmayan)": "finansal_rapor",
+    "Faaliyet Raporu (Konsolide)": "finansal_rapor",
+    "TSRS Uyumlu Sürdürülebilirlik Raporu": "finansal_rapor",
+    "Pay Dışında Sermaye Piyasası Aracı İşlemlerine İlişkin Bildirim (Faiz İçeren)": "borclanma_araci",
+    "Pay Dışında Sermaye Piyasası Aracı İşlemlerine İlişkin Bildirim (Faizsiz)": "borclanma_araci",
+    "Ortaklık Aleyhine Dava Açılması veya Davaya İlişkin Gelişmeler": "hukuki",
+    "Faaliyetlerin Kısmen veya Tamamen Durdurulması ya da İmkansız Hale Gelmesi": "hukuki",
+    "Sermaye Piyasası Kurulu Tedbir Kararı": "hukuki",
+    "Bağımsız Denetim Kuruluşunun Belirlenmesi": "yonetim_kurumsal",
+    "Yönetim Kurulu Komiteleri": "yonetim_kurumsal",
+    "Esas Sözleşme Tadili": "yonetim_kurumsal",
+    "Kurumsal Yönetim İlkelerine Uyum Derecelendirmesi": "yonetim_kurumsal",
+    "Şirket Merkezi Değişikliği": "yonetim_kurumsal",
+}
+
+
+def _rule_based_kap_category(subject: str) -> str | None:
+    """`_KAP_SUBJECT_CATEGORY_MAP`'te tam eşleşme varsa kategoriyi döner,
+    yoksa None (çağıran taraf LLM'in kap_category yanıtına düşer)."""
+    return _KAP_SUBJECT_CATEGORY_MAP.get((subject or "").strip())
 
 # Bölge etiketlerinin dashboard'da gösterilecek Türkçe karşılıkları.
 REGION_LABELS = {
@@ -525,7 +641,8 @@ class Summarizer:
         # nadiren birden fazla kaynaktan birleşmiş olabilir (bkz.
         # deduplicator.py), bu yüzden tam eşitlik yerine "içeriyor mu"
         # kontrolü yapılır (notifier.py > _is_kap_record ile AYNI desen).
-        system_prompt = KAP_SYSTEM_PROMPT if _KAP_SOURCE_NAME in group.sources else SYSTEM_PROMPT
+        is_kap = _KAP_SOURCE_NAME in group.sources
+        system_prompt = KAP_SYSTEM_PROMPT if is_kap else SYSTEM_PROMPT
         try:
             raw_text = self._call_model_with_retry(user_prompt, system_prompt=system_prompt)
         except Exception as exc:  # noqa: BLE001
@@ -549,6 +666,7 @@ class Summarizer:
             group.top_category = None
             group.company_ticker = None
             group.title_tr = None
+            group.kap_category = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -567,6 +685,25 @@ class Summarizer:
         group.top_category = self._parse_top_category(parsed.get("top_category"))
         group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
         group.title_tr = str(parsed.get("title_tr", "")).strip() or None
+
+        if is_kap:
+            # 1) Kategori: ÖNCE KAP'ın kendi `subject` taksonomisine kural
+            #    tabanlı eşleme denenir (ücretsiz, %100 tutarlı) - eşleşmezse
+            #    (ör. "Özel Durum Açıklaması (Genel)") LLM'in AYNI çağrıda
+            #    döndürdüğü kap_category'e düşülür (bkz. _KAP_CATEGORY_INSTRUCTIONS).
+            group.kap_category = _rule_based_kap_category(
+                group.representative.kap_subject
+            ) or self._parse_kap_category(parsed.get("kap_category"))
+
+            # 2) Ticker: KAP API'sinin OTORİTER stockCodes alanı, LLM'in
+            #    tahminini (yukarıda zaten atanmış company_ticker) EZER -
+            #    bkz. _kap_company_ticker_from_stock_codes. Boşsa (nadir/
+            #    savunmacı durum) LLM'in tahmini korunur.
+            kap_ticker = self._kap_company_ticker_from_stock_codes(
+                group.representative.kap_stock_codes
+            )
+            if kap_ticker:
+                group.company_ticker = kap_ticker
 
     def _current_quota_day(self) -> str:
         return datetime.now(_QUOTA_RESET_TZ).strftime("%Y-%m-%d")
@@ -814,6 +951,28 @@ class Summarizer:
             return None
         return value
 
+    @staticmethod
+    def _parse_kap_category(raw_value: Any) -> str:
+        """Modelin döndürdüğü `kap_category` değerini VALID_KAP_CATEGORIES ile
+        sınırlar - bilinmeyen/eksik bir değer gelirse "diger" döner (None
+        DEĞİL - top_category'nin aksine, kap_category SADECE KAP gruplarında
+        istendiğinden her zaman anlamlı bir değere sahip olmalı)."""
+        value = str(raw_value).strip().lower() if raw_value is not None else ""
+        return value if value in VALID_KAP_CATEGORIES else "diger"
+
+    @staticmethod
+    def _kap_company_ticker_from_stock_codes(stock_codes: str) -> str | None:
+        """KAP API'sinin OTORİTER `stockCodes` alanından ("YKB, YKBNK" gibi
+        virgülle ayrılmış, bazen birden fazla kod) LLM'in tahminini EZEN bir
+        company_ticker string'i üretir - "BIST: YKB, BIST: YKBNK" formatında.
+        Boşsa None döner (LLM'in kendi tahmini korunur - bkz. summarize_group,
+        3 aylık canlı testte bu alan KAP'ın ODA/FR/CA kapsamında HER ZAMAN
+        dolu geliyordu ama savunmacı olarak yine de None fallback'i var)."""
+        codes = [c.strip() for c in (stock_codes or "").split(",") if c.strip()]
+        if not codes:
+            return None
+        return ", ".join(f"BIST: {c}" for c in codes)
+
     def select_daily_highlights(self, records: list[Any]) -> list[dict[str, Any]]:
         """Verilen (son 24 saatteki) `NewsRecord` listesi arasından GERÇEKTEN
         önemli 5-10 tanesini seçtirmek için Gemini/Claude'a TEK bir ek çağrı
@@ -971,3 +1130,4 @@ class Summarizer:
         group.top_category = None
         group.company_ticker = None
         group.title_tr = None
+        group.kap_category = None

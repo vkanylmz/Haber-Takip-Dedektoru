@@ -15,6 +15,17 @@ class NewsItem:
     source: str
     published_at: datetime | None
     raw_text: str = ""  # RSS/HTML'den gelen ham özet/açıklama metni
+    # SADECE KAP kaynaklı kayıtlarda dolu (bkz. src/fetchers/kap_fetcher.py) -
+    # diğer TÜM kaynaklarda boş string kalır. `kap_subject`, KAP'ın bildirimi
+    # ALIRKEN kendi atadığı SABİT taksonomi kategorisidir (ör. "Sermaye
+    # Artırımı - Azaltımı İşlemlerine İlişkin Bildirim") - kural tabanlı
+    # kap_category atamasının birincil girdisi (bkz. summarizer.py >
+    # _rule_based_kap_category). `kap_stock_codes`, KAP API'sinin kendi
+    # `stockCodes` alanı - virgülle ayrılmış, BAZEN birden fazla kod
+    # içerebilir (ör. "YKB, YKBNK") - LLM'in tahmin ettiği company_ticker
+    # YERİNE bu OTORİTER kaynak kullanılır (bkz. summarize_group).
+    kap_subject: str = ""
+    kap_stock_codes: str = ""
 
 
 @dataclass
@@ -62,6 +73,15 @@ class NewsGroup:
     # Başlık zaten Türkçe ise None kalır - gösterim tarafı parantez içi
     # çeviri EKLEMEZ (bkz. src/db.py > NewsRecord.title_tr).
     title_tr: str | None = None
+    # SADECE KAP kaynaklı gruplarda anlamlı (bkz. src/summarizer.py >
+    # VALID_KAP_CATEGORIES, KAP_CATEGORY_LABELS): 8 sabit kategoriden biri
+    # ("sermaye_artirimi", "temettu", "genel_kurul", "finansal_rapor",
+    # "borclanma_araci", "hukuki", "yonetim_kurumsal", "diger"). Öncelik
+    # `kap_subject`'e uygulanan kural tabanlı eşlemedir (bkz.
+    # _rule_based_kap_category) - eşleşmezse (ör. subject="Özel Durum
+    # Açıklaması (Genel)") KAP_SYSTEM_PROMPT'un LLM'den istediği
+    # `kap_category` alanına düşülür. KAP-dışı haberlerde HER ZAMAN None.
+    kap_category: str | None = None
 
     @property
     def representative(self) -> NewsItem:

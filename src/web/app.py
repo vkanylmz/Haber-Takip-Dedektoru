@@ -51,10 +51,12 @@ from src.db import (
     upsert_push_subscription,
 )
 from src.summarizer import (
+    KAP_CATEGORY_LABELS,
     REGION_LABELS,
     SECTOR_LABELS,
     SENTIMENT_LABELS,
     TOP_CATEGORY_LABELS,
+    VALID_KAP_CATEGORIES,
     VALID_REGIONS,
     VALID_SENTIMENTS,
     VALID_TOP_CATEGORIES,
@@ -340,6 +342,8 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "source_comparison": source_comparison,
         "company_ticker": record.company_ticker,
         "ticker_quote": None,
+        "kap_category": record.kap_category,
+        "kap_category_label": KAP_CATEGORY_LABELS.get(record.kap_category or "", None),
     }
 
 
@@ -430,6 +434,7 @@ def dashboard(
     min_importance: str | None = None,
     q: str | None = None,
     sort: str = "newest",
+    kap_category: str | None = None,
 ) -> HTMLResponse:
     config = _get_cached_web_config()
     threshold = config.get("importance", {}).get("threshold", 4)
@@ -471,10 +476,23 @@ def dashboard(
                 search_query=q or None,
                 sort_order=sort_normalized,
             )
-        # KAP sütunu (sol) BİLİNÇLİ OLARAK yukarıdaki filtre formundan
-        # ETKİLENMEZ - her zaman filtresiz, en yeni özel durum açıklamaları
-        # (bkz. _get_cached_kap_records notu, kullanıcı kararı 2026-08-17).
-        kap_records = _get_cached_kap_records(session, kap_max_items)
+        # KAP sütunu (sol) BİLİNÇLİ OLARAK yukarıdaki genel filtre formundan
+        # (kaynak/sektör/bölge/duygu/önem/arama) ETKİLENMEZ - her zaman
+        # filtresiz, en yeni özel durum açıklamaları (bkz. _get_cached_kap_records
+        # notu, kullanıcı kararı 2026-08-17). SADECE `kap_category` (2026-08,
+        # bkz. VALID_KAP_CATEGORIES) bunun DIŞINDA - KAP sütununa özel, ayrı
+        # bir filtre ekseni. Aktifse (genel filtre formundaki AYNI mantıkla,
+        # bkz. yukarıdaki is_default_view) önbellek ATLANIR, canlı sorgu yapılır.
+        if kap_category:
+            kap_records = get_recent_records(
+                session,
+                limit=kap_max_items,
+                source_filter=KAP_SOURCE_NAME,
+                kap_category_filter=kap_category,
+                sort_order="newest",
+            )
+        else:
+            kap_records = _get_cached_kap_records(session, kap_max_items)
         sources, sectors = _get_cached_filter_options(session)
 
     # "KAP" dropdown'dan çıkarılır - sağ sütun onu artık hiç göstermediğinden
@@ -510,6 +528,8 @@ def dashboard(
             "threshold": threshold,
             "total_count": len(views),
             "fear_greed_index": fear_greed_index,
+            "kap_categories": [{"slug": c, "label": KAP_CATEGORY_LABELS.get(c, c)} for c in VALID_KAP_CATEGORIES],
+            "selected_kap_category": kap_category or "",
         },
     )
 
