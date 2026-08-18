@@ -173,13 +173,13 @@ def _get_cached_kap_records(session, max_items: int) -> list[NewsRecord]:
         return records
 
 
-# --- Ana sayfa (view=home) "önemli içerik" önbelleği (2026-08-18) ---
-# Hero/Son Dakika/Öne Çıkan Haberler VE sayfa altındaki "KAP+Haber karışık
-# önemli içerik" bölümü AYNI kaynaktan (bu önbellek) beslenir - kaynak
-# (KAP dahil) FARK ETMEKSİZİN, SADECE `_HOME_FEATURED_MIN_IMPORTANCE` eşiğini
-# geçen kayıtlar (kullanıcı kararı, 2026-08-18: düşük skorla DOLDURULMASIN,
-# eşiği geçen yeterli kayıt yoksa bölüm daha az öğeyle gösterilir). Diğer
-# önbelleklerle AYNI TTL/kilit deseni.
+# --- Ana sayfa (view=home) "KAP+Haber karışık önemli içerik" (sayfa altı)
+# önbelleği (2026-08-18) --- Kaynak (KAP dahil) FARK ETMEKSİZİN, SADECE
+# `_HOME_FEATURED_MIN_IMPORTANCE` eşiğini geçen kayıtlar (kullanıcı kararı,
+# 2026-08-18: düşük skorla DOLDURULMASIN, eşiği geçen yeterli kayıt yoksa
+# bölüm daha az öğeyle gösterilir). Hero/Son Dakika/Öne Çıkan Haberler artık
+# AYRI bir sorgudan besleniyor (bkz. altındaki _get_cached_hero_carousel_records,
+# kullanıcı kararı 2026-08-18: "en yüksek 10, eşiksiz").
 _HOME_FEATURED_MIN_IMPORTANCE = 4
 _HOME_IMPORTANT_CACHE_TTL_SECONDS = 30.0
 _home_important_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
@@ -200,6 +200,37 @@ def _get_cached_home_important_records(session, limit: int) -> list[NewsRecord]:
         )
         _home_important_cache["records"] = records
         _home_important_cache["fetched_at"] = now
+        return records
+
+
+# --- Hero/Son Dakika/Öne Çıkan Haberler carousel önbelleği (2026-08-18,
+# kullanıcı kararı) --- Önceki davranış (>=4 eşik, bazı saatlerde neredeyse
+# boş) YERİNE: kaynak farketmeksizin (KAP+genel), SON 48 SAATİN önem
+# skoruna göre en yüksek 10 kaydı - eşik YOK, döngü her zaman dolu/gezinilebilir
+# olsun diye. `min_importance=1` sadece HİÇ skorlanmamış (None) kayıtları
+# eler - "eşiksiz" gereksinimiyle ÇELİŞMEZ (1-5 arası her skor uygun).
+_HERO_CAROUSEL_WINDOW_HOURS = 48
+_HERO_CAROUSEL_LIMIT = 10
+_HERO_CAROUSEL_CACHE_TTL_SECONDS = 30.0
+_hero_carousel_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
+_hero_carousel_lock = threading.Lock()
+
+
+def _get_cached_hero_carousel_records(session) -> list[NewsRecord]:
+    now = time.monotonic()
+    if _hero_carousel_cache["records"] is not None and (now - _hero_carousel_cache["fetched_at"]) < _HERO_CAROUSEL_CACHE_TTL_SECONDS:
+        return _hero_carousel_cache["records"]
+
+    with _hero_carousel_lock:
+        now = time.monotonic()
+        if _hero_carousel_cache["records"] is not None and (now - _hero_carousel_cache["fetched_at"]) < _HERO_CAROUSEL_CACHE_TTL_SECONDS:
+            return _hero_carousel_cache["records"]
+        since = datetime.now(timezone.utc) - timedelta(hours=_HERO_CAROUSEL_WINDOW_HOURS)
+        records = get_recent_records(
+            session, limit=_HERO_CAROUSEL_LIMIT, since=since, min_importance=1, sort_order="importance"
+        )
+        _hero_carousel_cache["records"] = records
+        _hero_carousel_cache["fetched_at"] = now
         return records
 
 
@@ -536,6 +567,7 @@ def dashboard(
     kap_records: list[NewsRecord] = []
     kap_important_records: list[NewsRecord] = []
     home_important_records: list[NewsRecord] = []
+    hero_carousel_records: list[NewsRecord] = []
 
     with get_session() as session:
         if view_normalized == "haberler":
@@ -604,6 +636,7 @@ def dashboard(
 
         if view_normalized == "home":
             home_important_records = _get_cached_home_important_records(session, limit=20)
+            hero_carousel_records = _get_cached_hero_carousel_records(session)
 
         # Piyasa Duygusu (bkz. _compute_fear_greed_index) için HER ZAMAN
         # genel/filtresiz "en yeni N" örneklemi kullanılır - hangi sekmede
@@ -667,14 +700,19 @@ def dashboard(
     kap_views = [_record_to_view(r, threshold) for r in kap_records]
     kap_important_views = [_record_to_view(r, threshold) for r in kap_important_records]
     home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
+    hero_carousel_views = [_record_to_view(r, threshold) for r in hero_carousel_records]
 
-    # Hero/Son Dakika/Öne Çıkan Haberler (üst) + "KAP+Haber karışık önemli
-    # içerik" (alt) - AYNI `home_important_views` listesinden dilimlenir,
-    # ikisi arasında TEKRAR YOK. Kullanıcı kararı (2026-08-18): eşiği
-    # (>=4) geçen yeterli kayıt olmayabilir - bu durumda DOLDURMA YOK,
-    # bölüm(ler) daha az öğeyle gösterilir.
-    featured_records = home_important_views[:5]
-    home_mixed_records = home_important_views[5:15]
+    # Hero/Son Dakika/Öne Çıkan Haberler (üst) ARTIK ayrı bir kaynaktan
+    # (bkz. _get_cached_hero_carousel_records - son 48 saatin en yüksek
+    # skorlu 10 kaydı, eşiksiz, kullanıcı kararı 2026-08-18: "döngü her
+    # zaman dolu/gezinilebilir olsun"). "KAP+Haber karışık önemli içerik"
+    # (sayfa altı) HÂLÂ >=4 eşikli `home_important_views`'ten - kullanıcı
+    # kararı (2026-08-18): eşiği geçen yeterli kayıt olmayabilir, bu
+    # durumda DOLDURMA YOK, bölüm daha az öğeyle gösterilir. İki liste
+    # ARTIK bağımsız sorgulardan geldiğinden aralarında bir miktar örtüşme
+    # olabilir (kullanıcı bunu istemedi/yasaklamadı) - basitlik tercih edildi.
+    featured_records = hero_carousel_views
+    home_mixed_records = home_important_views[:10]
     # Son Dakika şeridinin VE hero kartının JS tarafında (bkz. dashboard.html
     # > breakingStripStep/renderFeaturedItem) AYNI dönen state'i paylaşarak
     # senkron gezinebilmesi için (kullanıcı isteği, 2026-08-18: "iki ayrı
@@ -694,6 +732,7 @@ def dashboard(
                 "sources": f["sources"],
                 "summary": f["summary"],
                 "image_url": f["image_url"],
+                "company_ticker": f["company_ticker"],
                 "link": (f["links"][0]["link"] if f["links"] else ""),
             }
             for f in featured_records

@@ -916,7 +916,8 @@
       box-shadow: var(--shadow-sm);
     }
 
-    .hero-card.has-image {
+    .hero-card.has-image,
+    .hero-card.has-avatar {
       border-top: none;
     }
 
@@ -993,6 +994,38 @@
 
     .hero-image-nav-next {
       right: 0.75rem;
+    }
+
+    /* Gerçek görsel yoksa VE bir ticker'a bağlıysa (KAP veya "şirket"
+       kategorili genel haber) - küçük rozet avatarının (bkz. .company-avatar)
+       BÜYÜK hali, .hero-image-wrap ile AYNI boyut/konumda (bkz.
+       renderHeroCard). Carousel okları (bkz. .hero-image-nav) burada da
+       AYNEN çalışır - üst üste iki farklı stil tanımlamak yerine paylaşılan. */
+    .hero-avatar-wrap {
+      position: relative;
+      width: 100%;
+      height: 280px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-avatar-initials {
+      color: #ffffff;
+      font-family: var(--font-heading);
+      font-size: 4.5rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      opacity: 0.92;
+    }
+
+    .hero-card.has-avatar .hero-badge {
+      top: 1rem;
+      right: 1.2rem;
+    }
+
+    .hero-card.has-avatar .hero-content {
+      padding-top: 0.9rem;
     }
 
     .hero-card.hero-empty {
@@ -2718,17 +2751,27 @@
     // Şirket baş harfi rozeti (bkz. yukarıdaki .company-avatar CSS notu) -
     // ticker koduna göre deterministik bir renk (basit hash) + ilk 1-2
     // harf. Ağ isteği YOK, senkron/anlık - "lazy" olmasına gerek yok.
+    // `avatarStyleFor` (2026-08-18, bkz. kullanıcı isteği) hem bu küçük
+    // rozet İÇİN hem de hero kartındaki BÜYÜK görsel-yerine-avatar
+    // fallback'i İÇİN (bkz. renderHeroCard) PAYLAŞILAN tek kaynak.
     const _AVATAR_COLORS = ['#2554e0', '#0a8548', '#c9860a', '#d92d20', '#7c3aed', '#0891b2', '#be185d', '#4d7c0f'];
+
+    function avatarStyleFor(rawTicker) {
+      const ticker = (rawTicker || '').replace(/^[A-Z]+:\s*/, '').trim();
+      if (!ticker) return null;
+      let hash = 0;
+      for (let i = 0; i < ticker.length; i++) hash = (hash * 31 + ticker.charCodeAt(i)) >>> 0;
+      return { initials: ticker.slice(0, 2), color: _AVATAR_COLORS[hash % _AVATAR_COLORS.length] };
+    }
 
     function applyCompanyAvatars() {
       document.querySelectorAll('.company-avatar[data-ticker]').forEach(function (el) {
-        const ticker = (el.dataset.ticker || '').replace(/^[A-Z]+:\s*/, '').trim();
-        if (!ticker || el.dataset.avatarApplied) return;
+        if (el.dataset.avatarApplied) return;
+        const style = avatarStyleFor(el.dataset.ticker);
+        if (!style) return;
         el.dataset.avatarApplied = '1';
-        let hash = 0;
-        for (let i = 0; i < ticker.length; i++) hash = (hash * 31 + ticker.charCodeAt(i)) >>> 0;
-        el.style.background = _AVATAR_COLORS[hash % _AVATAR_COLORS.length];
-        el.textContent = ticker.slice(0, 2);
+        el.style.background = style.color;
+        el.textContent = style.initials;
       });
     }
 
@@ -2996,17 +3039,31 @@
         }
       }
 
+      // Görsel alanı üç kademeli (kullanıcı isteği, 2026-08-18 - "görselsiz
+      // kayıt kalmasın"): 1) gerçek RSS/lisanslı görsel (item.image_url,
+      // önceki davranış AYNEN) 2) yoksa VE bir ticker'a bağlıysa (KAP VEYA
+      // "şirket" kategorili genel haber - kaynak farketmez) mevcut küçük
+      // rozet avatarının BÜYÜK hali (bkz. avatarStyleFor, aynı deterministik
+      // renk/baş harf - ağ isteği YOK) 3) hiçbiri yoksa (ör. ticker'sız bir
+      // makro/siyasi başlık) mevcut tipografik tasarıma düşülür - GERÇEK bir
+      // "image_search" aracı bu proje için MEVCUT DEĞİL (bkz. commit notu);
+      // rastgele/lisanssız bir web görselini hotlink'lemek yerine bu dürüst
+      // kademeli fallback tercih edildi.
       var existingWrap = document.getElementById('hero-image-wrap');
+      var existingAvatarWrap = document.getElementById('hero-avatar-wrap');
+      var navHtml = _breakingItems.length > 1
+        ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>' +
+        '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>'
+        : '';
+
       if (item.image_url) {
+        card.classList.remove('has-avatar');
         card.classList.add('has-image');
+        if (existingAvatarWrap) existingAvatarWrap.remove();
         if (existingWrap) {
           var img = document.getElementById('hero-image');
           if (img) img.src = item.image_url;
         } else {
-          var navHtml = _breakingItems.length > 1
-            ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>' +
-            '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>'
-            : '';
           var wrap = document.createElement('div');
           wrap.className = 'hero-image-wrap';
           wrap.id = 'hero-image-wrap';
@@ -3015,10 +3072,33 @@
             '<div class="hero-image-scrim"></div>' + navHtml;
           card.insertBefore(wrap, card.firstChild);
         }
-      } else {
-        card.classList.remove('has-image');
-        if (existingWrap) existingWrap.remove();
+        return;
       }
+
+      var avatarStyle = avatarStyleFor(item.company_ticker);
+      if (avatarStyle) {
+        card.classList.remove('has-image');
+        card.classList.add('has-avatar');
+        if (existingWrap) existingWrap.remove();
+        if (existingAvatarWrap) {
+          existingAvatarWrap.style.background = avatarStyle.color;
+          var initialsEl = existingAvatarWrap.querySelector('.hero-avatar-initials');
+          if (initialsEl) initialsEl.textContent = avatarStyle.initials;
+        } else {
+          var avatarWrap = document.createElement('div');
+          avatarWrap.className = 'hero-avatar-wrap';
+          avatarWrap.id = 'hero-avatar-wrap';
+          avatarWrap.style.background = avatarStyle.color;
+          avatarWrap.innerHTML = '<span class="hero-avatar-initials">' + avatarStyle.initials + '</span>' + navHtml;
+          card.insertBefore(avatarWrap, card.firstChild);
+        }
+        return;
+      }
+
+      card.classList.remove('has-image');
+      card.classList.remove('has-avatar');
+      if (existingWrap) existingWrap.remove();
+      if (existingAvatarWrap) existingAvatarWrap.remove();
     }
 
     function breakingStripStep(direction) {
@@ -3031,6 +3111,13 @@
         _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
       }
     }
+
+    // Sayfa yüklendiğinde hero zaten sunucu tarafında (bkz. Jinja) doğru
+    // render edilmiş durumda (görsel VEYA tipografik) - ama "büyük avatar"
+    // kademesi (bkz. renderHeroCard) SADECE JS'te var, bu yüzden ilk index
+    // için de BURADA bir kez çalıştırılır (Jinja bu kademeyi hesaplamaz,
+    // tek doğru kaynak JS'te kalsın diye - bkz. renderHeroCard notu).
+    renderHeroCard();
 
     if (_breakingItems.length > 1) {
       _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);

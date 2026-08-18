@@ -834,6 +834,16 @@ def get_recent_records(
     # dashboard'daki sıralama dropdown'ı, src/web/app.py).
     if sort_order == "oldest":
         query = query.order_by(NewsRecord.first_seen_at.asc())
+    elif sort_order == "importance":
+        # Ana sayfa Hero/Son Dakika döngüsü için (2026-08-18, kullanıcı
+        # kararı: "eşik koymadan, sadece en yüksek 10") - önem skoruna göre
+        # azalan, eşit skorlarda en yeni önce (ikincil sıralama). NULL
+        # (henüz skorlanmamış) kayıtlar hem SQLite hem Postgres'te DESC
+        # sıralamada doğal olarak SONA düşer - çağıran taraf yine de
+        # `min_importance=1` ile bunları AÇIKÇA filtrelemeli (bkz.
+        # app.py > dashboard() > hero carousel sorgusu), aksi halde
+        # skorsuz kayıtlar limit'i doldurabilir.
+        query = query.order_by(NewsRecord.importance_score.desc(), NewsRecord.first_seen_at.desc())
     else:
         query = query.order_by(NewsRecord.first_seen_at.desc())
     return query.limit(limit).all()
