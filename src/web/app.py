@@ -435,6 +435,13 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "title_tr": record.title_tr,
         "sources": record.sources,
         "published_at": format_turkey_time(record.published_at) if record.published_at else "tarih bilinmiyor",
+        # first_seen_at (sisteme giriş/görülme anı) - listeler first_seen_at'e
+        # göre sıralandığı için (bkz. get_recent_records), sıralamayla TUTARLI
+        # görünen bir saat isteyen yerler (ör. ana sayfadaki "ÖNE ÇIKAN
+        # HABERLER" kenar çubuğu listesi) bunu kullanmalı, published_at
+        # DEĞİL - kaynağın kendi bildirdiği yayın zamanı arrival sırasıyla
+        # monoton değildir (2026-08-18, kullanıcı geri bildirimi).
+        "first_seen_at": format_turkey_time(record.first_seen_at) if record.first_seen_at else "tarih bilinmiyor",
         "summary": record.summary or "(özet yok)",
         "key_points": record.key_points_list(),
         "importance_score": score,

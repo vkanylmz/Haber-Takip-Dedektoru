@@ -2250,7 +2250,7 @@
           <a class="featured-item" href="{% if f.links %}{{ f.links[0].link }}{% else %}#{% endif %}"
             target="_blank" rel="noopener">
             <span class="featured-item-title">{{ f.short_summary or f.title }}</span>
-            <span class="featured-item-time">{{ f.published_at }}</span>
+            <span class="featured-item-time">{{ f.first_seen_at }}</span>
           </a>
           {% endfor %}
         </div>
