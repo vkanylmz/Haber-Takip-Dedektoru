@@ -43,6 +43,7 @@ from src.db import (
     get_distinct_sectors,
     get_distinct_sources,
     get_latest_published_at,
+    get_upcoming_calendar_events,
     get_records_by_company_ticker,
     get_records_since,
     get_recent_records,
@@ -143,6 +144,33 @@ def _get_cached_default_records(session, max_items: int) -> list[NewsRecord]:
         )
         _dashboard_default_cache["records"] = records
         _dashboard_default_cache["fetched_at"] = now
+        return records
+
+
+# --- Son Dakika şeridi önbelleği (2026-08-18, kullanıcı kararı) ---
+# Hero carousel'den (bkz. _get_cached_hero_carousel_records - son 48s'in
+# en yüksek skorlu 10 kaydı) BİLİNÇLİ OLARAK AYRI/BAĞIMSIZ: kaynak (KAP+genel)
+# VE önem skoru FARK ETMEKSİZİN, sadece "en yeni N kayıt" - kullanıcı isteği:
+# "gerçek bir 'her şey buradan geçiyor' akışı olsun". `exclude_source_filter`
+# YOK (KAP dahil) - `_get_cached_default_records`'ın AKSİNE.
+_BREAKING_STRIP_LIMIT = 25
+_BREAKING_STRIP_CACHE_TTL_SECONDS = 30.0
+_breaking_strip_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
+_breaking_strip_lock = threading.Lock()
+
+
+def _get_cached_breaking_strip_records(session) -> list[NewsRecord]:
+    now = time.monotonic()
+    if _breaking_strip_cache["records"] is not None and (now - _breaking_strip_cache["fetched_at"]) < _BREAKING_STRIP_CACHE_TTL_SECONDS:
+        return _breaking_strip_cache["records"]
+
+    with _breaking_strip_lock:
+        now = time.monotonic()
+        if _breaking_strip_cache["records"] is not None and (now - _breaking_strip_cache["fetched_at"]) < _BREAKING_STRIP_CACHE_TTL_SECONDS:
+            return _breaking_strip_cache["records"]
+        records = get_recent_records(session, limit=_BREAKING_STRIP_LIMIT, sort_order="newest")
+        _breaking_strip_cache["records"] = records
+        _breaking_strip_cache["fetched_at"] = now
         return records
 
 
@@ -376,6 +404,24 @@ app = FastAPI(title="Finansal Haber Dashboard", lifespan=lifespan)
 app.include_router(api_v1_router)
 
 
+def _calendar_event_to_view(event: Any) -> dict[str, Any]:
+    """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (bkz.
+    dashboard() > upcoming_calendar_events, src/db.py > EconomicCalendarEvent) -
+    diğer görünüm sözlükleriyle (bkz. _record_to_view) TUTARLI, Türkiye
+    saatine çevrilmiş bir gösterim."""
+    return {
+        "time": format_turkey_time(event.event_time),
+        "country_code": event.country_code,
+        "country_name": event.country_name,
+        "event_name": event.event_name,
+        "importance": event.importance,
+        "previous_value": event.previous_value,
+        "actual_value": event.actual_value,
+        "reference_period": event.reference_period,
+        "is_released": event.actual_value is not None,
+    }
+
+
 def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
     score = record.importance_score
     if score is None:
@@ -568,6 +614,8 @@ def dashboard(
     kap_important_records: list[NewsRecord] = []
     home_important_records: list[NewsRecord] = []
     hero_carousel_records: list[NewsRecord] = []
+    breaking_strip_records: list[NewsRecord] = []
+    upcoming_calendar_events: list[Any] = []
 
     with get_session() as session:
         if view_normalized == "haberler":
@@ -637,6 +685,8 @@ def dashboard(
         if view_normalized == "home":
             home_important_records = _get_cached_home_important_records(session, limit=20)
             hero_carousel_records = _get_cached_hero_carousel_records(session)
+            breaking_strip_records = _get_cached_breaking_strip_records(session)
+            upcoming_calendar_events = get_upcoming_calendar_events(limit=8)
 
         # Piyasa Duygusu (bkz. _compute_fear_greed_index) için HER ZAMAN
         # genel/filtresiz "en yeni N" örneklemi kullanılır - hangi sekmede
@@ -701,26 +751,26 @@ def dashboard(
     kap_important_views = [_record_to_view(r, threshold) for r in kap_important_records]
     home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
     hero_carousel_views = [_record_to_view(r, threshold) for r in hero_carousel_records]
+    breaking_strip_views = [_record_to_view(r, threshold) for r in breaking_strip_records]
+    upcoming_calendar_views = [_calendar_event_to_view(e) for e in upcoming_calendar_events]
 
-    # Hero/Son Dakika/Öne Çıkan Haberler (üst) ARTIK ayrı bir kaynaktan
-    # (bkz. _get_cached_hero_carousel_records - son 48 saatin en yüksek
-    # skorlu 10 kaydı, eşiksiz, kullanıcı kararı 2026-08-18: "döngü her
-    # zaman dolu/gezinilebilir olsun"). "KAP+Haber karışık önemli içerik"
-    # (sayfa altı) HÂLÂ >=4 eşikli `home_important_views`'ten - kullanıcı
-    # kararı (2026-08-18): eşiği geçen yeterli kayıt olmayabilir, bu
-    # durumda DOLDURMA YOK, bölüm daha az öğeyle gösterilir. İki liste
-    # ARTIK bağımsız sorgulardan geldiğinden aralarında bir miktar örtüşme
-    # olabilir (kullanıcı bunu istemedi/yasaklamadı) - basitlik tercih edildi.
+    # "KAP+Haber karışık önemli içerik" (sayfa altı) HÂLÂ >=4 eşikli
+    # `home_important_views`'ten - kullanıcı kararı (2026-08-18): eşiği
+    # geçen yeterli kayıt olmayabilir, bu durumda DOLDURMA YOK, bölüm daha
+    # az öğeyle gösterilir.
     featured_records = hero_carousel_views
     home_mixed_records = home_important_views[:10]
-    # Son Dakika şeridinin VE hero kartının JS tarafında (bkz. dashboard.html
-    # > breakingStripStep/renderFeaturedItem) AYNI dönen state'i paylaşarak
-    # senkron gezinebilmesi için (kullanıcı isteği, 2026-08-18: "iki ayrı
-    # state olmasın") aynı `featured_records` hero'yu TAM olarak yeniden
-    # render edebilecek kadar zengin bir JSON'a çevrilir - "</script>"
-    # enjeksiyonuna karşı (ör. bir haber başlığı bu diziyi içerse) basit bir
-    # escape uygulanır, ayrı bir HTTP isteği/endpoint GEREKMEZ (veri zaten
-    # bu response içinde var).
+
+    # Hero kartı VE Son Dakika şeridi (2026-08-18, kullanıcı kararı) ARTIK
+    # BİRBİRİNDEN TAMAMEN BAĞIMSIZ iki döngü - önceden AYNI state'i
+    # paylaşıyorlardı (bkz. eski "iki ayrı state olmasın" kararı, o karar
+    # BU isteyle tersine çevrildi). Hero (bkz. hero_carousel_views) SADECE
+    # gerçekten önemli içeriği gösterirken, Son Dakika şeridi (bkz.
+    # breaking_strip_views) kaynak/skor FARK ETMEKSİZİN "her şey buradan
+    # geçiyor" akışıdır - bu yüzden iki AYRI JSON, iki AYRI JS state'i
+    # (bkz. dashboard.html > heroStep/stripStep) var. "</script>"
+    # enjeksiyonuna karşı ikisinde de basit bir escape uygulanır, ayrı bir
+    # HTTP isteği/endpoint GEREKMEZ (veri zaten bu response içinde var).
     featured_records_json = json.dumps(
         [
             {
@@ -738,6 +788,12 @@ def dashboard(
             for f in featured_records
         ]
     ).replace("</", "<\\/")
+    breaking_strip_json = json.dumps(
+        [
+            {"time": f["published_at"], "title": f["short_summary"] or f["title"]}
+            for f in breaking_strip_views
+        ]
+    ).replace("</", "<\\/")
 
     return templates.TemplateResponse(
         request,
@@ -751,6 +807,9 @@ def dashboard(
             "home_mixed_records": home_mixed_records,
             "featured_records": featured_records,
             "featured_records_json": featured_records_json,
+            "breaking_strip_records": breaking_strip_views,
+            "upcoming_calendar_events": upcoming_calendar_views,
+            "breaking_strip_json": breaking_strip_json,
             "sources": sources,
             "selected_source": source or "",
             "sectors": sectors,

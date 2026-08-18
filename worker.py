@@ -33,8 +33,9 @@ from src.backup import run_backup
 from src.commodity_report import send_weekly_commodity_report
 from src.config import load_config
 from src.daily_digest import send_daily_digest
-from src.db import add_subscriber, get_app_state, init_db, set_app_state
+from src.db import add_subscriber, get_app_state, get_pending_calendar_events_count, init_db, set_app_state
 from src.deduplicator import group_similar_news
+from src.economic_calendar import refresh_economic_calendar
 from src.logging_setup import setup_logging
 from src.main import fetch_source, run_once, summarize_and_persist_groups
 from src.telegram_bot import start_bot_listener_thread, stop_bot_listener_thread
@@ -269,6 +270,61 @@ def _add_market_snapshot_job(scheduler) -> None:
     scheduler.add_job(_market_snapshot_job, id="piyasa_seridi_ilk_yenileme")  # hemen (arka planda) çalışır
 
 
+# --- Ekonomik Takvim (2026-08-18, kullanıcı isteği) ---
+# İKİ AYRI görev, TEK ortak fonksiyonu (refresh_economic_calendar) çağırır:
+#   1) Genel tarama: 5 saatte bir (kullanıcının istediği "4-6 saatte bir"
+#      aralığının ortası) - Türkiye TÜMÜ + diğer ülkeler 2-3 yıldız, 7 günlük
+#      pencere (bkz. src/economic_calendar.py).
+#   2) "Hassas izleme": 30sn'lik BASİT interval-polling (kullanıcı kararı,
+#      2026-08-18 - başlangıçta önerilen "her olay için ayrı APScheduler
+#      job'ı" tasarımı YERİNE seçildi: watchdog sık restart olduğundan
+#      bellek-içi tek-seferlik job'ların kaybolma riski gerçekti, bu basit
+#      interval job restart'a doğal olarak dayanıklı, JOB KAYBI YOK). SADECE
+#      açıklanma saati GEÇMİŞ AMA actual_value HÂLÂ boş olan bir olay varsa
+#      (bkz. get_pending_calendar_events_count) gerçek bir istek atar -
+#      nezaket kuralı, gereksiz taramayı önler.
+_ECONOMIC_CALENDAR_REFRESH_HOURS = 5
+_ECONOMIC_CALENDAR_WATCH_INTERVAL_SECONDS = 30
+_ECONOMIC_CALENDAR_WATCH_WINDOW_MINUTES = 3
+
+
+def _economic_calendar_refresh_job() -> None:
+    try:
+        refresh_economic_calendar()
+    except Exception:  # noqa: BLE001 - bir tur başarısız olursa zamanlayıcıyı durdurmasın
+        logger.exception("Ekonomik takvim genel taraması sırasında beklenmeyen bir hata oluştu.")
+
+
+def _economic_calendar_watch_job() -> None:
+    try:
+        pending = get_pending_calendar_events_count(_ECONOMIC_CALENDAR_WATCH_WINDOW_MINUTES)
+        if pending == 0:
+            return
+        logger.info(
+            "Ekonomik takvim: açıklanma saati geçmiş %d bekleyen olay var, hassas izleme taraması tetikleniyor.",
+            pending,
+        )
+        refresh_economic_calendar()
+    except Exception:  # noqa: BLE001 - bir tur başarısız olursa zamanlayıcıyı durdurmasın
+        logger.exception("Ekonomik takvim hassas izleme taraması sırasında beklenmeyen bir hata oluştu.")
+
+
+def _add_economic_calendar_jobs(scheduler) -> None:
+    scheduler.add_job(
+        _economic_calendar_refresh_job,
+        "interval",
+        hours=_ECONOMIC_CALENDAR_REFRESH_HOURS,
+        id="ekonomik_takvim_genel_tarama",
+    )
+    scheduler.add_job(_economic_calendar_refresh_job, id="ekonomik_takvim_ilk_tarama")  # hemen (arka planda) çalışır
+    scheduler.add_job(
+        _economic_calendar_watch_job,
+        "interval",
+        seconds=_ECONOMIC_CALENDAR_WATCH_INTERVAL_SECONDS,
+        id="ekonomik_takvim_hassas_izleme",
+    )
+
+
 def _daily_digest_job() -> None:
     """Günlük özet raporu (bkz. src/daily_digest.py) - mevcut anlık bildirim
     akışından (yukarıdaki `_job`) TAMAMEN bağımsız, ayrı bir zamanlanmış
@@ -405,6 +461,7 @@ def start_background_scheduler(config: dict | None = None) -> BackgroundSchedule
     scheduler.add_job(_job, id="ilk_tarama")  # tetikleyici verilmezse hemen (arka planda) çalışır
     _add_kap_fast_poll_job(scheduler, config)
     _add_market_snapshot_job(scheduler)
+    _add_economic_calendar_jobs(scheduler)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)
@@ -433,6 +490,7 @@ def main() -> None:
     scheduler.add_job(_job, "interval", minutes=interval_minutes, id="periyodik_tarama")
     _add_kap_fast_poll_job(scheduler, config)
     _add_market_snapshot_job(scheduler)
+    _add_economic_calendar_jobs(scheduler)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)

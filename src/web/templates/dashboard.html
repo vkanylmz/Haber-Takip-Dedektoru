@@ -962,8 +962,8 @@
     }
 
     /* Görsel üzerine bindirilmiş carousel okları (kullanıcı isteği,
-       2026-08-18) - Son Dakika şeridindeki ‹›'la AYNI JS state'ini
-       kontrol eder (bkz. breakingStripStep). Nokta göstergesi YOK. */
+       2026-08-18) - hero'nun KENDİ döngüsünü kontrol eder (bkz. heroStep) -
+       Son Dakika şeridinden BAĞIMSIZ. Nokta göstergesi YOK. */
     .hero-image-nav {
       position: absolute;
       top: 50%;
@@ -1201,6 +1201,91 @@
       color: var(--text-muted);
       font-size: 0.82rem;
       line-height: 1.5;
+    }
+
+    /* Ekonomik Takvim olay listesi (2026-08-18, kullanıcı isteği) - gerçek
+       veri, bkz. src/economic_calendar.py. */
+    .calendar-event-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+
+    .calendar-event-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .calendar-event-row:first-child {
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .calendar-event-time {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-muted);
+    }
+
+    .calendar-event-main {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .calendar-event-country {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--surface-alt);
+      border-radius: 4px;
+      padding: 0.05rem 0.35rem;
+    }
+
+    .calendar-event-stars {
+      font-size: 0.72rem;
+      color: var(--warn);
+      letter-spacing: -1px;
+    }
+
+    .calendar-event-name {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .calendar-event-ref {
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    .calendar-event-value {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      font-size: 0.8rem;
+    }
+
+    .calendar-event-actual {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .calendar-event-pending {
+      font-style: italic;
+      color: var(--text-muted);
+    }
+
+    .calendar-event-previous {
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-size: 0.76rem;
     }
 
     /* Emtia Özeti (Ana Sayfa, kısa önizleme) - .market-summary-card'ın
@@ -2114,29 +2199,33 @@
          sekmeler (KAP/Haberler/Emtia) TAMAMEN AYRI içerik gösterir, bkz.
          daha aşağıdaki view == 'kap'/'haberler'/'emtia' blokları. -->
 
-    <!-- Son Dakika şeridi: ayrı bir "editöryel seçim" YOK - src/web/app.py >
-         featured_records (SADECE önem skoru >= 4, KAP dahil kaynak
-         farketmeksizin - bkz. _HOME_FEATURED_MIN_IMPORTANCE) üzerinde
-         otomatik/manuel döngü (bkz. altındaki <script> > breakingStripStep). -->
-    <script type="application/json" id="breaking-strip-data">{{ featured_records_json | safe }}</script>
+    <!-- Son Dakika şeridi: HERO KARTINDAN BAĞIMSIZ (kullanıcı kararı,
+         2026-08-18 - önceden ikisi AYNI state'i paylaşıyordu). Kaynak/skor
+         FARK ETMEKSİZİN "her şey buradan geçiyor" akışı - src/web/app.py >
+         breaking_strip_records (bkz. _get_cached_breaking_strip_records,
+         son 25 kayıt, filtre yok) üzerinde otomatik/manuel döngü (bkz.
+         altındaki <script> > stripStep). Kendi ayrı JS state'i/zamanlayıcısı
+         var (hero'nunkinden DAHA SIK, 5sn). -->
+    <script type="application/json" id="breaking-strip-data">{{ breaking_strip_json | safe }}</script>
     <div class="breaking-strip">
       <span class="breaking-strip-label">SON DAKİKA</span>
       <div class="breaking-strip-content" id="breaking-strip-content">
-        {% if featured_records %}
-        <span class="breaking-strip-time">{{ featured_records[0].published_at }}</span>
-        <span class="breaking-strip-text">{{ featured_records[0].short_summary or featured_records[0].title }}</span>
+        {% if breaking_strip_records %}
+        <span class="breaking-strip-time">{{ breaking_strip_records[0].published_at }}</span>
+        <span class="breaking-strip-text">{{ breaking_strip_records[0].short_summary or breaking_strip_records[0].title }}</span>
         {% else %}
-        <span class="breaking-strip-text">Henüz önem skoru atanmış bir haber yok.</span>
+        <span class="breaking-strip-text">Henüz haber yok.</span>
         {% endif %}
       </div>
-      {% if featured_records|length > 1 %}
+      {% if breaking_strip_records|length > 1 %}
       <div class="breaking-strip-nav">
-        <button type="button" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>
-        <button type="button" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>
+        <button type="button" onclick="stripStep(-1)" aria-label="Önceki">‹</button>
+        <button type="button" onclick="stripStep(1)" aria-label="Sonraki">›</button>
       </div>
       {% endif %}
     </div>
 
+    <script type="application/json" id="hero-carousel-data">{{ featured_records_json | safe }}</script>
     <div class="home-grid">
       <section class="home-main">
         {% if featured_records %}
@@ -2155,16 +2244,15 @@
             <img class="hero-image" id="hero-image" src="{{ featured_records[0].image_url }}" alt="" loading="lazy"
               onerror="this.closest('.hero-card').classList.remove('has-image'); this.remove();">
             <div class="hero-image-scrim"></div>
-            {# Görsel üzerindeki carousel okları (kullanıcı isteği, 2026-08-18)
-               - Son Dakika şeridindeki ‹›'la AYNI JS state'ini (bkz. altındaki
-               <script> > breakingStripStep) kontrol eder, ayrı bir sayaç/
-               state YOK. Nokta göstergesi BİLİNÇLİ OLARAK eklenmedi
-               (kullanıcı isteği). featured_records tek öğeliyse (döngü
-               anlamsız) hiç render edilmez. #}
+            {# Görsel üzerindeki carousel okları - hero'nun KENDİ döngüsünü
+               (bkz. altındaki <script> > heroStep) kontrol eder, Son Dakika
+               şeridinden BAĞIMSIZ (kullanıcı kararı, 2026-08-18). Nokta
+               göstergesi BİLİNÇLİ OLARAK eklenmedi. featured_records tek
+               öğeliyse (döngü anlamsız) hiç render edilmez. #}
             {% if featured_records|length > 1 %}
-            <button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)"
+            <button type="button" class="hero-image-nav hero-image-nav-prev" onclick="heroStep(-1)"
               aria-label="Önceki">‹</button>
-            <button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)"
+            <button type="button" class="hero-image-nav hero-image-nav-next" onclick="heroStep(1)"
               aria-label="Sonraki">›</button>
             {% endif %}
           </div>
@@ -2268,13 +2356,46 @@
           </table>
         </div>
 
-        <!-- Ekonomik Takvim: BİLEREK gerçek veriye bağlanmadı - bu proje için
-             bir ekonomik takvim veri kaynağı YOK (kullanıcı isteği, 2026-08-18:
-             uydurma veri KOYMA, "yakında" ile bırak). -->
+        <!-- Ekonomik Takvim (2026-08-18, kullanıcı isteği) - GERÇEK veri,
+             kaynak tradingeconomics.com/calendar (bkz. src/economic_calendar.py -
+             Investing.com Cloudflare bot-koruması nedeniyle kullanılamadı).
+             Türkiye TÜM önem seviyeleri, diğer ülkeler 2-3 yıldız. İki
+             aşamalı: actual_value boşsa "bekleniyor" + previous_value
+             gösterilir, açıklanınca (bkz. worker.py > 30sn'lik hassas
+             izleme) otomatik dolar (sayfa yeniden yüklendiğinde görünür -
+             canlı/AJAX güncelleme YOK, diğer statik panellerle tutarlı). -->
         <div class="calendar-placeholder-card">
           <div class="market-summary-title">YAKLAŞAN EKONOMİK TAKVİM</div>
-          <div class="calendar-placeholder-text">Bu bölüm için henüz bir veri kaynağımız yok — yakında eklenecek.
+          {% if upcoming_calendar_events %}
+          <div class="calendar-event-list">
+            {% for e in upcoming_calendar_events %}
+            <div class="calendar-event-row">
+              <div class="calendar-event-time">{{ e.time }}</div>
+              <div class="calendar-event-main">
+                <span class="calendar-event-country" title="{{ e.country_name }}">{{ e.country_code }}</span>
+                <span class="calendar-event-stars" title="Önem: {{ e.importance }}/3">{{ '★' * e.importance }}{{ '☆'
+                  * (3 - e.importance) }}</span>
+                <span class="calendar-event-name">{{ e.event_name }}{% if e.reference_period %} <span
+                    class="calendar-event-ref">({{ e.reference_period }})</span>{% endif %}</span>
+              </div>
+              <div class="calendar-event-value">
+                {% if e.is_released %}
+                <span class="calendar-event-actual">{{ e.actual_value }}</span>
+                {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
+                  }}</span>{% endif %}
+                {% else %}
+                <span class="calendar-event-pending">bekleniyor</span>
+                {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
+                  }}</span>{% endif %}
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
           </div>
+          {% else %}
+          <div class="calendar-placeholder-text">Önümüzdeki günlerde planlanmış bir ekonomik veri açıklaması
+            bulunamadı.</div>
+          {% endif %}
         </div>
       </aside>
     </div>
@@ -2980,43 +3101,64 @@
     });
 
     // ======================================================================
-    // Son Dakika şeridi (2026-08-18 ana sayfa yeniden tasarımı) - ekstra bir
-    // istek/endpoint YOK, veri zaten sayfayla birlikte gömülü geldi (bkz.
-    // yukarıdaki #breaking-strip-data > src/web/app.py > featured_records_json).
-    // Otomatik 6 sn'de bir ilerler, ok düğmeleri manuel geçiş yapar ve
-    // zamanlayıcıyı sıfırlar (kullanıcı etkileşimi otomatik döngüyle
-    // ÇAKIŞMASIN diye).
+    // Son Dakika şeridi VE Hero kartı - BİRBİRİNDEN BAĞIMSIZ iki döngü
+    // (kullaıcı kararı, 2026-08-18 - önceden AYNI state'i paylaşıyorlardı,
+    // bu karar tersine çevrildi). Son Dakika: kaynak/skor farketmeksizin
+    // "her şey buradan geçiyor" akışı, 5sn'de bir ilerler (bkz.
+    // src/web/app.py > breaking_strip_json). Hero: SADECE gerçekten önemli
+    // içerik, 9sn'de bir ilerler (bkz. featured_records_json). İkisinin de
+    // ok düğmeleri kendi döngüsünü manuel ilerletir ve kendi zamanlayıcısını
+    // sıfırlar (kullanıcı etkileşimi otomatik döngüyle ÇAKIŞMASIN diye).
+    // Ekstra bir istek/endpoint YOK, veri zaten sayfayla birlikte gömülü
+    // geldi.
     // ======================================================================
-    var _breakingItems = [];
+    var _stripItems = [];
     try {
-      var _rawEl = document.getElementById('breaking-strip-data');
-      if (_rawEl) _breakingItems = JSON.parse(_rawEl.textContent || '[]');
-    } catch (e) { _breakingItems = []; }
-    var _breakingIndex = 0;
-    var _breakingTimer = null;
+      var _stripRawEl = document.getElementById('breaking-strip-data');
+      if (_stripRawEl) _stripItems = JSON.parse(_stripRawEl.textContent || '[]');
+    } catch (e) { _stripItems = []; }
+    var _stripIndex = 0;
+    var _stripTimer = null;
 
     function renderBreakingStrip() {
-      if (!_breakingItems.length) return;
+      if (!_stripItems.length) return;
       var el = document.getElementById('breaking-strip-content');
       if (!el) return;
-      var item = _breakingItems[_breakingIndex];
+      var item = _stripItems[_stripIndex];
       el.innerHTML = '<span class="breaking-strip-time">' + item.time + '</span>' +
         '<span class="breaking-strip-text">' + item.title.replace(/</g, '&lt;') + '</span>';
     }
 
-    // Hero kartı, Son Dakika şeridiyle (bkz. yukarıdaki renderBreakingStrip)
-    // AYNI dönen state'ten (_breakingItems/_breakingIndex) beslenir -
-    // görsel üzerindeki oklar da (bkz. .hero-image-nav) AYNI
-    // breakingStripStep()'e bağlı, ayrı bir state YOK (kullanıcı isteği,
-    // 2026-08-18). Görseli olmayan bir öğeye geçilirse .hero-image-wrap
-    // tamamen kaldırılır (kırık görsel/boşluk kalmaz) - varsa yeniden
-    // eklenir. Metin alanları `.textContent` ile yazılır (innerHTML DEĞİL)
-    // - HTML olarak yorumlanmaz, ayrı bir escape'e gerek yok.
+    function stripStep(direction) {
+      if (!_stripItems.length) return;
+      _stripIndex = (_stripIndex + direction + _stripItems.length) % _stripItems.length;
+      renderBreakingStrip();
+      if (_stripTimer) {
+        clearInterval(_stripTimer);
+        _stripTimer = setInterval(function () { stripStep(1); }, 5000);
+      }
+    }
+
+    var _heroItems = [];
+    try {
+      var _heroRawEl = document.getElementById('hero-carousel-data');
+      if (_heroRawEl) _heroItems = JSON.parse(_heroRawEl.textContent || '[]');
+    } catch (e) { _heroItems = []; }
+    var _heroIndex = 0;
+    var _heroTimer = null;
+
+    // Hero kartının görsel/başlık/özet/rozet alanlarını doldurur - görsel
+    // üzerindeki oklar da (bkz. .hero-image-nav) AYNI heroStep()'e bağlı,
+    // Son Dakika şeridinden TAMAMEN AYRI kendi state'i var (bkz. yukarıdaki
+    // not). Görseli olmayan bir öğeye geçilirse .hero-image-wrap tamamen
+    // kaldırılır (kırık görsel/boşluk kalmaz) - varsa yeniden eklenir.
+    // Metin alanları `.textContent` ile yazılır (innerHTML DEĞİL) - HTML
+    // olarak yorumlanmaz, ayrı bir escape'e gerek yok.
     function renderHeroCard() {
-      if (!_breakingItems.length) return;
+      if (!_heroItems.length) return;
       var card = document.getElementById('hero-card');
       if (!card) return;
-      var item = _breakingItems[_breakingIndex];
+      var item = _heroItems[_heroIndex];
 
       var badge = document.getElementById('hero-badge');
       if (badge) {
@@ -3051,9 +3193,9 @@
       // kademeli fallback tercih edildi.
       var existingWrap = document.getElementById('hero-image-wrap');
       var existingAvatarWrap = document.getElementById('hero-avatar-wrap');
-      var navHtml = _breakingItems.length > 1
-        ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>' +
-        '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>'
+      var navHtml = _heroItems.length > 1
+        ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="heroStep(-1)" aria-label="Önceki">‹</button>' +
+        '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="heroStep(1)" aria-label="Sonraki">›</button>'
         : '';
 
       if (item.image_url) {
@@ -3101,14 +3243,13 @@
       if (existingAvatarWrap) existingAvatarWrap.remove();
     }
 
-    function breakingStripStep(direction) {
-      if (!_breakingItems.length) return;
-      _breakingIndex = (_breakingIndex + direction + _breakingItems.length) % _breakingItems.length;
-      renderBreakingStrip();
+    function heroStep(direction) {
+      if (!_heroItems.length) return;
+      _heroIndex = (_heroIndex + direction + _heroItems.length) % _heroItems.length;
       renderHeroCard();
-      if (_breakingTimer) {
-        clearInterval(_breakingTimer);
-        _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
+      if (_heroTimer) {
+        clearInterval(_heroTimer);
+        _heroTimer = setInterval(function () { heroStep(1); }, 9000);
       }
     }
 
@@ -3119,8 +3260,13 @@
     // tek doğru kaynak JS'te kalsın diye - bkz. renderHeroCard notu).
     renderHeroCard();
 
-    if (_breakingItems.length > 1) {
-      _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
+    // Son Dakika şeridi 5sn'de bir, Hero 9sn'de bir - BAĞIMSIZ zamanlayıcılar
+    // (kullanıcı kararı, 2026-08-18: "SON DAKİKA daha sık, Hero daha yavaş").
+    if (_stripItems.length > 1) {
+      _stripTimer = setInterval(function () { stripStep(1); }, 5000);
+    }
+    if (_heroItems.length > 1) {
+      _heroTimer = setInterval(function () { heroStep(1); }, 9000);
     }
 
     // Piyasa Özeti tablosu (2026-08-18) - ticker'ı besleyen AYNI

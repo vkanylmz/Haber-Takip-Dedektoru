@@ -27,7 +27,7 @@ import os
 import re
 import secrets
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -370,6 +370,46 @@ class AppState(Base):
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=False)  # JSON string
     updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class EconomicCalendarEvent(Base):
+    """Ekonomik takvim olayı (2026-08-18, kullanıcı isteği) - kaynak
+    tradingeconomics.com/calendar (bkz. src/economic_calendar.py; Investing.com
+    Cloudflare bot-koruması nedeniyle KULLANILAMADI, bkz. sohbet). AYRI bir
+    tablo (`news_records`e ZORLANMADI) - haber kaydı DEĞİL, tekrarlayan/
+    güncellenen bir gösterge takvimi girdisi.
+
+    Kapsam (kullanıcı kararı): Türkiye için TÜM önem seviyeleri, diğer
+    ülkeler için SADECE 2-3 yıldız (bkz. economic_calendar.py > REFRESH
+    mantığı - importance=2/3 sorgularının küme farkıyla hesaplanır, TE
+    sayfası satır başına yıldız sayısını DOĞRUDAN vermiyor).
+
+    İKİ AŞAMALI güncelleme: `actual_value` başlangıçta NULL (bkz.
+    previous_value - "bekleniyor" durumunda gösterilir), olayın açıklanma
+    saatinden SONRA (bkz. worker.py > _economic_calendar_watch_job, 30sn'lik
+    hafif interval-polling) gerçek değerle DOLAR. Upsert anahtarı
+    (event_time, country_code, event_name) - TE'nin `data-id`'si AYNI
+    gösterge serisi için farklı tarihlerde TEKRARLANDIĞINDAN (ör. "Unemployment
+    Rate" her ay aynı data-id) tek başına güvenilir bir birincil anahtar
+    DEĞİL, sadece tek bir tarama içinde (bkz. economic_calendar.py) 3 farklı
+    importance sorgusunu eşleştirmek için kullanılıyor."""
+
+    __tablename__ = "economic_calendar_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    country_code = Column(String(8), nullable=False)  # ISO 2 harf (ör. "TR", "US") - bkz. flag/iso td
+    country_name = Column(String(64), nullable=False)
+    event_name = Column(String(255), nullable=False)
+    importance = Column(Integer, nullable=False)  # 1-3 (bkz. sınıf docstring'i)
+    previous_value = Column(String(64), nullable=True)
+    actual_value = Column(String(64), nullable=True)  # NULL -> henüz açıklanmadı ("bekleniyor")
+    reference_period = Column(String(32), nullable=True)  # ör. "JUN" - hangi aya/döneme ait
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("event_time", "country_code", "event_name", name="uq_calendar_event"),
+    )
 
 
 class ApiKey(Base):
@@ -1090,6 +1130,84 @@ def set_app_state(key: str, value: Any) -> None:
             row.value = payload
             row.updated_at = now
         session.commit()
+
+
+def upsert_economic_calendar_events(events: list[dict[str, Any]]) -> None:
+    """Verilen olay listesini (bkz. src/economic_calendar.py > fetch_calendar_events
+    döndürdüğü sözlük şekli) `economic_calendar_events` tablosuna UPSERT eder -
+    (event_time, country_code, event_name) eşleşirse SADECE değişebilecek
+    alanları (previous_value/actual_value/importance/reference_period)
+    GÜNCELLER, `id` korunur. `actual_value` YENİ gelen değer None ise
+    (henüz açıklanmadı) ESKİ değer SİLİNMEZ - bir olay bir kez açıklandıktan
+    sonra bir sonraki taramada "henüz açıklanmadı" durumuna GERİ DÜŞMEMELİ
+    (bkz. worker.py > _economic_calendar_watch_job, aynı olayı defalarca
+    tarayabilir)."""
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        for ev in events:
+            row = (
+                session.query(EconomicCalendarEvent)
+                .filter_by(
+                    event_time=ev["event_time"],
+                    country_code=ev["country_code"],
+                    event_name=ev["event_name"],
+                )
+                .one_or_none()
+            )
+            if row is None:
+                session.add(
+                    EconomicCalendarEvent(
+                        event_time=ev["event_time"],
+                        country_code=ev["country_code"],
+                        country_name=ev["country_name"],
+                        event_name=ev["event_name"],
+                        importance=ev["importance"],
+                        previous_value=ev.get("previous_value"),
+                        actual_value=ev.get("actual_value"),
+                        reference_period=ev.get("reference_period"),
+                        updated_at=now,
+                    )
+                )
+            else:
+                row.importance = ev["importance"]
+                row.previous_value = ev.get("previous_value") or row.previous_value
+                row.actual_value = ev.get("actual_value") or row.actual_value
+                row.reference_period = ev.get("reference_period") or row.reference_period
+                row.updated_at = now
+        session.commit()
+
+
+def get_upcoming_calendar_events(limit: int = 8) -> list["EconomicCalendarEvent"]:
+    """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (bkz.
+    src/web/app.py > dashboard()) - şu andan (UTC) itibaren gelecekteki VEYA
+    son 2 saat içinde açıklanmış (yeni açıklanan bir değeri kısa süre daha
+    görünür tutmak için) olayları, zamana göre artan sırayla döner."""
+    since = datetime.now(timezone.utc) - timedelta(hours=2)
+    with get_session() as session:
+        return (
+            session.query(EconomicCalendarEvent)
+            .filter(EconomicCalendarEvent.event_time >= since)
+            .order_by(EconomicCalendarEvent.event_time.asc())
+            .limit(limit)
+            .all()
+        )
+
+
+def get_pending_calendar_events_count(window_minutes: int = 3) -> int:
+    """worker.py > _economic_calendar_watch_job için - açıklanma saati
+    GEÇMİŞ (son `window_minutes` dakika içinde) AMA `actual_value` HÂLÂ
+    NULL olan olay sayısı. 0 dönerse çağıran taraf GEREKSİZ bir Trading
+    Economics isteği ATMAZ (nezaket kuralı, kullanıcı isteği 2026-08-18)."""
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(minutes=window_minutes)
+    with get_session() as session:
+        return (
+            session.query(EconomicCalendarEvent)
+            .filter(EconomicCalendarEvent.event_time >= window_start)
+            .filter(EconomicCalendarEvent.event_time <= now)
+            .filter(EconomicCalendarEvent.actual_value.is_(None))
+            .count()
+        )
 
 
 def get_all_subscriber_chat_ids(session: Session | None = None) -> list[str]:
