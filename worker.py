@@ -20,8 +20,10 @@ Web dashboard ile birlikte tek komutla başlatmak için:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -31,12 +33,16 @@ from src.backup import run_backup
 from src.commodity_report import send_weekly_commodity_report
 from src.config import load_config
 from src.daily_digest import send_daily_digest
-from src.db import add_subscriber, init_db
+from src.db import add_subscriber, get_app_state, init_db, set_app_state
 from src.deduplicator import group_similar_news
 from src.logging_setup import setup_logging
 from src.main import fetch_source, run_once, summarize_and_persist_groups
 from src.telegram_bot import start_bot_listener_thread, stop_bot_listener_thread
 from src.trend_report import send_monthly_trend_report, send_weekly_trend_report
+from src.web.market_data import (
+    MARKET_SYMBOLS as _MARKET_DATA_SYMBOLS,
+    fetch_market_snapshot_from_yahoo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +197,78 @@ def _add_kap_fast_poll_job(scheduler, config: dict) -> None:
     logger.info("KAP hızlı yoklama job'ı eklendi: her %s saniyede bir.", interval_seconds)
 
 
+# Piyasa şeridi (top ticker) anlık görüntüsü - GERÇEK production'da (Render,
+# paylaşılan IP) Yahoo Finance'in bu IP'yi ağır rate-limit'e uğrattığı
+# doğrulandı (bkz. sohbet, 2026-08-18); web katmanı artık Yahoo'ya HİÇ
+# gitmiyor (bkz. src/web/market_data.py > _refresh_market_data_cache) -
+# SADECE burada, yerel/engellenmemiş worker IP'sinden çekilip app_state'e
+# yazılıyor. Web katmanının ESKİ arka plan tazeleme aralığıyla (bkz.
+# src/web/market_data.py > _BACKGROUND_REFRESH_INTERVAL_SECONDS) AYNI (90sn)
+# tutuldu - daha sık çekmenin (kaynağın kendi tik hızına göre, bkz. o
+# dosyadaki ölçüm notu) somut bir faydası yok.
+_MARKET_SNAPSHOT_INTERVAL_SECONDS = 90
+
+
+def _market_snapshot_job() -> None:
+    """Piyasa şeridi verisini (bkz. MARKET_SYMBOLS) çekip app_state'e yazar.
+
+    KISMİ başarı (ör. 12 semboldan birkaçı) durumunda, ÖNCEKİ app_state
+    yazımındaki eski değerlerle birleştirilir - src/web/market_data.py'nin
+    ESKİ (Yahoo'ya doğrudan giderken kullandığı) "kısmi başarıyı eskiyle
+    birleştir" mantığıyla AYNI gerekçe: bir turun başarısız sembolleri,
+    kullanıcının önceden gördüğü diğer sembolleri KAYBETMESİN. TAMAMEN
+    başarısız olursa (0 sembol) app_state'e HİÇ dokunulmaz - eski (varsa)
+    veri korunur, `fetched_at` de GÜNCELLENMEZ (bkz. dashboard() >
+    is_data_stale - bu sayede yaşı, gerçekten ne kadar süredir taze veri
+    alınamadığını doğru yansıtır)."""
+    try:
+        data = asyncio.run(fetch_market_snapshot_from_yahoo())
+    except Exception:  # noqa: BLE001 - bir turun başarısız olması zamanlayıcıyı durdurmasın
+        logger.exception("Piyasa şeridi verisi çekilirken beklenmeyen bir hata oluştu.")
+        return
+
+    if not data:
+        logger.warning(
+            "Piyasa şeridi tazeleme denemesi TAMAMEN başarısız oldu (0/%d sembol) - "
+            "app_state'teki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
+            len(_MARKET_DATA_SYMBOLS),
+        )
+        return
+
+    if len(data) < len(_MARKET_DATA_SYMBOLS):
+        try:
+            previous = get_app_state("market_snapshot") or {}
+        except Exception:  # noqa: BLE001
+            previous = {}
+        previous_by_symbol = {item["symbol"]: item for item in (previous.get("data") or [])}
+        new_by_symbol = {item["symbol"]: item for item in data}
+        data = [
+            new_by_symbol.get(symbol) or previous_by_symbol.get(symbol)
+            for symbol, _label in _MARKET_DATA_SYMBOLS
+        ]
+        data = [item for item in data if item is not None]
+        logger.warning(
+            "Piyasa şeridi tazeleme denemesi KISMİ başarılı (%d/%d sembol) - "
+            "eksik semboller için önceki app_state değerleri korundu.",
+            len(new_by_symbol), len(_MARKET_DATA_SYMBOLS),
+        )
+
+    try:
+        set_app_state(
+            "market_snapshot",
+            {"data": data, "fetched_at": datetime.now(timezone.utc).isoformat()},
+        )
+    except Exception:  # noqa: BLE001 - DB geçici erişilemez olabilir, bir sonraki turda tekrar denenecek
+        logger.exception("Piyasa şeridi verisi app_state'e yazılamadı.")
+
+
+def _add_market_snapshot_job(scheduler) -> None:
+    scheduler.add_job(
+        _market_snapshot_job, "interval", seconds=_MARKET_SNAPSHOT_INTERVAL_SECONDS, id="piyasa_seridi_yenileme"
+    )
+    scheduler.add_job(_market_snapshot_job, id="piyasa_seridi_ilk_yenileme")  # hemen (arka planda) çalışır
+
+
 def _daily_digest_job() -> None:
     """Günlük özet raporu (bkz. src/daily_digest.py) - mevcut anlık bildirim
     akışından (yukarıdaki `_job`) TAMAMEN bağımsız, ayrı bir zamanlanmış
@@ -326,6 +404,7 @@ def start_background_scheduler(config: dict | None = None) -> BackgroundSchedule
     scheduler.add_job(_job, "interval", minutes=interval_minutes, id="periyodik_tarama")
     scheduler.add_job(_job, id="ilk_tarama")  # tetikleyici verilmezse hemen (arka planda) çalışır
     _add_kap_fast_poll_job(scheduler, config)
+    _add_market_snapshot_job(scheduler)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)
@@ -353,6 +432,7 @@ def main() -> None:
     scheduler = BlockingScheduler()
     scheduler.add_job(_job, "interval", minutes=interval_minutes, id="periyodik_tarama")
     _add_kap_fast_poll_job(scheduler, config)
+    _add_market_snapshot_job(scheduler)
     _add_daily_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)

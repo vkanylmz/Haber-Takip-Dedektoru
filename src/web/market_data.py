@@ -43,6 +43,8 @@ from typing import Any
 
 import httpx
 
+from src.db import get_app_state
+
 logger = logging.getLogger(__name__)
 
 _CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -541,61 +543,66 @@ async def get_ticker_detail(company_ticker: str) -> dict[str, Any] | None:
     return {"quote": quote, "history": history}
 
 
-async def _refresh_market_data_cache() -> None:
-    """Yahoo'dan GERÇEK veriyi çekip önbelleği yazar - hem arka plan görevi
-    (bkz. _background_refresh_loop) hem de soğuk başlangıç fallback'i (bkz.
-    get_market_snapshot) TEK bir kaynak-of-truth olarak bu fonksiyonu
-    kullanır. Çağıran taraf `_refresh_lock`'u tutmakla YÜKÜMLÜDÜR - bu
-    fonksiyonun kendisi kilit almaz (tekrar-giriş/deadlock riski olmasın).
-
-    Tazeleme TAMAMEN başarısız olursa (ör. geçici bir ağ sorunu - TÜM
-    sembollerin isteği başarısız olur) önbellekteki ESKİ ama GERÇEK veri
-    SİLİNMEZ - kullanıcıya aniden boş/hata göstermek yerine biraz eski ama
-    gerçek veri gösterilmeye devam edilir, bir sonraki tazeleme denemesi
-    başarılı olursa güncellenir."""
+async def fetch_market_snapshot_from_yahoo() -> list[dict[str, Any]]:
+    """Yahoo'dan TÜM MARKET_SYMBOLS için GERÇEK veriyi TEK SEFERLİK çeker -
+    önbellek/kilit/retry mantığı İÇERMEZ (bkz. altındaki _refresh_market_data_cache
+    notu - o mantık artık BU fonksiyonu DEĞİL, worker.py'nin yazdığı
+    app_state'i okuyor). SADECE worker.py > _market_snapshot_job tarafından
+    çağrılır (2026-08-18, bkz. kullanıcı kararı) - Render'ın paylaşılan
+    IP'si Yahoo Finance tarafından ağır rate-limit'e uğradığı GERÇEK
+    production testiyle doğrulandığından (bkz. sohbet), artık SADECE
+    yerel worker'ın (engellenmemiş) IP'si Yahoo'ya DOĞRUDAN gidiyor; web
+    katmanı (hem yerel hem Render) hiçbir zaman Yahoo'ya gitmez, sadece
+    worker'ın app_state'e yazdığı veriyi okur (bkz. _refresh_market_data_cache)."""
     async with httpx.AsyncClient(timeout=8.0) as client:
         results = await asyncio.gather(*(_fetch_one(client, sym, label) for sym, label in MARKET_SYMBOLS))
+    return [r for r in results if r is not None]
 
-    data = [r for r in results if r is not None]
+
+# app_state'teki (bkz. src/db.py > get_app_state/set_app_state) piyasa anlık
+# görüntüsünün anahtarı - worker.py > _market_snapshot_job YAZAR, buradaki
+# _refresh_market_data_cache OKUR. AYNI Neon veritabanı hem yerel hem Render
+# tarafından paylaşıldığından (bkz. DATABASE_URL), bu tek yazar/çok okuyucu
+# deseni ikisinin de AYNI (worker'ın topladığı) veriyi göstermesini sağlar.
+_MARKET_SNAPSHOT_APP_STATE_KEY = "market_snapshot"
+
+# Worker'ın piyasa anlık görüntüsünü normalde ~90sn'de bir yenilemesi
+# beklenir (bkz. worker.py > _market_snapshot_job aralığı, AYNI değer). Bu
+# eşikten daha eski bir app_state yazımı, worker'ın çökmüş/Yahoo'nun yerel
+# IP'yi de engellemiş olabileceğine işaret eder - bkz. src/web/app.py >
+# dashboard() > is_data_stale (mevcut "veri bayat" banner'ına bu eşikle
+# entegre edilir, AYRI bir UI elemanı EKLENMEDİ, kullanıcı kararı 2026-08-18).
+MARKET_SNAPSHOT_STALE_THRESHOLD_MINUTES = 15.0
+
+
+async def _refresh_market_data_cache() -> None:
+    """ARTIK Yahoo'ya HİÇ gitmez (2026-08-18, bkz. kullanıcı kararı - üstteki
+    fetch_market_snapshot_from_yahoo notu). worker.py'nin (SADECE yerel/
+    engellenmemiş IP'den) periyodik olarak app_state'e yazdığı piyasa anlık
+    görüntüsünü okuyup web katmanının kendi in-process önbelleğine (_cache)
+    yansıtır. İki katmanlı tasarım (DB + in-process önbellek) KORUNDU: her
+    sayfa yüklemesinde Neon'a gitmek yerine, arka plan döngüsü (bkz.
+    _background_refresh_loop) DB'yi periyodik okuyup hazır tutuyor -
+    _refresh_lock/thundering-herd koruması da AYNEN geçerli.
+
+    app_state boşsa/hiç yazılmamışsa (ör. worker hiç çalışmadı) önbellek
+    boş listeye düşer - eski davranışla TUTARLI (önceden de "hiç başarılı
+    veri yoksa boş liste" davranışı vardı)."""
     now = time.monotonic()
+    try:
+        snapshot = get_app_state(_MARKET_SNAPSHOT_APP_STATE_KEY)
+    except Exception:  # noqa: BLE001 - DB geçici erişilemez olabilir, mevcut in-process önbellek korunur
+        logger.exception("app_state'ten piyasa anlık görüntüsü okunamadı, mevcut önbellek korunuyor.")
+        return
 
-    if len(data) == len(MARKET_SYMBOLS):
-        # Tam başarı - önbelleği doğrudan güncelle.
-        _cache["data"] = data
-        _cache["fetched_at"] = now
-    elif data:
-        # KISMİ başarı (ör. 12 semboldan sadece birkaçı) - bu turda
-        # BAŞARISIZ olan sembollerin ESKİ (varsa) değerlerini KORUYARAK
-        # birleştir, ham `data`'yı doğrudan önbelleğe YAZMA. Aksi halde
-        # kısmi bir başarı, önceki TAM (ör. 12/12) önbelleği aniden
-        # sparse bir veriyle EZERDİ - bu, GERÇEK production'da (Render'da,
-        # 2026-07) gözlemlendi: Yahoo Finance bazı sembolleri geçici
-        # olarak reddederken, önbellek her turda 1-2 sembole düşüyor,
-        # kullanıcı önceden gördüğü diğer 10-11 sembolü KAYBEDİYORDU.
-        previous_by_symbol = {item["symbol"]: item for item in (_cache["data"] or [])}
-        new_by_symbol = {item["symbol"]: item for item in data}
-        merged = [
-            new_by_symbol.get(symbol) or previous_by_symbol.get(symbol)
-            for symbol, _label in MARKET_SYMBOLS
-        ]
-        _cache["data"] = [item for item in merged if item is not None]
-        _cache["fetched_at"] = now
-        logger.warning(
-            "Piyasa verisi tazeleme denemesi KISMİ başarılı (%d/%d sembol) - "
-            "eksik semboller için önbellekteki eski değerler korundu.",
-            len(data), len(MARKET_SYMBOLS),
-        )
-    elif _cache["data"] is not None:
-        logger.warning(
-            "Piyasa verisi tazeleme denemesi TAMAMEN başarısız oldu (0/%d sembol) - "
-            "önbellekteki eski veri korunuyor, bir sonraki denemede tekrar denenecek.",
-            len(MARKET_SYMBOLS),
-        )
-    else:
-        # İlk çalıştırmadan beri hiç başarılı veri yok - gösterilecek
-        # "eski" bir veri da yok, boş liste dönmek zorundayız.
-        _cache["data"] = data
-        _cache["fetched_at"] = now
+    if not snapshot or not snapshot.get("data"):
+        if _cache["data"] is None:
+            _cache["data"] = []
+            _cache["fetched_at"] = now
+        return
+
+    _cache["data"] = snapshot["data"]
+    _cache["fetched_at"] = now
 
 
 async def _background_refresh_loop() -> None:

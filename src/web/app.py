@@ -39,6 +39,7 @@ from src.db import (
     NewsRecord,
     PushSubscription,
     get_all_subscribers_overview,
+    get_app_state,
     get_distinct_sectors,
     get_distinct_sources,
     get_latest_published_at,
@@ -65,6 +66,7 @@ from src.summarizer import (
 from src.trend_report import get_dashboard_trend_summary
 from src.web.api_v1 import router as api_v1_router
 from src.web.market_data import (
+    MARKET_SNAPSHOT_STALE_THRESHOLD_MINUTES,
     get_market_snapshot,
     get_quotes_for_company_tickers,
     get_ticker_detail,
@@ -627,11 +629,38 @@ def dashboard(
     # NULL olabilir (ör. veritabanı tamamen boşsa) - bu durumda uyarı
     # gösterilmez (henüz karşılaştırılacak bir "en yeni kayıt" yok, bu
     # "eski veri" değil "hiç veri yok" durumudur, farklı bir sorun).
-    is_data_stale = (
+    is_news_stale = (
         latest_published_at is not None
         and (datetime.now(timezone.utc) - latest_published_at) > timedelta(hours=_STALE_DATA_THRESHOLD_HOURS)
     )
     latest_published_at_display = format_turkey_time(latest_published_at) if latest_published_at else None
+
+    # Piyasa şeridi (üst ticker) artık Yahoo'ya hiç gitmiyor, worker.py'nin
+    # (SADECE yerel/engellenmemiş IP'den) periyodik olarak app_state'e
+    # yazdığı anlık görüntüyü okuyor (bkz. src/web/market_data.py >
+    # _refresh_market_data_cache, kullanıcı kararı 2026-08-18). Worker
+    # çökerse/Yahoo'yu bile engellenirse bu yazım durur - AYRI bir "piyasa
+    # verisi bayat" banner'ı EKLEMEK yerine (kullanıcı kararı), mevcut
+    # "veri bayat" banner'ına BURADA entegre edilir: haber VEYA piyasa
+    # verisinden HANGİSİ daha bayatsa o tetikler. Piyasa verisi normalde
+    # ~90sn'de bir yenilendiğinden (bkz. worker.py) eşik çok daha kısa
+    # (15dk) - haberlerin 6 saatlik eşiğinden çok daha erken uyarır.
+    try:
+        market_snapshot_state = get_app_state("market_snapshot")
+    except Exception:  # noqa: BLE001 - DB geçici erişilemez olabilir, bu durumda piyasa-bazlı tazelik kontrolü atlanır
+        market_snapshot_state = None
+    is_market_snapshot_stale = False
+    if market_snapshot_state and market_snapshot_state.get("fetched_at"):
+        try:
+            snapshot_fetched_at = datetime.fromisoformat(market_snapshot_state["fetched_at"])
+        except (TypeError, ValueError):
+            snapshot_fetched_at = None
+        if snapshot_fetched_at is not None:
+            is_market_snapshot_stale = (datetime.now(timezone.utc) - snapshot_fetched_at) > timedelta(
+                minutes=MARKET_SNAPSHOT_STALE_THRESHOLD_MINUTES
+            )
+
+    is_data_stale = is_news_stale or is_market_snapshot_stale
 
     views = [_record_to_view(r, threshold) for r in records]
     general_important_views = [_record_to_view(r, threshold) for r in general_important_records]
