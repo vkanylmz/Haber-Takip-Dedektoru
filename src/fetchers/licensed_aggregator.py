@@ -89,6 +89,7 @@ def _items_from_cache(cache: list[dict[str, Any]]) -> list[NewsItem]:
                 source=c.get("source", _DEFAULT_FALLBACK_NAME),
                 published_at=published_at,
                 raw_text=c.get("raw_text", ""),
+                image_url=c.get("image_url", ""),
             )
         )
     return items
@@ -102,6 +103,7 @@ def _items_to_cache(items: list[NewsItem]) -> list[dict[str, Any]]:
             "source": i.source,
             "published_at": i.published_at.isoformat() if i.published_at else None,
             "raw_text": i.raw_text,
+            "image_url": i.image_url,
         }
         for i in items
     ]
@@ -146,6 +148,11 @@ def _article_to_news_item(article: dict[str, Any]) -> NewsItem | None:
         source=source_name,
         published_at=_parse_article_date(article),
         raw_text=raw_text,
+        # GERÇEK makale görseli (2026-08-18, kullanıcı isteği) - Event
+        # Registry'nin kendi döndürdüğü, yayıncının (Reuters/Bloomberg/CNBC
+        # vb.) makaleyle birlikte sağladığı bir URL (bkz. altındaki
+        # ReturnInfo > image=True) - UYDURMA/scrape edilmiş bir görsel DEĞİL.
+        image_url=(article.get("image") or "").strip(),
     )
 
 
@@ -185,8 +192,10 @@ def _fetch_from_api(
         query = QueryArticlesIter(**query_kwargs)
 
         # Sadece ihtiyacımız olan alanları isteyip token/bant genişliği
-        # maliyetini düşük tutuyoruz (concepts/categories/sentiment/image vb.
-        # bizim için gerekli değil).
+        # maliyetini düşük tutuyoruz (concepts/categories/sentiment vb. bizim
+        # için gerekli değil). `image=True` (2026-08-18, kullanıcı isteği):
+        # dashboard hero/öne çıkan kartlarında gerçek haber görseli
+        # göstermek için - bkz. _article_to_news_item.
         return_info = ReturnInfo(
             articleInfo=ArticleInfoFlags(
                 bodyLen=2000,
@@ -195,7 +204,7 @@ def _fetch_from_api(
                 socialScore=False,
                 sentiment=False,
                 location=False,
-                image=False,
+                image=True,
                 links=False,
                 videos=False,
             )

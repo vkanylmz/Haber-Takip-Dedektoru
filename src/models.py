@@ -26,6 +26,15 @@ class NewsItem:
     # YERİNE bu OTORİTER kaynak kullanılır (bkz. summarize_group).
     kap_subject: str = ""
     kap_stock_codes: str = ""
+    # Haber görseli (2026-08-18, kullanıcı isteği: dashboard hero/öne çıkan
+    # kartlarında GERÇEK haber görseli kullanılsın) - kaynağın kendi RSS
+    # feed'inde varsa (media:content/media:thumbnail/enclosure, bkz.
+    # src/fetchers/rss_fetcher.py > _extract_image_url) doldurulur. Bu
+    # UYDURMA/üretilmiş bir görsel DEĞİL - RSS'in ZATEN sağladığı, feed
+    # okuyucularında gösterilmek üzere yayıncının kendisinin verdiği bir
+    # URL. Kaynakta yoksa boş string kalır (dashboard bu durumda görselsiz
+    # tipografik tasarıma düşer, bkz. templates/dashboard.html > hero-card).
+    image_url: str = ""
 
 
 @dataclass
@@ -82,6 +91,14 @@ class NewsGroup:
     # Açıklaması (Genel)") KAP_SYSTEM_PROMPT'un LLM'den istediği
     # `kap_category` alanına düşülür. KAP-dışı haberlerde HER ZAMAN None.
     kap_category: str | None = None
+    # SADECE KAP kaynaklı gruplarda anlamlı (bkz. src/summarizer.py >
+    # _KAP_SHORT_SUMMARY_INSTRUCTION, kullanıcı isteği 2026-08-18): dashboard
+    # KAP kartlarının ana/vurgulu satırı için "[TICKER]: [somut eylem/sonuç]"
+    # formatında kısa özet - uzun resmi başlığın YERİNE gösterilir, orijinal
+    # başlık+tam özet kart detayında kalır. Ticker LLM'e prompt'ta zaten
+    # verildiğinden (kap_stock_codes'tan, bkz. _kap_primary_ticker_code)
+    # LLM sadece cümleyi kurar. KAP-dışı haberlerde HER ZAMAN None.
+    short_summary: str | None = None
 
     @property
     def representative(self) -> NewsItem:
@@ -99,3 +116,15 @@ class NewsGroup:
     def latest_published_at(self) -> datetime | None:
         dates = [i.published_at for i in self.items if i.published_at is not None]
         return max(dates) if dates else None
+
+    @property
+    def image_url(self) -> str:
+        """Gruptaki (genelde birleştirilmiş birden fazla kaynaktan) ilk
+        dolu `image_url`'i döner - `representative` (items[0]) görselsiz
+        ama grup başka bir kaynaktan birleştiyse o kaynağın görseli
+        kullanılabilsin diye TÜM item'lar taranır (bkz. src/db.py >
+        upsert_group)."""
+        for item in self.items:
+            if item.image_url:
+                return item.image_url
+        return ""

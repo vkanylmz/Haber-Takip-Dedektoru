@@ -400,6 +400,8 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "ticker_quote": None,
         "kap_category": record.kap_category,
         "kap_category_label": KAP_CATEGORY_LABELS.get(record.kap_category or "", None),
+        "short_summary": record.short_summary,
+        "image_url": record.image_url,
     }
 
 
@@ -650,7 +652,14 @@ def dashboard(
     # diziyi içerse) basit bir escape uygulanır, ayrı bir HTTP isteği/endpoint
     # GEREKMEZ (veri zaten bu response içinde var).
     featured_records_json = json.dumps(
-        [{"time": f["published_at"], "title": f["title"], "score": f["importance_score"]} for f in featured_records]
+        [
+            {
+                "time": f["published_at"],
+                "title": f["short_summary"] or f["title"],
+                "score": f["importance_score"],
+            }
+            for f in featured_records
+        ]
     ).replace("</", "<\\/")
 
     return templates.TemplateResponse(

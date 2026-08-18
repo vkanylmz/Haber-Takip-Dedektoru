@@ -555,6 +555,17 @@
       border-left: 2px solid var(--border);
     }
 
+    /* KAP kartlarında ana satır short_summary'ye çevrildiğinde (bkz.
+       render_news_card macro'su), orijinal resmi KAP başlığı burada,
+       detay açıldığında görünür - kaybolmuyor, sadece ikincil konuma
+       geçiyor (kullanıcı isteği, 2026-08-18). */
+    .original-title {
+      font-size: 0.82rem;
+      font-style: italic;
+      color: var(--text-muted);
+      margin-bottom: 0.7rem;
+    }
+
     .summary {
       margin: 0 0 0.85rem 0;
       line-height: 1.6;
@@ -898,12 +909,55 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 1.5rem 1.6rem;
-      /* Görsel yok (bkz. üst not - gerçek haber görseli veri kaynağımız
-         YOK, sahte/üretilmiş görsel KULLANILMADI) - onun yerine vurgu
-         rengiyle sade bir üst şerit + büyük tipografi. */
+      overflow: hidden;
+      /* Görsel yoksa (bkz. .hero-image-wrap notu) vurgu rengiyle sade bir
+         üst şerit + büyük tipografiye düşülür. */
       border-top: 4px solid var(--accent);
       box-shadow: var(--shadow-sm);
+    }
+
+    .hero-card.has-image {
+      border-top: none;
+    }
+
+    .hero-content {
+      padding: 1.5rem 1.6rem;
+    }
+
+    /* Görselli hero (bkz. yukarıdaki HTML yorumu): metin BİLİNÇLİ OLARAK
+       fotoğrafın ÜSTÜNE bindirilmedi (referans görselde öyle ama orada
+       tek, kontrollü bir fotoğraf var) - burada öngörülemeyen renk/
+       kompozisyondaki GERÇEK haber fotoğrafları üzerine uzun özet metni
+       bindirmek okunabilirlik riski taşırdı; metin fotoğrafın hemen
+       altında, scrim ise sadece fotoğrafın kendisine hafif bir derinlik
+       katmak için. */
+    .hero-card.has-image .hero-content {
+      padding-top: 0.9rem;
+    }
+
+    .hero-image-wrap {
+      position: relative;
+      width: 100%;
+      height: 280px;
+      background: var(--surface-alt);
+    }
+
+    .hero-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hero-image-scrim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.72) 100%);
+    }
+
+    .hero-card.has-image .hero-badge {
+      top: 1rem;
+      right: 1.2rem;
     }
 
     .hero-card.hero-empty {
@@ -1892,8 +1946,14 @@
     <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
       <summary class="card-top">
         <div>
-          <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{%
-            endif %}</h2>
+          {# short_summary (2026-08-18, kullanıcı isteği): SADECE KAP
+             kayıtlarında dolu (bkz. src/summarizer.py >
+             _KAP_SHORT_SUMMARY_INSTRUCTION) - varsa kartın ana/vurgulu
+             satırı olur, uzun resmi başlık YERİNE. Genel haberlerde
+             short_summary hiç dolmadığından bu blok o kartları
+             ETKİLEMEZ - eski davranış (r.title) aynen korunur. #}
+          <h2 class="card-title">{% if r.short_summary %}{{ r.short_summary }}{% else %}{{ r.title }}{% if r.title_tr
+            %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}{% endif %}</h2>
           <div class="card-meta">
             <span>{{ r.published_at }}</span>
             <span class="meta-divider">|</span>
@@ -1929,6 +1989,11 @@
       </summary>
 
       <div class="card-body">
+        {% if r.short_summary %}
+        <div class="original-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr
+            }})</span>{% endif %}</div>
+        {% endif %}
+
         {% if r.importance_reason %}
         <div class="reason">{{ r.importance_reason }}</div>
         {% endif %}
@@ -1991,7 +2056,7 @@
       <div class="breaking-strip-content" id="breaking-strip-content">
         {% if featured_records %}
         <span class="breaking-strip-time">{{ featured_records[0].published_at }}</span>
-        <span class="breaking-strip-text">{{ featured_records[0].title }}</span>
+        <span class="breaking-strip-text">{{ featured_records[0].short_summary or featured_records[0].title }}</span>
         {% else %}
         <span class="breaking-strip-text">Henüz önem skoru atanmış bir haber yok.</span>
         {% endif %}
@@ -2007,17 +2072,35 @@
     <div class="home-grid">
       <section class="home-main">
         {% if featured_records %}
-        <div class="hero-card">
-          <span class="badge {{ featured_records[0].badge_class }} hero-badge" title="Önem skoru">{{
-            featured_records[0].badge_text }}/5</span>
-          <div class="hero-time">{{ featured_records[0].published_at }} · Kaynak: {{ featured_records[0].sources }}
+        {# Görsel: kaynağın GERÇEK RSS/lisanslı feed görseli (bkz.
+           src/fetchers/rss_fetcher.py > _extract_image_url,
+           licensed_aggregator.py) - uydurma/scrape edilmiş bir görsel
+           DEĞİL. Yoksa (çoğu KAP/bazı kaynaklar) altta zaten var olan
+           vurgu-renkli tipografik tasarıma DÜŞÜLÜR (kullanıcı isteği,
+           2026-08-18: "boş/tipografik bırakma" - ama gerçek olmayan bir
+           görsel HOTLINK'lemek yerine dürüst fallback tercih edildi, bkz.
+           commit notu). `onerror`: bozuk/erişilemez bir görsel URL'i
+           SESSİZCE görselsiz moda düşürür, kırık resim ikonu göstermez. #}
+        <div class="hero-card {% if featured_records[0].image_url %}has-image{% endif %}">
+          {% if featured_records[0].image_url %}
+          <div class="hero-image-wrap">
+            <img class="hero-image" src="{{ featured_records[0].image_url }}" alt="" loading="lazy"
+              onerror="this.closest('.hero-card').classList.remove('has-image'); this.remove();">
+            <div class="hero-image-scrim"></div>
           </div>
-          <h2 class="hero-title">{{ featured_records[0].title }}</h2>
-          <p class="hero-summary">{{ featured_records[0].summary }}</p>
-          {% if featured_records[0].links %}
-          <a class="hero-link" href="{{ featured_records[0].links[0].link }}" target="_blank" rel="noopener">Habere
-            Git ↗</a>
           {% endif %}
+          <div class="hero-content">
+            <span class="badge {{ featured_records[0].badge_class }} hero-badge" title="Önem skoru">{{
+              featured_records[0].badge_text }}/5</span>
+            <div class="hero-time">{{ featured_records[0].published_at }} · Kaynak: {{ featured_records[0].sources }}
+            </div>
+            <h2 class="hero-title">{{ featured_records[0].short_summary or featured_records[0].title }}</h2>
+            <p class="hero-summary">{{ featured_records[0].summary }}</p>
+            {% if featured_records[0].links %}
+            <a class="hero-link" href="{{ featured_records[0].links[0].link }}" target="_blank" rel="noopener">Habere
+              Git ↗</a>
+            {% endif %}
+          </div>
         </div>
         {% else %}
         <div class="hero-card hero-empty">Henüz önem skoru atanmış bir haber yok - otomatik tarama devam ediyor…
@@ -2030,7 +2113,7 @@
           {% for f in featured_records[1:] %}
           <a class="featured-item" href="{% if f.links %}{{ f.links[0].link }}{% else %}#{% endif %}"
             target="_blank" rel="noopener">
-            <span class="featured-item-title">{{ f.title }}</span>
+            <span class="featured-item-title">{{ f.short_summary or f.title }}</span>
             <span class="featured-item-time">{{ f.published_at }}</span>
           </a>
           {% endfor %}

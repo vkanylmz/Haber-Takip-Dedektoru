@@ -27,6 +27,47 @@ def _clean_html(raw_html: str) -> str:
     return BeautifulSoup(raw_html, "html.parser").get_text(separator=" ", strip=True)
 
 
+def _extract_image_url(entry: Any) -> str:
+    """RSS/Atom girdisinden GERÇEK haber görselinin URL'sini çıkarır (2026-08-18,
+    kullanıcı isteği) - UYDURMA/üretilmiş bir görsel DEĞİL, yayıncının kendi
+    feed'inde zaten sağladığı (feed okuyucularında göstermek için tasarlanmış)
+    bir URL. `feedparser` bunları otomatik ayrıştırır, ek bir kütüphane
+    GEREKMEZ. Öncelik sırası (en yaygın/güvenilirden en aza):
+      1. media:content (Media RSS - Reuters/Yahoo Finance gibi çoğu finans
+         feed'i bunu kullanır) - birden fazlaysa EN GENİŞ olanı seçilir
+         (genelde en yüksek kaliteli/gerçek makale görseli).
+      2. media:thumbnail (Media RSS'in daha küçük önizleme varyantı).
+      3. <enclosure type="image/..."> (klasik RSS 2.0 eki).
+    Hiçbiri yoksa boş string döner - çağıran taraf bunu "görsel yok" olarak
+    yorumlar, UYDURMAZ (bkz. NewsItem.image_url notu)."""
+    media_content = entry.get("media_content") or []
+    image_candidates = [m for m in media_content if (m.get("medium") == "image" or (m.get("url") or "").lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")))]
+    if image_candidates:
+        def _width(m: dict[str, Any]) -> int:
+            try:
+                return int(m.get("width") or 0)
+            except (TypeError, ValueError):
+                return 0
+        best = max(image_candidates, key=_width)
+        url = (best.get("url") or "").strip()
+        if url:
+            return url
+
+    media_thumbnail = entry.get("media_thumbnail") or []
+    if media_thumbnail:
+        url = (media_thumbnail[0].get("url") or "").strip()
+        if url:
+            return url
+
+    for enc in entry.get("enclosures") or []:
+        enc_type = (enc.get("type") or "").lower()
+        url = (enc.get("href") or enc.get("url") or "").strip()
+        if url and enc_type.startswith("image/"):
+            return url
+
+    return ""
+
+
 def _parse_published(entry: Any) -> datetime | None:
     struct = entry.get("published_parsed") or entry.get("updated_parsed")
     if not struct:
@@ -87,6 +128,7 @@ def fetch_rss(source_cfg: dict[str, Any], app_cfg: dict[str, Any]) -> list[NewsI
                 source=name,
                 published_at=_parse_published(entry),
                 raw_text=raw_text,
+                image_url=_extract_image_url(entry),
             )
         )
 

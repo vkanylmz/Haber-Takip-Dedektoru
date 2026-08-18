@@ -275,7 +275,7 @@ _KAP_JSON_SCHEMA_LINE = (
     '{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, '
     '"importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], '
     '"sentiment": "notr", "market_impact": "...", "top_category": "makro", '
-    '"company_ticker": "", "title_tr": "", "kap_category": "diger"}'
+    '"company_ticker": "", "title_tr": "", "kap_category": "diger", "short_summary": ""}'
 )
 
 for _label, _needle in (("_JSON_SCHEMA_LINE", _JSON_SCHEMA_LINE),):
@@ -308,6 +308,35 @@ dahil et."""
 KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(
     "Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n",
     f"Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n{_KAP_NUMERIC_DETAIL_INSTRUCTION}\n\n",
+    1,
+)
+
+# short_summary alanı (2026-08-18, kullanıcı isteği): dashboard KAP
+# kartlarının vurgulu/ana satırı için, uzun resmi başlık YERİNE kısa bir
+# "TICKER: somut eylem/sonuç" özeti. Ticker'ı LLM TAHMİN ETMEZ - kullanıcı
+# metnine (bkz. _build_user_prompt) "Ticker (short_summary için kullan): X"
+# satırı olarak zaten gömülüyor, model sadece o değeri harfiyen kullanıp
+# özet cümlesini kurar. Genel SYSTEM_PROMPT'a dokunulmadı - bu alan SADECE
+# KAP_SYSTEM_PROMPT'ta var (bkz. _KAP_JSON_SCHEMA_LINE).
+_KAP_SHORT_SUMMARY_INSTRUCTION = """short_summary alanı kuralı:
+- Format KESİNLİKLE: "[TICKER]: [somut eylem/sonuç]" - büyük harf ticker, \
+iki nokta, tek boşluk, sonra kısa özet cümlesi (nokta İLE bitirme).
+- Ticker için kullanıcı metnindeki "Ticker (short_summary için kullan): X" \
+satırındaki X değerini HARFİYEN kullan - kendi tahminini ÜRETME. Birden \
+fazla ticker satırı YOKTUR, her zaman TEK bir ana ticker verilir.
+- Bu satır metinde YOKSA (ticker çözülemedi) short_summary'yi boş string \
+("") bırak.
+- Özet kısmı en fazla 10-15 kelime, somut/sayısal (varsa tutar, oran, \
+tarih) - "rutin bir bildirimde bulunmuştur" gibi soyut ifade KULLANMA.
+- Şirket adını TEKRAR ETME (ticker zaten onu temsil ediyor) - doğrudan \
+eylem/sonuçla başla.
+- Örnekler: "NETAS: 15 milyon dolar tutarında sipariş aldı", \
+"GOKNR: Kayyım kararı kaldırıldı", "YKB: Sermaye payı %8,96'dan %8,59'a \
+düştü\""""
+
+KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(
+    "Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n",
+    f"Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n{_KAP_SHORT_SUMMARY_INSTRUCTION}\n\n",
     1,
 )
 
@@ -376,6 +405,51 @@ def _rule_based_kap_category(subject: str) -> str | None:
     """`_KAP_SUBJECT_CATEGORY_MAP`'te tam eşleşme varsa kategoriyi döner,
     yoksa None (çağıran taraf LLM'in kap_category yanıtına düşer)."""
     return _KAP_SUBJECT_CATEGORY_MAP.get((subject or "").strip())
+
+
+# Türkçeye özgü harfler (ğ/ş/ı/İ - Almanca/başka dillerde neredeyse hiç
+# geçmez, ö/ü'den FARKLI olarak) - herhangi biri geçiyorsa metin neredeyse
+# kesin Türkçe. Kısa/az karakterli başlıklarda bu tek başına yetersiz
+# kalabileceğinden (bkz. altındaki not), yaygın Türkçe işlev kelimeleriyle
+# birlikte kullanılır.
+_TURKISH_CHARS_RE = re.compile(r"[ğşıİÇç]")
+_TURKISH_STOPWORDS = {
+    "ve", "bir", "bu", "da", "de", "ile", "için", "olan", "olarak", "kadar",
+    "göre", "sonra", "önce", "gibi", "ise", "ama", "çok", "daha", "en",
+    "yeni", "büyük", "türkiye", "şirket", "şirketi", "hakkında", "başladı",
+    "açıkladı", "arttı", "düştü", "milyon", "milyar",
+}
+
+
+def _looks_turkish(text: str) -> bool:
+    """`title_tr` (2026-08-18, kullanıcı isteği): LLM'in kendi "başlık zaten
+    Türkçeyse title_tr'yi boş bırak" talimatına (bkz. SYSTEM_PROMPT) HER ZAMAN
+    uymadığı gözlemlendi (bazı zaten-Türkçe başlıklarda gereksiz bir
+    "çeviri" üretiyordu) - bu, LLM'in yanıtından BAĞIMSIZ, orijinal başlık
+    üzerinde çalışan deterministik bir ikinci kontrol katmanı (bkz.
+    summarize_group çağrısı) - `title_tr` LLM ne dönerse dönsün, orijinal
+    başlık zaten Türkçe GÖRÜNÜYORSA sessizce bastırılır.
+
+    Ağır bir dil tespiti kütüphanesi (langdetect vb.) BİLİNÇLİ OLARAK
+    eklenmedi - haber başlıkları kısa olduğundan basit bir imza (ğ/ş/ı/İ/ç
+    harfleri VEYA yaygın Türkçe işlev kelimeleri) pratikte yeterli, %100
+    isabet gerekmiyor (tek amaç gereksiz/bariz tekrarı azaltmak)."""
+    if not text:
+        return False
+    if _TURKISH_CHARS_RE.search(text):
+        return True
+    words = re.findall(r"[a-zçğıöşü]+", text.lower())
+    return sum(1 for w in words if w in _TURKISH_STOPWORDS) >= 2
+
+
+def _kap_primary_ticker_code(stock_codes: str) -> str | None:
+    """KAP API'sinin OTORİTER `stockCodes` alanından ("YKB, YKBNK" gibi
+    virgülle ayrılmış, bazen birden fazla kod) SADECE ilk/ana kodu, çıplak
+    (borsa öneki YOK - bkz. Summarizer._kap_company_ticker_from_stock_codes'un
+    "BIST: YKB" formatından FARKLI) döner - `short_summary` alanı (2026-08-18,
+    kullanıcı isteği) için prompt'a gömülür, LLM ayrıca tahmin ETMEZ."""
+    codes = [c.strip() for c in (stock_codes or "").split(",") if c.strip()]
+    return codes[0] if codes else None
 
 # Bölge etiketlerinin dashboard'da gösterilecek Türkçe karşılıkları.
 REGION_LABELS = {
@@ -629,7 +703,19 @@ class Summarizer:
             text_label = (
                 "Bildirim Konusu (KAP taksonomisi)" if item.source == _KAP_SOURCE_NAME and snippet else "Metin"
             )
-            parts.append(f"Kaynak: {item.source}\nBaşlık: {item.title}\n{text_label}: {snippet or '(açıklama yok)'}")
+            entry = f"Kaynak: {item.source}\nBaşlık: {item.title}\n{text_label}: {snippet or '(açıklama yok)'}"
+            # short_summary alanı için (2026-08-18, kullanıcı isteği) - ticker'ı
+            # LLM'e TAHMİN ETTİRMİYORUZ, KAP'ın kendi otoriter stockCodes
+            # alanından (bkz. _kap_primary_ticker_code) burada doğrudan
+            # veriyoruz; KAP_SYSTEM_PROMPT bu satırı short_summary'nin
+            # "[TICKER]: ..." formatında kullanmasını ister (bkz. altındaki
+            # _KAP_SHORT_SUMMARY_INSTRUCTION). Ticker çözülemezse (nadir)
+            # satır hiç eklenmez - LLM o durumda short_summary'yi boş bırakır.
+            if item.source == _KAP_SOURCE_NAME:
+                primary_ticker = _kap_primary_ticker_code(item.kap_stock_codes)
+                if primary_ticker:
+                    entry += f"\nTicker (short_summary için kullan): {primary_ticker}"
+            parts.append(entry)
         return "\n\n---\n\n".join(parts)
 
     def summarize_group(self, group: NewsGroup) -> None:
@@ -692,6 +778,7 @@ class Summarizer:
             group.company_ticker = None
             group.title_tr = None
             group.kap_category = None
+            group.short_summary = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -710,6 +797,12 @@ class Summarizer:
         group.top_category = self._parse_top_category(parsed.get("top_category"))
         group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
         group.title_tr = str(parsed.get("title_tr", "")).strip() or None
+        # bkz. _looks_turkish notu - LLM'in kendi "zaten Türkçeyse boş
+        # bırak" talimatına HER ZAMAN uymadığı gözlemlendi, bu deterministik
+        # ikinci kontrol orijinal başlık zaten Türkçe görünüyorsa title_tr'yi
+        # LLM ne dönerse dönsün bastırır.
+        if group.title_tr and _looks_turkish(group.representative.title):
+            group.title_tr = None
 
         if is_kap:
             # 1) Kategori: ÖNCE KAP'ın kendi `subject` taksonomisine kural
@@ -729,6 +822,15 @@ class Summarizer:
             )
             if kap_ticker:
                 group.company_ticker = kap_ticker
+
+            # 3) short_summary (bkz. _KAP_SHORT_SUMMARY_INSTRUCTION, src/models.py
+            #    > NewsGroup.short_summary) - format doğrulaması YAPILMAZ (LLM
+            #    çıktısı güveniliyor, aynı summary/key_points gibi) - boşsa
+            #    (ticker çözülemediyse) None kalır, kart eski davranışa
+            #    (uzun başlık) düşer.
+            group.short_summary = str(parsed.get("short_summary", "")).strip() or None
+        else:
+            group.short_summary = None
 
     def _current_quota_day(self) -> str:
         return datetime.now(_QUOTA_RESET_TZ).strftime("%Y-%m-%d")

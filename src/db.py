@@ -111,6 +111,24 @@ class NewsRecord(Base):
     # kayıtlarda/bu özellik eklenmeden önceki KAP kayıtlarında None.
     kap_category = Column(String(32), nullable=True)
 
+    # SADECE KAP kaynaklı kayıtlarda dolu (bkz. src/summarizer.py >
+    # _KAP_SHORT_SUMMARY_INSTRUCTION, src/models.py > NewsGroup.short_summary,
+    # kullanıcı isteği 2026-08-18): dashboard KAP kartının ana/vurgulu satırı
+    # için "[TICKER]: [somut eylem/sonuç]" kısa özeti - uzun resmi başlığın
+    # YERİNE gösterilir. KAP-dışı kayıtlarda/bu özellik eklenmeden önceki KAP
+    # kayıtlarında None (dashboard bu durumda eski davranışa - uzun başlık -
+    # düşer, bkz. templates/dashboard.html).
+    short_summary = Column(String(280), nullable=True)
+
+    # Haber görseli (2026-08-18, kullanıcı isteği) - kaynağın kendi RSS
+    # feed'inden (media:content/thumbnail/enclosure, bkz.
+    # src/fetchers/rss_fetcher.py > _extract_image_url) veya lisanslı
+    # NewsAPI.ai kaynağından (bkz. src/fetchers/licensed_aggregator.py)
+    # gelen GERÇEK URL - UYDURMA/üretilmiş DEĞİL. Boş -> kaynakta görsel
+    # yoktu (KAP'ta HER ZAMAN boş - resmi bildirimlerde görsel olmaz) veya
+    # bu özellik eklenmeden önce çekilmiş eski bir kayıt.
+    image_url = Column(String(1024), nullable=True)
+
     notified = Column(Boolean, nullable=False, default=False)
     notified_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -536,6 +554,12 @@ def _migrate_add_missing_columns(engine) -> None:
         if "kap_category" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN kap_category VARCHAR(32)")
             logger.info("Veritabanı migrasyonu: news_records.kap_category kolonu eklendi.")
+        if "short_summary" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN short_summary VARCHAR(280)")
+            logger.info("Veritabanı migrasyonu: news_records.short_summary kolonu eklendi.")
+        if "image_url" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN image_url VARCHAR(1024)")
+            logger.info("Veritabanı migrasyonu: news_records.image_url kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -683,6 +707,8 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             top_category=group.top_category,
             company_ticker=group.company_ticker,
             kap_category=group.kap_category,
+            short_summary=group.short_summary,
+            image_url=group.image_url or None,
             notified=False,
             first_seen_at=now,
             last_seen_at=now,
@@ -704,6 +730,8 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.company_ticker = group.company_ticker or record.company_ticker
         record.kap_category = group.kap_category or record.kap_category
         record.title_tr = group.title_tr or record.title_tr
+        record.short_summary = group.short_summary or record.short_summary
+        record.image_url = group.image_url or record.image_url
         record.last_seen_at = now
 
     session.flush()
