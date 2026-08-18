@@ -171,6 +171,36 @@ def _get_cached_kap_records(session, max_items: int) -> list[NewsRecord]:
         return records
 
 
+# --- Ana sayfa (view=home) "önemli içerik" önbelleği (2026-08-18) ---
+# Hero/Son Dakika/Öne Çıkan Haberler VE sayfa altındaki "KAP+Haber karışık
+# önemli içerik" bölümü AYNI kaynaktan (bu önbellek) beslenir - kaynak
+# (KAP dahil) FARK ETMEKSİZİN, SADECE `_HOME_FEATURED_MIN_IMPORTANCE` eşiğini
+# geçen kayıtlar (kullanıcı kararı, 2026-08-18: düşük skorla DOLDURULMASIN,
+# eşiği geçen yeterli kayıt yoksa bölüm daha az öğeyle gösterilir). Diğer
+# önbelleklerle AYNI TTL/kilit deseni.
+_HOME_FEATURED_MIN_IMPORTANCE = 4
+_HOME_IMPORTANT_CACHE_TTL_SECONDS = 30.0
+_home_important_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
+_home_important_lock = threading.Lock()
+
+
+def _get_cached_home_important_records(session, limit: int) -> list[NewsRecord]:
+    now = time.monotonic()
+    if _home_important_cache["records"] is not None and (now - _home_important_cache["fetched_at"]) < _HOME_IMPORTANT_CACHE_TTL_SECONDS:
+        return _home_important_cache["records"]
+
+    with _home_important_lock:
+        now = time.monotonic()
+        if _home_important_cache["records"] is not None and (now - _home_important_cache["fetched_at"]) < _HOME_IMPORTANT_CACHE_TTL_SECONDS:
+            return _home_important_cache["records"]
+        records = get_recent_records(
+            session, limit=limit, min_importance=_HOME_FEATURED_MIN_IMPORTANCE, sort_order="newest"
+        )
+        _home_important_cache["records"] = records
+        _home_important_cache["fetched_at"] = now
+        return records
+
+
 # --- Web rotaları için config önbelleği ---
 # `load_config()` (bkz. src/config.py) HER çağrıda .env'i disk'ten okuyup
 # config.yaml'ı (19KB) yeniden YAML-parse ediyor - yerel ölçümle bu tek
@@ -445,9 +475,19 @@ def _build_sector_heatmap() -> list[dict[str, Any]]:
     return result
 
 
+_VALID_DASHBOARD_VIEWS = ("home", "kap", "haberler", "emtia")
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
+    # Nav sekmeleri (2026-08-18 görsel yeniden tasarım, bkz. kullanıcı
+    # isteği): her sekme kendi TAMAMEN AYRI içeriğini gösterir (tam sayfa
+    # GET, ayrı bir SPA/JS router YOK - mevcut filtre formu deseniyle
+    # TUTARLI). "home" = referans görseldeki tam format (hero+özet),
+    # "kap"/"haberler" = ilgili kaynağın iki-sütunlu (yeni/önemli) görünümü,
+    # "emtia" = tam emtia raporu (iki sütuna bölünmüş, bkz. template).
+    view: str = "home",
     source: str | None = None,
     sector: str | None = None,
     region: str | None = None,
@@ -465,6 +505,7 @@ def dashboard(
     config = _get_cached_web_config()
     threshold = config.get("importance", {}).get("threshold", 4)
     max_items = config.get("web", {}).get("max_items", 100)
+    view_normalized = view if view in _VALID_DASHBOARD_VIEWS else "home"
 
     min_importance_value: int | None = None
     if min_importance:
@@ -486,11 +527,36 @@ def dashboard(
     # bkz. src/fetchers/kap_fetcher.py); 30 pratikte fazlasıyla yeterli.
     kap_max_items = min(max_items, 30)
 
+    records: list[NewsRecord] = []
+    general_important_records: list[NewsRecord] = []
+    kap_records: list[NewsRecord] = []
+    kap_important_records: list[NewsRecord] = []
+    home_important_records: list[NewsRecord] = []
+
     with get_session() as session:
-        if is_default_view:
-            records = _get_cached_default_records(session, max_items)
-        else:
-            records = get_recent_records(
+        if view_normalized == "haberler":
+            # Sol sütun ("En Yeni"): mevcut genel filtre formuyla (bkz.
+            # kaynak/sektör/bölge/duygu/önem/arama), KAP HARİÇ - önceki
+            # tek-sütunlu "sağ sütun" ile AYNI sorgu, artık kendi sekmesinde.
+            if is_default_view:
+                records = _get_cached_default_records(session, max_items)
+            else:
+                records = get_recent_records(
+                    session,
+                    limit=max_items,
+                    source_filter=source or None,
+                    exclude_source_filter=KAP_SOURCE_NAME,
+                    sector_filter=sector or None,
+                    region_filter=region or None,
+                    sentiment_filter=sentiment or None,
+                    min_importance=min_importance_value,
+                    search_query=q or None,
+                    sort_order=sort_normalized,
+                )
+            # Sağ sütun ("Öne Çıkanlar"): AYNI filtreler + önem skoru en az
+            # 4 (kullanıcı seçtiği eşik daha yüksekse ONU kullan) - KAP'la
+            # AYNI "yeni/önemli" ikilisi deseni (bkz. aşağıdaki kap_important_records).
+            general_important_records = get_recent_records(
                 session,
                 limit=max_items,
                 source_filter=source or None,
@@ -498,38 +564,62 @@ def dashboard(
                 sector_filter=sector or None,
                 region_filter=region or None,
                 sentiment_filter=sentiment or None,
-                min_importance=min_importance_value,
+                min_importance=max(min_importance_value or 0, _HOME_FEATURED_MIN_IMPORTANCE),
                 search_query=q or None,
-                sort_order=sort_normalized,
+                sort_order="newest",
             )
-        # KAP sütunu (sol) BİLİNÇLİ OLARAK yukarıdaki genel filtre formundan
-        # (kaynak/sektör/bölge/duygu/önem/arama) ETKİLENMEZ - her zaman
-        # filtresiz, en yeni özel durum açıklamaları (bkz. _get_cached_kap_records
-        # notu, kullanıcı kararı 2026-08-17). SADECE `kap_category` (2026-08,
-        # bkz. VALID_KAP_CATEGORIES) bunun DIŞINDA - KAP sütununa özel, ayrı
-        # bir filtre ekseni. Aktifse (genel filtre formundaki AYNI mantıkla,
-        # bkz. yukarıdaki is_default_view) önbellek ATLANIR, canlı sorgu yapılır.
-        if kap_category:
-            kap_records = get_recent_records(
+        elif view_normalized == "kap":
+            # Sol sütun ("Tüm KAP") - genel filtre formundan ETKİLENMEZ
+            # (bkz. eski tek-sütun davranışının notu), SADECE kap_category
+            # ekseni. Sağ sütun ("Yüksek Önemli KAP") AYNI kap_category +
+            # önem skoru >= 4.
+            if kap_category:
+                kap_records = get_recent_records(
+                    session,
+                    limit=kap_max_items,
+                    source_filter=KAP_SOURCE_NAME,
+                    kap_category_filter=kap_category,
+                    sort_order="newest",
+                )
+            else:
+                kap_records = _get_cached_kap_records(session, kap_max_items)
+            kap_important_records = get_recent_records(
                 session,
                 limit=kap_max_items,
                 source_filter=KAP_SOURCE_NAME,
-                kap_category_filter=kap_category,
+                kap_category_filter=kap_category or None,
+                min_importance=_HOME_FEATURED_MIN_IMPORTANCE,
                 sort_order="newest",
             )
-        else:
-            kap_records = _get_cached_kap_records(session, kap_max_items)
+        elif view_normalized == "emtia":
+            # DB sorgusu YOK - emtia verisi tamamen tarayıcı tarafında
+            # /api/commodity-weekly-report'tan çekilir (bkz. dashboard.html
+            # > loadCommodityPanel/loadCommodityEmtiaView), aynı önbellekli
+            # veri kaynağı (src/commodity_report.py).
+            pass
+
+        if view_normalized == "home":
+            home_important_records = _get_cached_home_important_records(session, limit=20)
+
+        # Piyasa Duygusu (bkz. _compute_fear_greed_index) için HER ZAMAN
+        # genel/filtresiz "en yeni N" örneklemi kullanılır - hangi sekmede
+        # olunursa olsun TUTARLI bir endeks (gösterge SADECE Ana Sayfa'da
+        # render edilir, ama değeri her istek için ucuza - önbellekten -
+        # hesaplanabilir olsun diye burada koşulsuz alınır).
+        sentiment_baseline_records = _get_cached_default_records(session, max_items)
+
         sources, sectors = _get_cached_filter_options(session)
         latest_published_at = _get_cached_latest_published_at(session)
 
-    # "KAP" dropdown'dan çıkarılır - sağ sütun onu artık hiç göstermediğinden
-    # (yukarıdaki exclude_source_filter), seçilebilir bırakmak kafa karıştırır.
+    # "KAP" dropdown'dan çıkarılır - genel filtre formu onu artık hiç
+    # göstermediğinden (yukarıdaki exclude_source_filter), seçilebilir
+    # bırakmak kafa karıştırır.
     sources = [s for s in sources if s != KAP_SOURCE_NAME]
 
     regions = [{"slug": r, "label": REGION_LABELS.get(r, r)} for r in VALID_REGIONS]
     sentiments = [{"slug": s, "label": SENTIMENT_LABELS.get(s, s)} for s in VALID_SENTIMENTS]
 
-    fear_greed_index = _compute_fear_greed_index(records)
+    fear_greed_index = _compute_fear_greed_index(sentiment_baseline_records)
 
     # bkz. yukarıdaki "Veri tazeliği uyarısı" notu - latest_published_at
     # NULL olabilir (ör. veritabanı tamamen boşsa) - bu durumda uyarı
@@ -542,19 +632,18 @@ def dashboard(
     latest_published_at_display = format_turkey_time(latest_published_at) if latest_published_at else None
 
     views = [_record_to_view(r, threshold) for r in records]
+    general_important_views = [_record_to_view(r, threshold) for r in general_important_records]
     kap_views = [_record_to_view(r, threshold) for r in kap_records]
+    kap_important_views = [_record_to_view(r, threshold) for r in kap_important_records]
+    home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
 
-    # "Öne Çıkan Haberler" / hero / Son Dakika şeridi (2026-08-18 görsel
-    # yeniden tasarım, bkz. kullanıcı isteği): ayrı bir editöryel seçim
-    # mekanizması veya ek DB sorgusu YOK - zaten çekilmiş `views` listesinden
-    # (en yeni sıralı) en yüksek önem skoruna göre TÜRETİLEN ilk 5 kayıt.
-    # Python'un sort'u stable olduğundan aynı skora sahip kayıtlar arasında
-    # "en yeni önce" sırası korunur - ayrı bir tarih tie-break'e gerek yok.
-    featured_records = sorted(
-        (v for v in views if v["importance_score"] is not None),
-        key=lambda v: v["importance_score"],
-        reverse=True,
-    )[:5]
+    # Hero/Son Dakika/Öne Çıkan Haberler (üst) + "KAP+Haber karışık önemli
+    # içerik" (alt) - AYNI `home_important_views` listesinden dilimlenir,
+    # ikisi arasında TEKRAR YOK. Kullanıcı kararı (2026-08-18): eşiği
+    # (>=4) geçen yeterli kayıt olmayabilir - bu durumda DOLDURMA YOK,
+    # bölüm(ler) daha az öğeyle gösterilir.
+    featured_records = home_important_views[:5]
+    home_mixed_records = home_important_views[5:15]
     # Son Dakika şeridinin JS tarafında (bkz. dashboard.html > breakingStripStep)
     # döngüsel gösterebilmesi için aynı `featured_records` küçük bir JSON'a
     # çevrilir - "</script>" enjeksiyonuna karşı (ör. bir haber başlığı bu
@@ -568,8 +657,12 @@ def dashboard(
         request,
         "dashboard.html",
         {
+            "view": view_normalized,
             "records": views,
+            "general_important_records": general_important_views,
             "kap_records": kap_views,
+            "kap_important_records": kap_important_views,
+            "home_mixed_records": home_mixed_records,
             "featured_records": featured_records,
             "featured_records_json": featured_records_json,
             "sources": sources,
@@ -585,7 +678,6 @@ def dashboard(
             "selected_query": q or "",
             "selected_sort": sort_normalized,
             "threshold": threshold,
-            "total_count": len(views),
             "fear_greed_index": fear_greed_index,
             "kap_categories": [{"slug": c, "label": KAP_CATEGORY_LABELS.get(c, c)} for c in VALID_KAP_CATEGORIES],
             "selected_kap_category": kap_category or "",

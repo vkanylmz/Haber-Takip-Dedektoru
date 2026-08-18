@@ -180,8 +180,9 @@
        menü öğesi eklenmedi. */
     .quick-nav {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1.35rem;
+      gap: 0.6rem 1.35rem;
       font-family: var(--font-heading);
     }
 
@@ -633,13 +634,6 @@
        duygusu/trend özeti/emtia raporu bundan ETKİLENMEZ - onlar main'in
        ayrı flex-child'ları olarak tam genişlikte kalmaya devam eder, bu
        grid SADECE haber kartları bölümünü ikiye ayırır. */
-    /* Sticky header'ın (bkz. header { position: sticky }) #kap-section/
-       #emtia-section'a çapa (nav linki) ile atlarken içeriği ÖRTMEMESİ için. */
-    #kap-section,
-    #emtia-section {
-      scroll-margin-top: 96px;
-    }
-
     .news-section-title {
       font-family: var(--font-heading);
       font-size: 1.05rem;
@@ -832,6 +826,7 @@
       border-radius: 8px;
       padding: 0.6rem 1rem;
       margin: 1.25rem 0;
+      box-shadow: var(--shadow-sm);
     }
 
     .breaking-strip-label {
@@ -908,6 +903,7 @@
          YOK, sahte/üretilmiş görsel KULLANILMADI) - onun yerine vurgu
          rengiyle sade bir üst şerit + büyük tipografi. */
       border-top: 4px solid var(--accent);
+      box-shadow: var(--shadow-sm);
     }
 
     .hero-card.hero-empty {
@@ -960,6 +956,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
     }
 
     .featured-list-title {
@@ -1018,6 +1015,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
     }
 
     .market-summary-title {
@@ -1081,6 +1079,73 @@
       color: var(--text-muted);
       font-size: 0.82rem;
       line-height: 1.5;
+    }
+
+    /* Emtia Özeti (Ana Sayfa, kısa önizleme) - .market-summary-card'ın
+       tam genişlik hali, başlığın yanında "Tüm Emtiaları Gör" linki. */
+    .commodity-summary-card {
+      max-width: none;
+    }
+
+    .market-summary-title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 0.6rem;
+    }
+
+    .market-summary-title-row .market-summary-title {
+      margin-bottom: 0;
+    }
+
+    .market-summary-more-link {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .market-summary-more-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Ana sayfa altı "KAP + Haber: Öne Çıkanlar" - iki-sütun tab
+       görünümleriyle (.dashboard-columns) AYNI kart dili, ama tek bir
+       akış (sol/sağ ayrım YOK, kullanıcı isteği bu bölüm için sadece
+       "karışık" içerik istedi). */
+    .home-mixed-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    /* Şirket baş harfi rozeti (2026-08-18, bkz. kullanıcı isteği #4) -
+       ticker koduna göre üretilen deterministik renk/baş harf, bkz.
+       altındaki <script> > applyCompanyAvatars. Gerçek bir logo kaynağı
+       ARAŞTIRILDI (bkz. commit mesajı) - bu proje için ticker→domain/logo
+       eşlemesi yapan güvenilir bir veri kaynağı YOK, bu yüzden uydurma bir
+       CDN URL'i hotlink'lenmedi; bu rozet dürüst bir fallback'tir. */
+    .company-avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-right: 0.3rem;
+      vertical-align: -3px;
+      line-height: 1;
+    }
+
+    @media (max-width: 900px) {
+      .home-mixed-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 900px) {
@@ -1379,29 +1444,18 @@
     }
 
     /* --- Haftalık Emtia Raporu paneli (bkz. src/commodity_report.py > Faz 2) --- */
-    .commodity-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.9rem 1.25rem;
-    }
-
-    .commodity-panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 0.75rem;
-    }
-
-    .commodity-panel-title {
-      font-weight: 600;
-      font-size: 1rem;
-      color: var(--text-primary);
-    }
-
     .commodity-panel-updated {
       font-size: 0.72rem;
       color: var(--text-muted);
+    }
+
+    /* "Emtia" sekmesinin iki-sütun düzeninde eski .commodity-panel-header
+       yerine kullanılan hafif üst satır - sadece son güncelleme zamanı
+       (bkz. dashboard.html > view == 'emtia'). */
+    .commodity-panel-header-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.5rem;
     }
 
     .commodity-grid {
@@ -1411,10 +1465,11 @@
     }
 
     .commodity-card {
-      background: var(--surface-alt);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 0.7rem 0.8rem;
+      box-shadow: var(--shadow-sm);
     }
 
     .commodity-card-top {
@@ -1733,10 +1788,15 @@
            isteği, 2026-08-18: sahte/boş nav öğesi YOK) - "Piyasalar/Döviz/
            Kripto/Ekonomi Takvimi" gibi karşılığı olmayan öğeler BİLİNÇLİ
            OLARAK eklenmedi. -->
+      <!-- Her link kendi TAMAMEN AYRI sayfa görünümüne gider (bkz.
+           src/web/app.py > dashboard() > view param, kullanıcı isteği
+           2026-08-18: önceden sadece aynı sayfa içinde çapa/scroll yapıyordu,
+           artık her sekme SADECE kendi içeriğini gösteren tam bir GET). -->
       <nav class="quick-nav" aria-label="Bölümler">
-        <a href="/" class="quick-nav-link active">Ana Sayfa</a>
-        <a href="#kap-section" class="quick-nav-link">KAP</a>
-        <a href="#emtia-section" class="quick-nav-link">Emtia</a>
+        <a href="/" class="quick-nav-link {% if view=='home' %}active{% endif %}">Ana Sayfa</a>
+        <a href="/?view=kap" class="quick-nav-link {% if view=='kap' %}active{% endif %}">KAP</a>
+        <a href="/?view=haberler" class="quick-nav-link {% if view=='haberler' %}active{% endif %}">Haberler</a>
+        <a href="/?view=emtia" class="quick-nav-link {% if view=='emtia' %}active{% endif %}">Emtia</a>
         <a href="/detayli-inceleme" class="quick-nav-link">Detaylı İnceleme</a>
         <a href="/docs" class="quick-nav-link" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
       </nav>
@@ -1745,8 +1805,14 @@
         <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
       </div>
     </div>
+    {% if view == 'haberler' %}
+    <!-- Genel filtre formu SADECE "Haberler" sekmesinde anlamlı - KAP kendi
+         kap_category çip araç çubuğunu kullanır (bkz. kap sayfası içeriği),
+         Ana Sayfa/Emtia'da filtrelenecek tek bir liste YOK (kullanıcı
+         isteği, 2026-08-18). -->
     <div class="header-row header-row-bottom">
       <form class="filter" id="filter-form" method="get" action="/">
+        <input type="hidden" name="view" value="haberler">
         <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
         <select name="sort" onchange="this.form.submit()">
           <option value="newest" {% if selected_sort=="newest" %}selected{% endif %}>En Yeni</option>
@@ -1798,6 +1864,7 @@
       </form>
       <span id="push-filter-status" class="push-filter-status"></span>
     </div>
+    {% endif %}
   </header>
 
   <div class="sector-heatmap-wrap">
@@ -1815,8 +1882,108 @@
     </div>
     {% endif %}
 
+    {# KAP sütunu ve genel haber sütunu (ve artık Ana Sayfa'nın alt "karışık
+       önemli içerik" bölümü) AYNI kart görünümünü paylaşır - tek bir macro,
+       farklı veri kaynakları (bkz. app.py > kap_records/records/
+       home_mixed_records, hepsi aynı _record_to_view() ile üretiliyor, bu
+       yüzden alan yapıları zaten özdeş). Her view bloğundan ÖNCE tanımlı
+       olmalı (Jinja macro'ları yukarıdan aşağı çalışır). #}
+    {% macro render_news_card(r) %}
+    <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
+      <summary class="card-top">
+        <div>
+          <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{%
+            endif %}</h2>
+          <div class="card-meta">
+            <span>{{ r.published_at }}</span>
+            <span class="meta-divider">|</span>
+            <span>Kaynak: {{ r.sources }}</span>
+            {% if r.company_ticker %}
+            <span class="meta-divider">|</span>
+            <span class="ticker-badge">
+              <span class="company-avatar" data-ticker="{{ r.company_ticker }}" aria-hidden="true"></span>{{
+              r.company_ticker }}</span>
+            {% endif %}
+            {% if r.kap_category_label %}
+            <span class="meta-divider">|</span>
+            <span class="sector-tag">{{ r.kap_category_label }}</span>
+            {% endif %}
+            {% if r.sentiment_label %}
+            <span class="meta-divider">|</span>
+            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+            {% endif %}
+            {% if r.sector_labels %}
+            <span class="meta-divider">|</span>
+            {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+            {% endif %}
+            {% if r.notified %}
+            <span class="meta-divider">|</span>
+            <span class="notified-flag">Telegram Aktarıldı</span>
+            {% endif %}
+          </div>
+        </div>
+        <span style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+          <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+          <span class="card-chevron">▸</span>
+        </span>
+      </summary>
+
+      <div class="card-body">
+        {% if r.importance_reason %}
+        <div class="reason">{{ r.importance_reason }}</div>
+        {% endif %}
+
+        <div class="summary">{{ r.summary }}</div>
+
+        {% if r.market_impact %}
+        <div class="market-impact">
+          <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
+        </div>
+        {% endif %}
+
+        {% if r.key_points %}
+        <ul class="key-points">
+          {% for point in r.key_points %}
+          <li>{{ point }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="links">
+          {% for link in r.links %}
+          <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+          {% endfor %}
+        </div>
+
+        {% if r.source_comparison %}
+        <details class="compare-details">
+          <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)
+          </summary>
+          <div class="compare-grid">
+            {% for c in r.source_comparison %}
+            <div class="compare-item">
+              <div class="compare-source">{{ c.source }}</div>
+              {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
+              {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
+              {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet
+                henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+    </details>
+    {% endmacro %}
+
+    {% if view == 'home' %}
+    <!-- Ana sayfa (view=home) - referans görseldeki tam format. Diğer
+         sekmeler (KAP/Haberler/Emtia) TAMAMEN AYRI içerik gösterir, bkz.
+         daha aşağıdaki view == 'kap'/'haberler'/'emtia' blokları. -->
+
     <!-- Son Dakika şeridi: ayrı bir "editöryel seçim" YOK - src/web/app.py >
-         featured_records (en yüksek önem skorlu son kayıtlar) üzerinde
+         featured_records (SADECE önem skoru >= 4, KAP dahil kaynak
+         farketmeksizin - bkz. _HOME_FEATURED_MIN_IMPORTANCE) üzerinde
          otomatik/manuel döngü (bkz. altındaki <script> > breakingStripStep). -->
     <script type="application/json" id="breaking-strip-data">{{ featured_records_json | safe }}</script>
     <div class="breaking-strip">
@@ -1948,6 +2115,45 @@
       </aside>
     </div>
 
+    <!-- Emtia Özeti: tam emtia raporundan AYRI, kısa bir önizleme (kullanıcı
+         isteği, 2026-08-18) - yeni bir veri kaynağı DEĞİL, "Emtia" sekmesini
+         besleyen AYNI /api/commodity-weekly-report'un ilk birkaç kalemi
+         (bkz. altındaki <script> > loadCommodityHomeSummary). Detay için
+         link doğrudan "Emtia" sekmesine gider. -->
+    <div class="market-summary-card commodity-summary-card">
+      <div class="market-summary-title-row">
+        <div class="market-summary-title">EMTİA ÖZETİ</div>
+        <a href="/?view=emtia" class="market-summary-more-link">Tüm Emtiaları Gör →</a>
+      </div>
+      <table class="market-summary-table">
+        <thead>
+          <tr>
+            <th>Emtia</th>
+            <th>Son</th>
+            <th>Haftalık %</th>
+          </tr>
+        </thead>
+        <tbody id="commodity-summary-body">
+          <tr>
+            <td colspan="3" class="trend-empty">Yükleniyor…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Sayfa altı: KAP + Haber karışık önemli içerik (kullanıcı isteği,
+         2026-08-18) - AYNI kaynak/eşik (bkz. featured_records üstteki notu),
+         üsttekiyle TEKRARSIZ (bkz. app.py > home_mixed_records = dilim [5:15]). -->
+    {% if home_mixed_records %}
+    <div class="news-section-title">KAP + HABER: ÖNE ÇIKANLAR</div>
+    <div class="home-mixed-grid">
+      {% for r in home_mixed_records %}
+      {{ render_news_card(r) }}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
       <div id="company-modal-overlay" class="company-modal-overlay">
         <div class="company-modal">
           <div class="company-modal-header">
@@ -1974,122 +2180,27 @@
         </div>
       </div>
 
-      {# KAP sütunu ve genel haber sütunu AYNI kart görünümünü paylaşır -
-         tek bir macro, iki farklı veri kaynağı (bkz. app.py > kap_records/
-         records, ikisi de aynı _record_to_view() ile üretiliyor, bu yüzden
-         alan yapıları zaten özdeş). Ayrı bir "kompakt KAP kartı" template'i
-         KASITLI OLARAK yok - kullanıcı isteği (2026-08-17): iki sütun görsel
-         olarak birebir aynı kart tipini kullanmalı, sadece veri farklı. #}
-      {% macro render_news_card(r) %}
-      <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
-        <summary class="card-top">
-          <div>
-            <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{%
-              endif %}</h2>
-            <div class="card-meta">
-              <span>{{ r.published_at }}</span>
-              <span class="meta-divider">|</span>
-              <span>Kaynak: {{ r.sources }}</span>
-              {% if r.company_ticker %}
-              <span class="meta-divider">|</span>
-              <span class="ticker-badge">{{ r.company_ticker }}</span>
-              {% endif %}
-              {% if r.kap_category_label %}
-              <span class="meta-divider">|</span>
-              <span class="sector-tag">{{ r.kap_category_label }}</span>
-              {% endif %}
-              {% if r.sentiment_label %}
-              <span class="meta-divider">|</span>
-              <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
-              {% endif %}
-              {% if r.sector_labels %}
-              <span class="meta-divider">|</span>
-              {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
-              {% endif %}
-              {% if r.notified %}
-              <span class="meta-divider">|</span>
-              <span class="notified-flag">Telegram Aktarıldı</span>
-              {% endif %}
-            </div>
-          </div>
-          <span style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
-            <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-            <span class="card-chevron">▸</span>
-          </span>
-        </summary>
-
-        <div class="card-body">
-          {% if r.importance_reason %}
-          <div class="reason">{{ r.importance_reason }}</div>
-          {% endif %}
-
-          <div class="summary">{{ r.summary }}</div>
-
-          {% if r.market_impact %}
-          <div class="market-impact">
-            <b>Piyasa Etkisi Analizi:</b> {{ r.market_impact }}
-          </div>
-          {% endif %}
-
-          {% if r.key_points %}
-          <ul class="key-points">
-            {% for point in r.key_points %}
-            <li>{{ point }}</li>
-            {% endfor %}
-          </ul>
-          {% endif %}
-
-          <div class="links">
-            {% for link in r.links %}
-            <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
-            {% endfor %}
-          </div>
-
-          {% if r.source_comparison %}
-          <details class="compare-details">
-            <summary>Kaynak Karşılaştırması ({{ r.source_comparison|length }} kaynak — her biri konuyu nasıl ele aldı?)
-            </summary>
-            <div class="compare-grid">
-              {% for c in r.source_comparison %}
-              <div class="compare-item">
-                <div class="compare-source">{{ c.source }}</div>
-                {% if c.title %}<div class="compare-title">{{ c.title }}</div>{% endif %}
-                {% if c.snippet %}<div class="compare-snippet">{{ c.snippet }}</div>{% endif %}
-                {% if not c.title and not c.snippet %}<div class="compare-snippet">(bu kaynak için orijinal başlık/özet
-                  henüz saklanmamış - kayıt yeniden özetlendiğinde görünecek)</div>{% endif %}
-              </div>
-              {% endfor %}
-            </div>
-          </details>
-          {% endif %}
-        </div>
-      </details>
-      {% endmacro %}
-
       {# KAP kategori filtre linklerinde, sağ sütunun mevcut genel filtrelerini
          (kaynak/sektör/bölge/duygu/önem/arama/sıralama) KORUYAN ortak bir
          query-string parçası - KAP filtresi kendi ekseninde bağımsız olsa da
          (bkz. dashboard() > kap_category notu) bir kategori çipine tıklamak
          kullanıcının sağ sütunda az önce uyguladığı filtreleri SIFIRLAMAMALI. #}
-      {% set _kap_chip_base_qs = "source=" ~ (selected_source|urlencode) ~ "&sector=" ~ (selected_sector|urlencode) ~
-         "&region=" ~ (selected_region|urlencode) ~ "&sentiment=" ~ (selected_sentiment|urlencode) ~
-         "&min_importance=" ~ (selected_min_importance or '') ~ "&q=" ~ (selected_query|urlencode) ~
-         "&sort=" ~ (selected_sort|urlencode) %}
-
-      <div class="news-section-title" id="kap-section">SON HABERLER</div>
+      {% if view == 'kap' %}
+      {# "KAP" sekmesi: SADECE KAP, iki sütun - sol "Tüm KAP" (en yeni),
+         sağ "Yüksek Önemli KAP" (önem skoru >= 4). Genel haberler bu
+         sayfada HİÇ görünmez (kullanıcı isteği, 2026-08-18). Kategori
+         çipleri her iki sütuna da uygulanır (bkz. app.py > kap_category). #}
+      <div class="news-section-title">KAP BİLDİRİMLERİ</div>
+      <div class="kap-category-filters">
+        <a href="/?view=kap&kap_category=" class="kap-category-chip {% if not selected_kap_category %}active{% endif %}">Tümü</a>
+        {% for c in kap_categories %}
+        <a href="/?view=kap&kap_category={{ c.slug }}"
+          class="kap-category-chip {% if selected_kap_category == c.slug %}active{% endif %}">{{ c.label }}</a>
+        {% endfor %}
+      </div>
       <div class="dashboard-columns">
-        <section class="kap-column" aria-label="KAP Özel Durum Açıklamaları">
-          <h2 class="column-title">📋 KAP Bildirimleri</h2>
-
-          <div class="kap-category-filters">
-            <a href="/?{{ _kap_chip_base_qs }}&kap_category="
-              class="kap-category-chip {% if not selected_kap_category %}active{% endif %}">Tümü</a>
-            {% for c in kap_categories %}
-            <a href="/?{{ _kap_chip_base_qs }}&kap_category={{ c.slug }}"
-              class="kap-category-chip {% if selected_kap_category == c.slug %}active{% endif %}">{{ c.label }}</a>
-            {% endfor %}
-          </div>
-
+        <section class="kap-column" aria-label="Tüm KAP Bildirimleri">
+          <h2 class="column-title">📋 Tüm KAP</h2>
           {% if not kap_records %}
           <div class="empty kap-empty">
             <div class="empty-icon">📋</div>
@@ -2102,41 +2213,74 @@
             {% endif %}
           </div>
           {% endif %}
-
           {% for r in kap_records %}
           {{ render_news_card(r) }}
           {% endfor %}
         </section>
 
-        <section class="general-column" aria-label="Genel Haber Akışı">
-          <h2 class="column-title">📰 Genel Haberler</h2>
-          {% if not records %}
-          <div class="empty">
-            Henüz haber yok. Otomatik tarama devam ediyor…
+        <section class="kap-column" aria-label="Yüksek Önemli KAP Bildirimleri">
+          <h2 class="column-title">🚨 Yüksek Önemli KAP (4+)</h2>
+          {% if not kap_important_records %}
+          <div class="empty kap-empty">
+            <div class="empty-icon">🚨</div>
+            Şu an önem skoru 4+ olan bir KAP bildirimi yok.
           </div>
           {% endif %}
-
-          {% for r in records %}
+          {% for r in kap_important_records %}
           {{ render_news_card(r) }}
           {% endfor %}
         </section>
       </div>
+      {% elif view == 'haberler' %}
+      {# "Haberler" sekmesi: SADECE genel haberler (KAP hariç), iki sütun -
+         sol "En Yeni" (mevcut filtre formu), sağ "Öne Çıkanlar" (AYNI
+         filtreler + önem skoru >= 4). KAP bu sayfada HİÇ görünmez. #}
+      <div class="news-section-title">HABERLER</div>
+      <div class="dashboard-columns">
+        <section class="general-column" aria-label="En Yeni Haberler">
+          <h2 class="column-title">📰 En Yeni</h2>
+          {% if not records %}
+          <div class="empty">Henüz haber yok. Otomatik tarama devam ediyor…</div>
+          {% endif %}
+          {% for r in records %}
+          {{ render_news_card(r) }}
+          {% endfor %}
+        </section>
 
-      {# Emtia Raporu bilinçli olarak KAP/haber sütunlarının ALTINA
-         taşındı (kullanıcı isteği, 2026-08-18) - önceden Trend Özeti'nin
-         hemen altında, haber içeriğinden ÖNCE yer alıyordu; masaüstünde
-         773px, mobilde 2081px yükseklikle kullanıcının asıl aradığı
-         KAP/haber içeriğine ulaşmadan önce gereksiz kaydırma yaptırıyordu
-         (bkz. Playwright ile ölçülen bölüm yükseklikleri). #}
-      <div class="commodity-panel" id="emtia-section">
-        <div class="commodity-panel-header">
-          <span class="commodity-panel-title">Haftalık Emtia Raporu</span>
-          <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
-        </div>
-        <div id="commodity-panel-body">
-          <span class="trend-empty">Yükleniyor…</span>
-        </div>
+        <section class="general-column" aria-label="Öne Çıkan Haberler">
+          <h2 class="column-title">🚨 Öne Çıkanlar (4+)</h2>
+          {% if not general_important_records %}
+          <div class="empty">Şu an önem skoru 4+ olan bir haber yok.</div>
+          {% endif %}
+          {% for r in general_important_records %}
+          {{ render_news_card(r) }}
+          {% endfor %}
+        </section>
       </div>
+      {% elif view == 'emtia' %}
+      {# "Emtia" sekmesi: SADECE emtia raporu, iki sütun - sol Metal &
+         Enerji, sağ Tarım (kullanıcı isteği, 2026-08-18). Veri tamamen
+         tarayıcı tarafında /api/commodity-weekly-report'tan gelir (bkz.
+         altındaki <script> > loadCommodityPanel) - DB sorgusu yok. #}
+      <div class="news-section-title">HAFTALIK EMTİA RAPORU</div>
+      <div class="commodity-panel-header-row">
+        <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
+      </div>
+      <div class="dashboard-columns">
+        <section class="kap-column" aria-label="Metal ve Enerji Emtiaları">
+          <h2 class="column-title">⚙️ Metal &amp; Enerji</h2>
+          <div id="commodity-col-metal">
+            <span class="trend-empty">Yükleniyor…</span>
+          </div>
+        </section>
+        <section class="kap-column" aria-label="Tarım Emtiaları">
+          <h2 class="column-title">🌾 Tarım</h2>
+          <div id="commodity-col-agri">
+            <span class="trend-empty">Yükleniyor…</span>
+          </div>
+        </section>
+      </div>
+      {% endif %}
   </main>
 
   <script>
@@ -2236,9 +2380,15 @@
     }
 
     async function loadTrendSummary(period) {
+      // Trend Özeti paneli SADECE Ana Sayfa'da render edilir (bkz.
+      // src/web/app.py > dashboard() > view) - diğer sekmelerde bu
+      // elementler DOM'da yok, init sırasında sessizce atlanır.
       const body = document.getElementById('trend-panel-body');
-      document.getElementById('trend-btn-weekly').classList.toggle('inactive', period !== 'weekly');
-      document.getElementById('trend-btn-monthly').classList.toggle('inactive', period !== 'monthly');
+      if (!body) return;
+      const weeklyBtn = document.getElementById('trend-btn-weekly');
+      const monthlyBtn = document.getElementById('trend-btn-monthly');
+      if (weeklyBtn) weeklyBtn.classList.toggle('inactive', period !== 'weekly');
+      if (monthlyBtn) monthlyBtn.classList.toggle('inactive', period !== 'monthly');
       body.innerHTML = '<span class="trend-empty">Yükleniyor…</span>';
       try {
         const res = await fetch('/api/trend-summary?period=' + encodeURIComponent(period));
@@ -2314,8 +2464,62 @@
       }).join(' ');
     }
 
+    // Tarım emtiaları (Yahoo sembolleriyle, bkz. src/commodity_report.py >
+    // COMMODITY_SYMBOLS) - "Emtia" sekmesinin iki-sütun düzeninde (kullanıcı
+    // isteği, 2026-08-18: sol Metal & Enerji, sağ Tarım) ayrım burada yapılır.
+    // Geri kalan TÜM semboller (Bakır/Ham Petrol/Brent/Altın/Gümüş/Doğalgaz/
+    // Alüminyum) Metal & Enerji sütununa gider.
+    const _COMMODITY_AGRI_SYMBOLS = ['ZW=F', 'ZC=F'];
+
+    function buildCommodityCardHtml(item, accentColor, downColor) {
+      const up = item.pct_change >= 0;
+      const sign = up ? '+' : '';
+      const points = buildSparklinePoints(item.history, 200, 32);
+      const strokeColor = up ? accentColor : downColor;
+      const sparklineSvg = points
+        ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
+        '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
+        : '';
+      const companies = item.companies || [];
+      const foundTickers = {};
+      // Kart içinde KISALTILMIŞ (3 satır, bkz. .commodity-analysis CSS)
+      // önizleme gösterilir, ama metin ASLA sessizce kaybolmaz - hemen
+      // altına eklenen "Devamını oku" her zaman TAM metni (kesilmeden)
+      // gösteren emtia detay modalını açar (bkz. openCommodityModal).
+      const analysisHtml = item.analysis
+        ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>' +
+        '<button type="button" class="commodity-more-link" onclick="openCommodityModal(\'' + item.symbol + '\')">Devamını oku →</button>'
+        : '';
+      const unmatched = companies.filter(function (c) { return !foundTickers[c.exchange + ': ' + c.ticker]; });
+      const chipsHtml = unmatched.length
+        ? '<div class="commodity-companies">' + unmatched.map(function (c) {
+          const key = registerCompany(c);
+          return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
+            escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
+        }).join('') + '</div>'
+        : '';
+      __commodityRegistry[item.symbol] = item;
+      return '<div class="commodity-card">' +
+        '<div class="commodity-card-top">' +
+        '<button type="button" class="commodity-label commodity-label-clickable" onclick="openCommodityModal(\'' + item.symbol + '\')">' +
+        item.emoji + ' ' + escapeHtml(item.label) +
+        '</button>' +
+        '<span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + item.pct_change + '%</span>' +
+        '</div>' +
+        '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
+        sparklineSvg +
+        analysisHtml +
+        chipsHtml +
+        '</div>';
+    }
+
+    // "Emtia" sekmesinin tam raporu - iki sütuna (Metal&Enerji / Tarım)
+    // böler (bkz. _COMMODITY_AGRI_SYMBOLS). Hedef elementler o sekmede
+    // YOKSA (başka bir view render edildiyse) sessizce hiçbir şey yapmaz.
     async function loadCommodityPanel() {
-      const body = document.getElementById('commodity-panel-body');
+      const metalCol = document.getElementById('commodity-col-metal');
+      const agriCol = document.getElementById('commodity-col-agri');
+      if (!metalCol || !agriCol) return;
       const updatedEl = document.getElementById('commodity-panel-updated');
       try {
         const res = await fetch('/api/commodity-weekly-report');
@@ -2323,61 +2527,78 @@
         const items = data.commodities || [];
 
         if (!items.length) {
-          body.innerHTML = '<span class="trend-empty">Emtia verisi henüz yok.</span>';
+          metalCol.innerHTML = '<span class="trend-empty">Emtia verisi henüz yok.</span>';
+          agriCol.innerHTML = '';
           return;
         }
 
-        updatedEl.textContent = data.generated_at
-          ? 'Son güncelleme: ' + new Date(data.generated_at).toLocaleString('tr-TR')
-          : '(fiyat-only önizleme - ilk haftalık rapor henüz çalışmadı)';
+        if (updatedEl) {
+          updatedEl.textContent = data.generated_at
+            ? 'Son güncelleme: ' + new Date(data.generated_at).toLocaleString('tr-TR')
+            : '(fiyat-only önizleme - ilk haftalık rapor henüz çalışmadı)';
+        }
 
         const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
         const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
 
-        body.innerHTML = '<div class="commodity-grid">' + items.map(function (item) {
-          const up = item.pct_change >= 0;
-          const sign = up ? '+' : '';
-          const points = buildSparklinePoints(item.history, 200, 32);
-          const strokeColor = up ? accentColor : downColor;
-          const sparklineSvg = points
-            ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
-            '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
-            : '';
-          const companies = item.companies || [];
-          const foundTickers = {};
-          // Kart içinde KISALTILMIŞ (3 satır, bkz. .commodity-analysis CSS)
-          // önizleme gösterilir, ama metin ASLA sessizce kaybolmaz - hemen
-          // altına eklenen "Devamını oku" her zaman TAM metni (kesilmeden)
-          // gösteren emtia detay modalını açar (bkz. openCommodityModal).
-          const analysisHtml = item.analysis
-            ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>' +
-            '<button type="button" class="commodity-more-link" onclick="openCommodityModal(\'' + item.symbol + '\')">Devamını oku →</button>'
-            : '';
-          const unmatched = companies.filter(function (c) { return !foundTickers[c.exchange + ': ' + c.ticker]; });
-          const chipsHtml = unmatched.length
-            ? '<div class="commodity-companies">' + unmatched.map(function (c) {
-              const key = registerCompany(c);
-              return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
-                escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
-            }).join('') + '</div>'
-            : '';
-          __commodityRegistry[item.symbol] = item;
-          return '<div class="commodity-card">' +
-            '<div class="commodity-card-top">' +
-            '<button type="button" class="commodity-label commodity-label-clickable" onclick="openCommodityModal(\'' + item.symbol + '\')">' +
-            item.emoji + ' ' + escapeHtml(item.label) +
-            '</button>' +
-            '<span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + item.pct_change + '%</span>' +
-            '</div>' +
-            '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
-            sparklineSvg +
-            analysisHtml +
-            chipsHtml +
-            '</div>';
-        }).join('') + '</div>';
+        const metalItems = items.filter(function (i) { return _COMMODITY_AGRI_SYMBOLS.indexOf(i.symbol) === -1; });
+        const agriItems = items.filter(function (i) { return _COMMODITY_AGRI_SYMBOLS.indexOf(i.symbol) !== -1; });
+
+        metalCol.innerHTML = '<div class="commodity-grid">' +
+          metalItems.map(function (i) { return buildCommodityCardHtml(i, accentColor, downColor); }).join('') +
+          '</div>';
+        agriCol.innerHTML = agriItems.length
+          ? '<div class="commodity-grid">' +
+          agriItems.map(function (i) { return buildCommodityCardHtml(i, accentColor, downColor); }).join('') +
+          '</div>'
+          : '<span class="trend-empty">Tarım emtiası verisi yok.</span>';
       } catch (e) {
-        body.innerHTML = '<span class="trend-empty">Emtia verisi alınamadı.</span>';
+        metalCol.innerHTML = '<span class="trend-empty">Emtia verisi alınamadı.</span>';
+        agriCol.innerHTML = '';
       }
+    }
+
+    // Ana sayfa "Emtia Özeti" - tam rapordan AYRI bir istek DEĞİL, AYNI
+    // /api/commodity-weekly-report (backend'de zaten önbellekli, bkz.
+    // src/commodity_report.py) - sadece kısa/tablo biçiminde ilk 4 kalem.
+    async function loadCommodityHomeSummary() {
+      const body = document.getElementById('commodity-summary-body');
+      if (!body) return;
+      try {
+        const res = await fetch('/api/commodity-weekly-report');
+        const data = await res.json();
+        const items = (data.commodities || []).slice(0, 4);
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="3" class="trend-empty">Emtia verisi henüz yok.</td></tr>';
+          return;
+        }
+        body.innerHTML = items.map(function (item) {
+          const up = item.pct_change >= 0;
+          const cls = up ? 'ticker-up' : 'ticker-down';
+          return '<tr><td>' + item.emoji + ' ' + escapeHtml(item.label) + '</td><td>' + item.last_close + ' ' +
+            escapeHtml(item.unit) + '</td><td class="' + cls + '">' + (up ? '▲' : '▼') + ' %' +
+            Math.abs(item.pct_change).toFixed(2) + '</td></tr>';
+        }).join('');
+      } catch (e) {
+        body.innerHTML = '<tr><td colspan="3" class="trend-empty">Emtia verisi alınamadı.</td></tr>';
+      }
+    }
+
+    // Şirket baş harfi rozeti (bkz. yukarıdaki .company-avatar CSS notu) -
+    // ticker koduna göre deterministik bir renk (basit hash) + ilk 1-2
+    // harf. Ağ isteği YOK, senkron/anlık - "lazy" olmasına gerek yok.
+    const _AVATAR_COLORS = ['#2554e0', '#0a8548', '#c9860a', '#d92d20', '#7c3aed', '#0891b2', '#be185d', '#4d7c0f'];
+
+    function applyCompanyAvatars() {
+      document.querySelectorAll('.company-avatar[data-ticker]').forEach(function (el) {
+        const ticker = (el.dataset.ticker || '').replace(/^[A-Z]+:\s*/, '').trim();
+        if (!ticker || el.dataset.avatarApplied) return;
+        el.dataset.avatarApplied = '1';
+        let hash = 0;
+        for (let i = 0; i < ticker.length; i++) hash = (hash * 31 + ticker.charCodeAt(i)) >>> 0;
+        el.style.background = _AVATAR_COLORS[hash % _AVATAR_COLORS.length];
+        el.textContent = ticker.slice(0, 2);
+      });
     }
 
     // Şirket detay modalı (bkz. /api/company-detail) - registry, her bir
@@ -2658,7 +2879,9 @@
     refreshSectorHeatmap();
     loadTrendSummary('weekly');
     loadCommodityPanel();
+    loadCommodityHomeSummary();
     refreshMarketSummaryTable();
+    applyCompanyAvatars();
     // Piyasa şeridi: sunucu tarafı önbellek süresiyle (bkz.
     // src/web/market_data.py > _CACHE_TTL_SECONDS) BİLEREK aynı tutuluyor.
     // 10 sn, gerçek bir ölçümle belirlendi. Sektör ısı haritası haber
@@ -2672,6 +2895,7 @@
     // AYNI tutuldu - daha sık sormanın backend zaten o kadar sık
     // tazelemediği için hiçbir faydası yok, gereksiz bir istek olur.
     setInterval(loadCommodityPanel, 180000);
+    setInterval(loadCommodityHomeSummary, 180000);
 
     // ======================================================================
     // Web Push bildirimleri (bkz. src/web_push.py, sw.js) - Telegram'a
