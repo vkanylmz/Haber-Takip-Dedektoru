@@ -148,12 +148,13 @@ def _get_cached_default_records(session, max_items: int) -> list[NewsRecord]:
 
 
 # --- Son Dakika şeridi önbelleği (2026-08-18, kullanıcı kararı) ---
-# Hero carousel'den (bkz. _get_cached_hero_carousel_records - son 48s'in
-# en yüksek skorlu 10 kaydı) BİLİNÇLİ OLARAK AYRI/BAĞIMSIZ: kaynak (KAP+genel)
-# VE önem skoru FARK ETMEKSİZİN, sadece "en yeni N kayıt" - kullanıcı isteği:
-# "gerçek bir 'her şey buradan geçiyor' akışı olsun". `exclude_source_filter`
-# YOK (KAP dahil) - `_get_cached_default_records`'ın AKSİNE.
-_BREAKING_STRIP_LIMIT = 25
+# Hero carousel'den BİLİNÇLİ OLARAK AYRI/BAĞIMSIZ: kaynak (KAP+genel) VE
+# önem skoru FARK ETMEKSİZİN, sisteme GİRİŞ SIRASINA göre (first_seen_at
+# DESC, bkz. get_recent_records > sort_order="newest") son 15 kayıt -
+# kullanıcı isteği: "gerçek bir 'her şey buradan geçiyor' akışı olsun".
+# `exclude_source_filter` YOK (KAP dahil) - `_get_cached_default_records`'ın
+# AKSİNE.
+_BREAKING_STRIP_LIMIT = 15
 _BREAKING_STRIP_CACHE_TTL_SECONDS = 30.0
 _breaking_strip_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
 _breaking_strip_lock = threading.Lock()
@@ -201,13 +202,16 @@ def _get_cached_kap_records(session, max_items: int) -> list[NewsRecord]:
         return records
 
 
-# --- Ana sayfa (view=home) "KAP+Haber karışık önemli içerik" (sayfa altı)
-# önbelleği (2026-08-18) --- Kaynak (KAP dahil) FARK ETMEKSİZİN, SADECE
-# `_HOME_FEATURED_MIN_IMPORTANCE` eşiğini geçen kayıtlar (kullanıcı kararı,
-# 2026-08-18: düşük skorla DOLDURULMASIN, eşiği geçen yeterli kayıt yoksa
-# bölüm daha az öğeyle gösterilir). Hero/Son Dakika/Öne Çıkan Haberler artık
-# AYRI bir sorgudan besleniyor (bkz. altındaki _get_cached_hero_carousel_records,
-# kullanıcı kararı 2026-08-18: "en yüksek 10, eşiksiz").
+# --- Ana sayfa (view=home) "önemli içerik" önbelleği (2026-08-18, kullanıcı
+# kararı - revize edildi) --- Kaynak (KAP dahil) FARK ETMEKSİZİN, SADECE
+# `_HOME_FEATURED_MIN_IMPORTANCE` eşiğini geçen kayıtlar, GİRİŞ SIRASINA göre
+# (first_seen_at DESC, sort_order="newest" - önem skoruna göre DEĞİL).
+# Hem Hero carousel'in havuzu HEM sayfa altındaki "KAP+Haber karışık önemli
+# içerik" bölümü BU AYNI listeden dilimlenir (bkz. dashboard() > featured_records/
+# home_mixed_records) - önceden Hero için ayrı, "en yüksek skorlu 10" mantıklı
+# bir sorgu vardı, kullanıcı kararıyla (2026-08-18) kaldırıldı ve BU sorguyla
+# birleştirildi (ikisi zaten aynı min_importance/sort_order'a sahipti). Eşiği
+# geçen yeterli kayıt yoksa bölüm(ler) daha az öğeyle gösterilir, DOLDURMA YOK.
 _HOME_FEATURED_MIN_IMPORTANCE = 4
 _HOME_IMPORTANT_CACHE_TTL_SECONDS = 30.0
 _home_important_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
@@ -228,37 +232,6 @@ def _get_cached_home_important_records(session, limit: int) -> list[NewsRecord]:
         )
         _home_important_cache["records"] = records
         _home_important_cache["fetched_at"] = now
-        return records
-
-
-# --- Hero/Son Dakika/Öne Çıkan Haberler carousel önbelleği (2026-08-18,
-# kullanıcı kararı) --- Önceki davranış (>=4 eşik, bazı saatlerde neredeyse
-# boş) YERİNE: kaynak farketmeksizin (KAP+genel), SON 48 SAATİN önem
-# skoruna göre en yüksek 10 kaydı - eşik YOK, döngü her zaman dolu/gezinilebilir
-# olsun diye. `min_importance=1` sadece HİÇ skorlanmamış (None) kayıtları
-# eler - "eşiksiz" gereksinimiyle ÇELİŞMEZ (1-5 arası her skor uygun).
-_HERO_CAROUSEL_WINDOW_HOURS = 48
-_HERO_CAROUSEL_LIMIT = 10
-_HERO_CAROUSEL_CACHE_TTL_SECONDS = 30.0
-_hero_carousel_cache: dict[str, Any] = {"records": None, "fetched_at": 0.0}
-_hero_carousel_lock = threading.Lock()
-
-
-def _get_cached_hero_carousel_records(session) -> list[NewsRecord]:
-    now = time.monotonic()
-    if _hero_carousel_cache["records"] is not None and (now - _hero_carousel_cache["fetched_at"]) < _HERO_CAROUSEL_CACHE_TTL_SECONDS:
-        return _hero_carousel_cache["records"]
-
-    with _hero_carousel_lock:
-        now = time.monotonic()
-        if _hero_carousel_cache["records"] is not None and (now - _hero_carousel_cache["fetched_at"]) < _HERO_CAROUSEL_CACHE_TTL_SECONDS:
-            return _hero_carousel_cache["records"]
-        since = datetime.now(timezone.utc) - timedelta(hours=_HERO_CAROUSEL_WINDOW_HOURS)
-        records = get_recent_records(
-            session, limit=_HERO_CAROUSEL_LIMIT, since=since, min_importance=1, sort_order="importance"
-        )
-        _hero_carousel_cache["records"] = records
-        _hero_carousel_cache["fetched_at"] = now
         return records
 
 
@@ -613,7 +586,6 @@ def dashboard(
     kap_records: list[NewsRecord] = []
     kap_important_records: list[NewsRecord] = []
     home_important_records: list[NewsRecord] = []
-    hero_carousel_records: list[NewsRecord] = []
     breaking_strip_records: list[NewsRecord] = []
     upcoming_calendar_events: list[Any] = []
 
@@ -684,7 +656,6 @@ def dashboard(
 
         if view_normalized == "home":
             home_important_records = _get_cached_home_important_records(session, limit=20)
-            hero_carousel_records = _get_cached_hero_carousel_records(session)
             breaking_strip_records = _get_cached_breaking_strip_records(session)
             upcoming_calendar_events = get_upcoming_calendar_events(limit=8)
 
@@ -750,27 +721,28 @@ def dashboard(
     kap_views = [_record_to_view(r, threshold) for r in kap_records]
     kap_important_views = [_record_to_view(r, threshold) for r in kap_important_records]
     home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
-    hero_carousel_views = [_record_to_view(r, threshold) for r in hero_carousel_records]
     breaking_strip_views = [_record_to_view(r, threshold) for r in breaking_strip_records]
     upcoming_calendar_views = [_calendar_event_to_view(e) for e in upcoming_calendar_events]
 
-    # "KAP+Haber karışık önemli içerik" (sayfa altı) HÂLÂ >=4 eşikli
-    # `home_important_views`'ten - kullanıcı kararı (2026-08-18): eşiği
-    # geçen yeterli kayıt olmayabilir, bu durumda DOLDURMA YOK, bölüm daha
-    # az öğeyle gösterilir.
-    featured_records = hero_carousel_views
-    home_mixed_records = home_important_views[:10]
+    # Hero carousel'in havuzu VE sayfa altındaki "KAP+Haber karışık önemli
+    # içerik" bölümü AYNI listeden (home_important_views - >=4 eşikli,
+    # GİRİŞ SIRASINA göre, bkz. yukarıdaki not) dilimlenir, TEKRAR YOK.
+    # Kullanıcı kararı (2026-08-18): eşiği geçen yeterli kayıt olmayabilir,
+    # bu durumda DOLDURMA YOK, bölüm(ler) daha az öğeyle gösterilir.
+    featured_records = home_important_views[:10]
+    home_mixed_records = home_important_views[10:20]
 
-    # Hero kartı VE Son Dakika şeridi (2026-08-18, kullanıcı kararı) ARTIK
-    # BİRBİRİNDEN TAMAMEN BAĞIMSIZ iki döngü - önceden AYNI state'i
-    # paylaşıyorlardı (bkz. eski "iki ayrı state olmasın" kararı, o karar
-    # BU isteyle tersine çevrildi). Hero (bkz. hero_carousel_views) SADECE
-    # gerçekten önemli içeriği gösterirken, Son Dakika şeridi (bkz.
-    # breaking_strip_views) kaynak/skor FARK ETMEKSİZİN "her şey buradan
-    # geçiyor" akışıdır - bu yüzden iki AYRI JSON, iki AYRI JS state'i
-    # (bkz. dashboard.html > heroStep/stripStep) var. "</script>"
+    # Hero kartı VE Son Dakika şeridi BİRBİRİNDEN TAMAMEN BAĞIMSIZ iki
+    # döngü (kullanıcı kararı, 2026-08-18). Hero (bkz. featured_records)
+    # SADECE >=4 önem skorlu içeriği, GİRİŞ SIRASINA göre gösterirken, Son
+    # Dakika şeridi (bkz. breaking_strip_views) kaynak/skor FARK ETMEKSİZİN
+    # "her şey buradan geçiyor" akışıdır - bu yüzden iki AYRI JSON, iki AYRI
+    # JS state'i (bkz. dashboard.html > heroStep/stripStep) var. "</script>"
     # enjeksiyonuna karşı ikisinde de basit bir escape uygulanır, ayrı bir
     # HTTP isteği/endpoint GEREKMEZ (veri zaten bu response içinde var).
+    # `company_ticker` ARTIK gönderilmiyor (kullanıcı kararı 2026-08-18):
+    # Hero'da avatar fallback KALDIRILDI (bkz. dashboard.html >
+    # renderHeroCard notu) - SADECE gerçek image_url varsa görsel gösterilir.
     featured_records_json = json.dumps(
         [
             {
@@ -782,7 +754,6 @@ def dashboard(
                 "sources": f["sources"],
                 "summary": f["summary"],
                 "image_url": f["image_url"],
-                "company_ticker": f["company_ticker"],
                 "link": (f["links"][0]["link"] if f["links"] else ""),
             }
             for f in featured_records

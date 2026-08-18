@@ -916,8 +916,7 @@
       box-shadow: var(--shadow-sm);
     }
 
-    .hero-card.has-image,
-    .hero-card.has-avatar {
+    .hero-card.has-image {
       border-top: none;
     }
 
@@ -994,38 +993,6 @@
 
     .hero-image-nav-next {
       right: 0.75rem;
-    }
-
-    /* Gerçek görsel yoksa VE bir ticker'a bağlıysa (KAP veya "şirket"
-       kategorili genel haber) - küçük rozet avatarının (bkz. .company-avatar)
-       BÜYÜK hali, .hero-image-wrap ile AYNI boyut/konumda (bkz.
-       renderHeroCard). Carousel okları (bkz. .hero-image-nav) burada da
-       AYNEN çalışır - üst üste iki farklı stil tanımlamak yerine paylaşılan. */
-    .hero-avatar-wrap {
-      position: relative;
-      width: 100%;
-      height: 280px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .hero-avatar-initials {
-      color: #ffffff;
-      font-family: var(--font-heading);
-      font-size: 4.5rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      opacity: 0.92;
-    }
-
-    .hero-card.has-avatar .hero-badge {
-      top: 1rem;
-      right: 1.2rem;
-    }
-
-    .hero-card.has-avatar .hero-content {
-      padding-top: 0.9rem;
     }
 
     .hero-card.hero-empty {
@@ -3181,31 +3148,26 @@
         }
       }
 
-      // Görsel alanı üç kademeli (kullanıcı isteği, 2026-08-18 - "görselsiz
-      // kayıt kalmasın"): 1) gerçek RSS/lisanslı görsel (item.image_url,
-      // önceki davranış AYNEN) 2) yoksa VE bir ticker'a bağlıysa (KAP VEYA
-      // "şirket" kategorili genel haber - kaynak farketmez) mevcut küçük
-      // rozet avatarının BÜYÜK hali (bkz. avatarStyleFor, aynı deterministik
-      // renk/baş harf - ağ isteği YOK) 3) hiçbiri yoksa (ör. ticker'sız bir
-      // makro/siyasi başlık) mevcut tipografik tasarıma düşülür - GERÇEK bir
-      // "image_search" aracı bu proje için MEVCUT DEĞİL (bkz. commit notu);
-      // rastgele/lisanssız bir web görselini hotlink'lemek yerine bu dürüst
-      // kademeli fallback tercih edildi.
+      // Görsel alanı İKİ kademeli (kullanıcı kararı, 2026-08-18 - avatar
+      // ara katmanı KALDIRILDI): 1) gerçek RSS/lisanslı görsel varsa
+      // (item.image_url - kaynağın kendi enclosure/media:content alanı,
+      // bkz. src/fetchers/rss_fetcher.py) 2) YOKSA görsel alanı HİÇ
+      // render edilmez, kart SADECE rozet+başlık+özetle sade gösterilir.
+      // Bu SADECE Hero'yu etkiler - KAP/genel haber kartlarındaki küçük
+      // ticker rozeti avatarı (bkz. applyCompanyAvatars, .company-avatar)
+      // AYRI/DOKUNULMADI.
       var existingWrap = document.getElementById('hero-image-wrap');
-      var existingAvatarWrap = document.getElementById('hero-avatar-wrap');
-      var navHtml = _heroItems.length > 1
-        ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="heroStep(-1)" aria-label="Önceki">‹</button>' +
-        '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="heroStep(1)" aria-label="Sonraki">›</button>'
-        : '';
 
       if (item.image_url) {
-        card.classList.remove('has-avatar');
         card.classList.add('has-image');
-        if (existingAvatarWrap) existingAvatarWrap.remove();
         if (existingWrap) {
           var img = document.getElementById('hero-image');
           if (img) img.src = item.image_url;
         } else {
+          var navHtml = _heroItems.length > 1
+            ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="heroStep(-1)" aria-label="Önceki">‹</button>' +
+            '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="heroStep(1)" aria-label="Sonraki">›</button>'
+            : '';
           var wrap = document.createElement('div');
           wrap.className = 'hero-image-wrap';
           wrap.id = 'hero-image-wrap';
@@ -3217,30 +3179,8 @@
         return;
       }
 
-      var avatarStyle = avatarStyleFor(item.company_ticker);
-      if (avatarStyle) {
-        card.classList.remove('has-image');
-        card.classList.add('has-avatar');
-        if (existingWrap) existingWrap.remove();
-        if (existingAvatarWrap) {
-          existingAvatarWrap.style.background = avatarStyle.color;
-          var initialsEl = existingAvatarWrap.querySelector('.hero-avatar-initials');
-          if (initialsEl) initialsEl.textContent = avatarStyle.initials;
-        } else {
-          var avatarWrap = document.createElement('div');
-          avatarWrap.className = 'hero-avatar-wrap';
-          avatarWrap.id = 'hero-avatar-wrap';
-          avatarWrap.style.background = avatarStyle.color;
-          avatarWrap.innerHTML = '<span class="hero-avatar-initials">' + avatarStyle.initials + '</span>' + navHtml;
-          card.insertBefore(avatarWrap, card.firstChild);
-        }
-        return;
-      }
-
       card.classList.remove('has-image');
-      card.classList.remove('has-avatar');
       if (existingWrap) existingWrap.remove();
-      if (existingAvatarWrap) existingAvatarWrap.remove();
     }
 
     function heroStep(direction) {
@@ -3254,10 +3194,9 @@
     }
 
     // Sayfa yüklendiğinde hero zaten sunucu tarafında (bkz. Jinja) doğru
-    // render edilmiş durumda (görsel VEYA tipografik) - ama "büyük avatar"
-    // kademesi (bkz. renderHeroCard) SADECE JS'te var, bu yüzden ilk index
-    // için de BURADA bir kez çalıştırılır (Jinja bu kademeyi hesaplamaz,
-    // tek doğru kaynak JS'te kalsın diye - bkz. renderHeroCard notu).
+    // render edilmiş durumda (görsel VEYA sade) - burada bir kez daha
+    // çağrılması sadece savunmacı bir tutarlılık kontrolü (idempotent,
+    // ek bir yan etkisi yok).
     renderHeroCard();
 
     // Son Dakika şeridi 5sn'de bir, Hero 9sn'de bir - BAĞIMSIZ zamanlayıcılar
