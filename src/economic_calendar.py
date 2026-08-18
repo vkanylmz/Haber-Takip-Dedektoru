@@ -46,6 +46,14 @@ _MIN_REQUEST_INTERVAL_SECONDS = 3.0  # aynı taramadaki 3 sıralı istek arası 
 _NON_TURKEY_MIN_IMPORTANCE = 2
 _TURKEY_COUNTRY_CODE = "TR"
 
+# Kullanıcı kararı (2026-08-18): Türkiye dışında SADECE bu ülke/bölgeler
+# gösterilsin (Japonya, Çin, ABD, Almanya, İngiltere, Euro Bölgesi) - Trading
+# Economics'in döndürdüğü diğer tüm ülkeler (Kanada, Avustralya, Brezilya vb.)
+# TAMAMEN filtrelenip atılır. Ülke kodları Trading Economics'in `calendar-iso`
+# hücresinde döndürdüğü GERÇEK kodlarla eşleşir (bkz. DB sorgusuyla doğrulanan
+# "EA" = Euro Area).
+_ALLOWED_NON_TURKEY_COUNTRIES = {"JP", "CN", "US", "DE", "GB", "EA"}
+
 _DATE_CLASS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -171,8 +179,11 @@ def _fetch_all_tiers() -> list[dict[str, Any]]:
             importance = 1
 
         is_turkey = ev["country_code"] == _TURKEY_COUNTRY_CODE
-        if not is_turkey and importance < _NON_TURKEY_MIN_IMPORTANCE:
-            continue
+        if not is_turkey:
+            if ev["country_code"] not in _ALLOWED_NON_TURKEY_COUNTRIES:
+                continue
+            if importance < _NON_TURKEY_MIN_IMPORTANCE:
+                continue
 
         result.append({**ev, "importance": importance})
 
