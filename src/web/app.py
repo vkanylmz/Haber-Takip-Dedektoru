@@ -544,12 +544,34 @@ def dashboard(
     views = [_record_to_view(r, threshold) for r in records]
     kap_views = [_record_to_view(r, threshold) for r in kap_records]
 
+    # "Öne Çıkan Haberler" / hero / Son Dakika şeridi (2026-08-18 görsel
+    # yeniden tasarım, bkz. kullanıcı isteği): ayrı bir editöryel seçim
+    # mekanizması veya ek DB sorgusu YOK - zaten çekilmiş `views` listesinden
+    # (en yeni sıralı) en yüksek önem skoruna göre TÜRETİLEN ilk 5 kayıt.
+    # Python'un sort'u stable olduğundan aynı skora sahip kayıtlar arasında
+    # "en yeni önce" sırası korunur - ayrı bir tarih tie-break'e gerek yok.
+    featured_records = sorted(
+        (v for v in views if v["importance_score"] is not None),
+        key=lambda v: v["importance_score"],
+        reverse=True,
+    )[:5]
+    # Son Dakika şeridinin JS tarafında (bkz. dashboard.html > breakingStripStep)
+    # döngüsel gösterebilmesi için aynı `featured_records` küçük bir JSON'a
+    # çevrilir - "</script>" enjeksiyonuna karşı (ör. bir haber başlığı bu
+    # diziyi içerse) basit bir escape uygulanır, ayrı bir HTTP isteği/endpoint
+    # GEREKMEZ (veri zaten bu response içinde var).
+    featured_records_json = json.dumps(
+        [{"time": f["published_at"], "title": f["title"], "score": f["importance_score"]} for f in featured_records]
+    ).replace("</", "<\\/")
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "records": views,
             "kap_records": kap_views,
+            "featured_records": featured_records,
+            "featured_records_json": featured_records_json,
             "sources": sources,
             "selected_source": source or "",
             "sectors": sectors,

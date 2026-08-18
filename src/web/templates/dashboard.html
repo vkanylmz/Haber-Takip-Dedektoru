@@ -131,20 +131,35 @@
     header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
-      padding: 1rem 2rem;
+      padding: 0.7rem 2rem;
       position: sticky;
       top: 0;
       z-index: 100;
       display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .header-row {
+      display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
       gap: 1rem;
+    }
+
+    .header-row-top {
+      justify-content: space-between;
+    }
+
+    .brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
     }
 
     header h1 {
       font-family: var(--font-heading);
-      font-size: 1.4rem;
+      font-size: 1.25rem;
       font-weight: 700;
       margin: 0;
       color: var(--text-primary);
@@ -155,9 +170,46 @@
 
     header h1 .brand-logo {
       display: block;
-      height: 26px;
-      width: 26px;
+      height: 24px;
+      width: 24px;
       border-radius: 7px;
+    }
+
+    /* Hızlı nav linkleri (2026-08-18 görsel yeniden tasarım) - SADECE
+       gerçekten var olan sayfa/bölümlere gider (bkz. HTML yorumu), sahte
+       menü öğesi eklenmedi. */
+    .quick-nav {
+      display: flex;
+      align-items: center;
+      gap: 1.35rem;
+      font-family: var(--font-heading);
+    }
+
+    .quick-nav-link {
+      color: var(--text-secondary);
+      font-size: 0.86rem;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .quick-nav-link:hover {
+      color: var(--accent);
+    }
+
+    .quick-nav-link.active {
+      color: var(--accent);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .header-row-bottom {
+      border-top: 1px solid var(--border);
+      padding-top: 0.6rem;
     }
 
     /* Sol alt köşe "Powered by VY" etiketi - dekoratif, mevcut sabit
@@ -342,12 +394,13 @@
     }
 
     main {
-      /* 2026-08 iki-sütun düzeni (KAP + genel akış) için 980px'ten
+      /* 2026-08 iki-sütun düzeni (KAP + genel akış) için 980px'ten, 2026-08-18
+         ana sayfa yeniden tasarımıyla (hero + kenar çubuğu) 1600px'e
          genişletildi - ticker/heatmap/header bundan ETKİLENMEZ, onlar
          main'in dışında kendi genişliklerinde kalır. */
-      max-width: 1200px;
+      max-width: 1600px;
       margin: 1.5rem auto;
-      padding: 0 1rem;
+      padding: 0 2rem;
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
@@ -580,6 +633,22 @@
        duygusu/trend özeti/emtia raporu bundan ETKİLENMEZ - onlar main'in
        ayrı flex-child'ları olarak tam genişlikte kalmaya devam eder, bu
        grid SADECE haber kartları bölümünü ikiye ayırır. */
+    /* Sticky header'ın (bkz. header { position: sticky }) #kap-section/
+       #emtia-section'a çapa (nav linki) ile atlarken içeriği ÖRTMEMESİ için. */
+    #kap-section,
+    #emtia-section {
+      scroll-margin-top: 96px;
+    }
+
+    .news-section-title {
+      font-family: var(--font-heading);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      margin-bottom: -0.4rem;
+    }
+
     .dashboard-columns {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -719,59 +788,9 @@
       text-align: center;
     }
 
-    .fear-greed-container {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.85rem 1.25rem;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .fear-greed-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-
-    .fear-greed-bar {
-      flex: 1;
-      min-width: 120px;
-      height: 8px;
-      background: var(--surface-alt);
-      border-radius: 4px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .fear-greed-gradient {
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      right: 0;
-      background: linear-gradient(90deg, #b91c1c 0%, #d97706 25%, #ca8a04 50%, #65a30d 75%, #0a7a4c 100%);
-      opacity: 0.85;
-    }
-
-    .fear-greed-marker {
-      position: absolute;
-      top: -2px;
-      bottom: -2px;
-      width: 3px;
-      background: var(--text-primary);
-      border-radius: 2px;
-      transition: left 1.2s ease;
-    }
-
     .fear-greed-label {
       font-size: 0.95rem;
       font-weight: 700;
-      min-width: 120px;
-      text-align: right;
       white-space: nowrap;
     }
 
@@ -793,6 +812,312 @@
 
     .fg-extreme-greed {
       color: var(--positive);
+    }
+
+    /* ==========================================================
+       Ana sayfa yeniden tasarımı (2026-08-18, bkz. kullanıcı referans
+       görseli) - Son Dakika şeridi + Hero/Öne Çıkan Haberler + sağ
+       kenar çubuğu (Piyasa Duygusu göstergesi/Trend/Piyasa Özeti/Takvim).
+       Altındaki KAP + genel haber iki-sütun düzeni (bkz. .dashboard-columns)
+       ve Haftalık Emtia Raporu YAPISAL olarak DEĞİŞMEDİ, sadece bu yeni
+       bölümlerle aynı kart diline (border/radius/spacing) kavuşturuldu.
+       ========================================================== */
+    .breaking-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--negative);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .breaking-strip-label {
+      font-family: var(--font-heading);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--negative);
+      white-space: nowrap;
+    }
+
+    .breaking-strip-content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      overflow: hidden;
+    }
+
+    .breaking-strip-time {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .breaking-strip-text {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .breaking-strip-nav {
+      display: flex;
+      gap: 0.3rem;
+    }
+
+    .breaking-strip-nav button {
+      background: var(--surface-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.15rem 0.55rem;
+      font-size: 0.95rem;
+      line-height: 1.3;
+    }
+
+    .home-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.25rem;
+      align-items: start;
+      margin-bottom: 1.25rem;
+    }
+
+    .home-main {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      min-width: 0;
+    }
+
+    .hero-card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.6rem;
+      /* Görsel yok (bkz. üst not - gerçek haber görseli veri kaynağımız
+         YOK, sahte/üretilmiş görsel KULLANILMADI) - onun yerine vurgu
+         rengiyle sade bir üst şerit + büyük tipografi. */
+      border-top: 4px solid var(--accent);
+    }
+
+    .hero-card.hero-empty {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 2.5rem 1.6rem;
+    }
+
+    .hero-badge {
+      position: absolute;
+      top: 1.2rem;
+      right: 1.4rem;
+    }
+
+    .hero-time {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .hero-title {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      line-height: 1.3;
+      margin: 0 0 0.6rem 0;
+      max-width: 90%;
+    }
+
+    .hero-summary {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      margin: 0 0 0.9rem 0;
+    }
+
+    .hero-link {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .hero-link:hover {
+      text-decoration: underline;
+    }
+
+    .featured-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+
+    .featured-list-title {
+      font-family: var(--font-heading);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .featured-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      padding: 0.55rem 0;
+      border-top: 1px solid var(--border);
+      text-decoration: none;
+    }
+
+    .featured-item:first-child {
+      border-top: none;
+    }
+
+    .featured-item-title {
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .featured-item:hover .featured-item-title {
+      color: var(--accent);
+    }
+
+    .featured-item-time {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .home-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      min-width: 0;
+    }
+
+    .gauge-card,
+    .market-summary-card,
+    .calendar-placeholder-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+
+    .market-summary-title {
+      font-family: var(--font-heading);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .gauge-svg {
+      display: block;
+      margin: 0 auto;
+    }
+
+    .gauge-label {
+      text-align: center;
+      width: 100%;
+    }
+
+    .gauge-sub {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      margin-top: 0.3rem;
+    }
+
+    .market-summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .market-summary-table th {
+      text-align: left;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .market-summary-table th:not(:first-child),
+    .market-summary-table td:not(:first-child) {
+      text-align: right;
+    }
+
+    .market-summary-table td {
+      padding: 0.45rem 0;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+    }
+
+    .market-summary-table td:first-child {
+      font-family: var(--font-sans);
+      font-weight: 600;
+    }
+
+    .calendar-placeholder-text {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 900px) {
+      .home-grid {
+        grid-template-columns: 1fr;
+      }
+
+      main {
+        padding: 0 1rem;
+      }
+
+      .hero-title {
+        max-width: 100%;
+        font-size: 1.25rem;
+      }
+
+      /* Dar ekranda sabit genişlikli etiket+saat+ok düğmeleri başlık metnine
+         neredeyse hiç yer bırakmıyordu (tek harfe kırpılıyordu) - satır
+         sarmalı serbest bırakılıp saat gizlendi. */
+      .breaking-strip {
+        flex-wrap: wrap;
+      }
+
+      .breaking-strip-content {
+        flex-basis: 100%;
+        order: 3;
+      }
+
+      .breaking-strip-text {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+      }
+
+      .breaking-strip-time {
+        display: none;
+      }
     }
 
     /* --- Piyasa şeridi (canlı döviz/emtia/endeks verisi) --- */
@@ -1393,35 +1718,34 @@
       <span class="ticker-empty">Piyasa verisi yükleniyor…</span>
     </div>
   </div>
-  <div class="sector-heatmap-wrap">
-    <span class="heatmap-title">Sektör Isı Haritası (24s)</span>
-    <div class="heatmap-items" id="heatmap-items">
-      <span class="ticker-empty">Yükleniyor…</span>
-    </div>
-  </div>
 
+  <!-- Terminal-tarzı nav bar (2026-08-18 görsel yeniden tasarım, bkz. referans
+       görsel): iki satır - üst satır marka+hızlı nav+bildirim/tema, alt satır
+       arama/filtre formu (form/ID'ler ve JS bağlantıları AYNI kaldı, sadece
+       görsel yerleşim değişti - bkz. altındaki notlar). -->
   <header>
-    <div>
-      <h1><img src="/vy-logo.svg" alt="" width="26" height="26" class="brand-logo"><span class="live-indicator"></span> Finansal Haber Terminali</h1>
-      <div class="meta">
-        Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif ·
-        <a href="/detayli-inceleme">Detaylı İnceleme</a> ·
-        <!-- Genel/dış API'nin (bkz. src/web/api_v1.py, API_DOCS.md) keşfedilebilir
-             olması için eklendi (kullanıcı isteği, 2026-07) - önceden dashboard'da
-             API'ye dair HİÇBİR iz yoktu. /docs, FastAPI'nin OTOMATİK ürettiği
-             Swagger UI'dır - ayrı bir sayfa/route yazmaya gerek yok, her zaman
-             kod ile senkron kalır. -->
-        <a href="/docs" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
-        <!-- "Şirket Profili" ve "Kaynak Sağlığı" linkleri kasıtlı olarak
-             navigasyondan kaldırıldı (kullanıcı isteği) - route'lar VE
-             backend kodu (src/web/app.py > company_profile_page,
-             source_health_page) HİÇ SİLİNMEDİ, sadece menüden erişim
-             yok. Doğrudan URL ile (/sirket-profili, /kaynak-sagligi)
-             hâlâ erişilebilir - istenirse buraya linkler kolayca geri
-             eklenebilir. -->
+    <div class="header-row header-row-top">
+      <div class="brand-block">
+        <h1><img src="/vy-logo.svg" alt="" width="26" height="26" class="brand-logo"><span class="live-indicator"></span> Finansal Haber Terminali</h1>
+        <div class="meta">Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif</div>
+      </div>
+      <!-- Yalnızca GERÇEKTEN var olan sayfa/bölümlere giden linkler (kullanıcı
+           isteği, 2026-08-18: sahte/boş nav öğesi YOK) - "Piyasalar/Döviz/
+           Kripto/Ekonomi Takvimi" gibi karşılığı olmayan öğeler BİLİNÇLİ
+           OLARAK eklenmedi. -->
+      <nav class="quick-nav" aria-label="Bölümler">
+        <a href="/" class="quick-nav-link active">Ana Sayfa</a>
+        <a href="#kap-section" class="quick-nav-link">KAP</a>
+        <a href="#emtia-section" class="quick-nav-link">Emtia</a>
+        <a href="/detayli-inceleme" class="quick-nav-link">Detaylı İnceleme</a>
+        <a href="/docs" class="quick-nav-link" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" id="push-toggle-btn" onclick="togglePushNotifications()" title="Sekme/tarayıcı kapalıyken bile bildirim al">🔔</button>
+        <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
       </div>
     </div>
-    <div class="header-controls">
+    <div class="header-row header-row-bottom">
       <form class="filter" id="filter-form" method="get" action="/">
         <input type="search" name="q" value="{{ selected_query }}" placeholder="Başlık/özette ara…">
         <select name="sort" onchange="this.form.submit()">
@@ -1472,11 +1796,16 @@
         <button type="submit">Uygula</button>
         <button type="button" id="push-filter-btn" onclick="subscribeToPushWithCurrentFilters()" title="Yukarıdaki filtrelere uyan yeni bir haber geldiğinde tarayıcı bildirimi al">🎯 Bu Filtrelere Göre Bildirim Al</button>
       </form>
-      <button type="button" id="push-toggle-btn" onclick="togglePushNotifications()" title="Sekme/tarayıcı kapalıyken bile bildirim al">🔔 Bildirimleri Aç</button>
       <span id="push-filter-status" class="push-filter-status"></span>
-      <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
     </div>
   </header>
+
+  <div class="sector-heatmap-wrap">
+    <span class="heatmap-title">Sektör Isı Haritası (24s)</span>
+    <div class="heatmap-items" id="heatmap-items">
+      <span class="ticker-empty">Yükleniyor…</span>
+    </div>
+  </div>
 
   <main>
     {% if is_data_stale %}
@@ -1486,32 +1815,138 @@
     </div>
     {% endif %}
 
-    <div class="fear-greed-container">
-      <div class="fear-greed-title">Piyasa Duygusu</div>
-      <div class="fear-greed-bar">
-        <div class="fear-greed-gradient"></div>
-        <div class="fear-greed-marker" style="left: {{ fear_greed_index }}%;"></div>
+    <!-- Son Dakika şeridi: ayrı bir "editöryel seçim" YOK - src/web/app.py >
+         featured_records (en yüksek önem skorlu son kayıtlar) üzerinde
+         otomatik/manuel döngü (bkz. altındaki <script> > breakingStripStep). -->
+    <script type="application/json" id="breaking-strip-data">{{ featured_records_json | safe }}</script>
+    <div class="breaking-strip">
+      <span class="breaking-strip-label">SON DAKİKA</span>
+      <div class="breaking-strip-content" id="breaking-strip-content">
+        {% if featured_records %}
+        <span class="breaking-strip-time">{{ featured_records[0].published_at }}</span>
+        <span class="breaking-strip-text">{{ featured_records[0].title }}</span>
+        {% else %}
+        <span class="breaking-strip-text">Henüz önem skoru atanmış bir haber yok.</span>
+        {% endif %}
       </div>
-      <div
-        class="fear-greed-label {% if fear_greed_index < 25 %}fg-extreme-fear{% elif fear_greed_index < 45 %}fg-fear{% elif fear_greed_index < 55 %}fg-neutral{% elif fear_greed_index < 75 %}fg-greed{% else %}fg-extreme-greed{% endif %}">
-        {% if fear_greed_index < 25 %}Aşırı Korku {% elif fear_greed_index < 45 %}Korku {% elif fear_greed_index < 55
-          %}Nötr {% elif fear_greed_index < 75 %}Açgözlülük {% else %}Aşırı Açgözlülük{% endif %} ({{ fear_greed_index
-          }}) </div>
+      {% if featured_records|length > 1 %}
+      <div class="breaking-strip-nav">
+        <button type="button" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>
+        <button type="button" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>
       </div>
+      {% endif %}
+    </div>
 
-      <div class="trend-panel">
-        <div class="trend-panel-header">
-          <span class="trend-panel-title">Trend Özeti</span>
-          <span class="trend-period-toggle">
-            <button type="button" id="trend-btn-weekly" onclick="loadTrendSummary('weekly')">Haftalık</button>
-            <button type="button" id="trend-btn-monthly" class="inactive"
-              onclick="loadTrendSummary('monthly')">Aylık</button>
-          </span>
+    <div class="home-grid">
+      <section class="home-main">
+        {% if featured_records %}
+        <div class="hero-card">
+          <span class="badge {{ featured_records[0].badge_class }} hero-badge" title="Önem skoru">{{
+            featured_records[0].badge_text }}/5</span>
+          <div class="hero-time">{{ featured_records[0].published_at }} · Kaynak: {{ featured_records[0].sources }}
+          </div>
+          <h2 class="hero-title">{{ featured_records[0].title }}</h2>
+          <p class="hero-summary">{{ featured_records[0].summary }}</p>
+          {% if featured_records[0].links %}
+          <a class="hero-link" href="{{ featured_records[0].links[0].link }}" target="_blank" rel="noopener">Habere
+            Git ↗</a>
+          {% endif %}
         </div>
-        <div id="trend-panel-body">
-          <span class="trend-empty">Yükleniyor…</span>
+        {% else %}
+        <div class="hero-card hero-empty">Henüz önem skoru atanmış bir haber yok - otomatik tarama devam ediyor…
         </div>
-      </div>
+        {% endif %}
+
+        {% if featured_records|length > 1 %}
+        <div class="featured-list">
+          <div class="featured-list-title">ÖNE ÇIKAN HABERLER</div>
+          {% for f in featured_records[1:] %}
+          <a class="featured-item" href="{% if f.links %}{{ f.links[0].link }}{% else %}#{% endif %}"
+            target="_blank" rel="noopener">
+            <span class="featured-item-title">{{ f.title }}</span>
+            <span class="featured-item-time">{{ f.published_at }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </section>
+
+      <aside class="home-sidebar">
+        <div class="gauge-card">
+          <div class="market-summary-title">PİYASA DUYGUSU</div>
+          <!-- Basit yarım-daire SVG gösterge: mevcut fear_greed_index (0-100)
+               verisini YENİDEN kullanır (bkz. src/web/app.py >
+               _compute_fear_greed_index) - yeni bir hesaplama/veri kaynağı
+               YOK, sadece görselleştirme değişti (önceki düz çubuk yerine). -->
+          <svg class="gauge-svg" viewBox="0 0 200 118" width="100%" height="108" role="img"
+            aria-label="Piyasa duygusu göstergesi: {{ fear_greed_index }}/100">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="var(--negative)" />
+                <stop offset="50%" stop-color="var(--warn)" />
+                <stop offset="100%" stop-color="var(--positive)" />
+              </linearGradient>
+            </defs>
+            <path d="M15,105 A85,85 0 0 1 185,105" fill="none" stroke="url(#gaugeGrad)" stroke-width="14"
+              stroke-linecap="round" />
+            <line x1="100" y1="105" x2="100" y2="32" stroke="var(--text-primary)" stroke-width="3"
+              stroke-linecap="round" transform="rotate({{ ((fear_greed_index - 50) * 90 / 50) | round(1) }} 100 105)" />
+            <circle cx="100" cy="105" r="6" fill="var(--text-primary)" />
+          </svg>
+          <div
+            class="fear-greed-label gauge-label {% if fear_greed_index < 25 %}fg-extreme-fear{% elif fear_greed_index < 45 %}fg-fear{% elif fear_greed_index < 55 %}fg-neutral{% elif fear_greed_index < 75 %}fg-greed{% else %}fg-extreme-greed{% endif %}">
+            {% if fear_greed_index < 25 %}Aşırı Korku {% elif fear_greed_index < 45 %}Korku {% elif fear_greed_index
+              < 55 %}Nötr {% elif fear_greed_index < 75 %}Açgözlülük {% else %}Aşırı Açgözlülük{% endif %} ({{
+              fear_greed_index }}) </div>
+          <div class="gauge-sub">Piyasadaki genel risk iştahının otomatik özeti.</div>
+        </div>
+
+        <div class="trend-panel">
+          <div class="trend-panel-header">
+            <span class="trend-panel-title">Trend Özeti</span>
+            <span class="trend-period-toggle">
+              <button type="button" id="trend-btn-weekly" onclick="loadTrendSummary('weekly')">Haftalık</button>
+              <button type="button" id="trend-btn-monthly" class="inactive"
+                onclick="loadTrendSummary('monthly')">Aylık</button>
+            </span>
+          </div>
+          <div id="trend-panel-body">
+            <span class="trend-empty">Yükleniyor…</span>
+          </div>
+        </div>
+
+        <!-- Piyasa Özeti: YENİ bir veri kaynağı DEĞİL - mevcut
+             /api/market-data (üst ticker'ı da besleyen aynı endpoint,
+             bkz. src/web/market_data.py) tablo biçiminde YENİDEN kullanılır
+             (bkz. altındaki refreshMarketSummaryTable). -->
+        <div class="market-summary-card">
+          <div class="market-summary-title">PİYASA ÖZETİ</div>
+          <table class="market-summary-table">
+            <thead>
+              <tr>
+                <th>Enstrüman</th>
+                <th>Son</th>
+                <th>%</th>
+              </tr>
+            </thead>
+            <tbody id="market-summary-body">
+              <tr>
+                <td colspan="3" class="trend-empty">Yükleniyor…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Ekonomik Takvim: BİLEREK gerçek veriye bağlanmadı - bu proje için
+             bir ekonomik takvim veri kaynağı YOK (kullanıcı isteği, 2026-08-18:
+             uydurma veri KOYMA, "yakında" ile bırak). -->
+        <div class="calendar-placeholder-card">
+          <div class="market-summary-title">YAKLAŞAN EKONOMİK TAKVİM</div>
+          <div class="calendar-placeholder-text">Bu bölüm için henüz bir veri kaynağımız yok — yakında eklenecek.
+          </div>
+        </div>
+      </aside>
+    </div>
 
       <div id="company-modal-overlay" class="company-modal-overlay">
         <div class="company-modal">
@@ -1641,6 +2076,7 @@
          "&min_importance=" ~ (selected_min_importance or '') ~ "&q=" ~ (selected_query|urlencode) ~
          "&sort=" ~ (selected_sort|urlencode) %}
 
+      <div class="news-section-title" id="kap-section">SON HABERLER</div>
       <div class="dashboard-columns">
         <section class="kap-column" aria-label="KAP Özel Durum Açıklamaları">
           <h2 class="column-title">📋 KAP Bildirimleri</h2>
@@ -1673,6 +2109,7 @@
         </section>
 
         <section class="general-column" aria-label="Genel Haber Akışı">
+          <h2 class="column-title">📰 Genel Haberler</h2>
           {% if not records %}
           <div class="empty">
             Henüz haber yok. Otomatik tarama devam ediyor…
@@ -1691,7 +2128,7 @@
          773px, mobilde 2081px yükseklikle kullanıcının asıl aradığı
          KAP/haber içeriğine ulaşmadan önce gereksiz kaydırma yaptırıyordu
          (bkz. Playwright ile ölçülen bölüm yükseklikleri). #}
-      <div class="commodity-panel">
+      <div class="commodity-panel" id="emtia-section">
         <div class="commodity-panel-header">
           <span class="commodity-panel-title">Haftalık Emtia Raporu</span>
           <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
@@ -2147,17 +2584,88 @@
       if (e.target === this) closeCommodityModal();
     });
 
+    // ======================================================================
+    // Son Dakika şeridi (2026-08-18 ana sayfa yeniden tasarımı) - ekstra bir
+    // istek/endpoint YOK, veri zaten sayfayla birlikte gömülü geldi (bkz.
+    // yukarıdaki #breaking-strip-data > src/web/app.py > featured_records_json).
+    // Otomatik 6 sn'de bir ilerler, ok düğmeleri manuel geçiş yapar ve
+    // zamanlayıcıyı sıfırlar (kullanıcı etkileşimi otomatik döngüyle
+    // ÇAKIŞMASIN diye).
+    // ======================================================================
+    var _breakingItems = [];
+    try {
+      var _rawEl = document.getElementById('breaking-strip-data');
+      if (_rawEl) _breakingItems = JSON.parse(_rawEl.textContent || '[]');
+    } catch (e) { _breakingItems = []; }
+    var _breakingIndex = 0;
+    var _breakingTimer = null;
+
+    function renderBreakingStrip() {
+      if (!_breakingItems.length) return;
+      var el = document.getElementById('breaking-strip-content');
+      if (!el) return;
+      var item = _breakingItems[_breakingIndex];
+      el.innerHTML = '<span class="breaking-strip-time">' + item.time + '</span>' +
+        '<span class="breaking-strip-text">' + item.title.replace(/</g, '&lt;') + '</span>';
+    }
+
+    function breakingStripStep(direction) {
+      if (!_breakingItems.length) return;
+      _breakingIndex = (_breakingIndex + direction + _breakingItems.length) % _breakingItems.length;
+      renderBreakingStrip();
+      if (_breakingTimer) {
+        clearInterval(_breakingTimer);
+        _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
+      }
+    }
+
+    if (_breakingItems.length > 1) {
+      _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
+    }
+
+    // Piyasa Özeti tablosu (2026-08-18) - ticker'ı besleyen AYNI
+    // /api/market-data endpoint'i, sadece tablo biçiminde (yeni bir
+    // backend uç noktası GEREKMEDİ).
+    async function refreshMarketSummaryTable() {
+      var body = document.getElementById('market-summary-body');
+      if (!body) return;
+      try {
+        var res = await fetch('/api/market-data');
+        var data = await res.json();
+        if (!data.length) {
+          if (body.dataset.hasData !== '1') {
+            body.innerHTML = '<tr><td colspan="3" class="trend-empty">Piyasa verisi alınamadı</td></tr>';
+          }
+          return;
+        }
+        body.innerHTML = data.map(function (item) {
+          var up = item.change_pct >= 0;
+          var cls = up ? 'ticker-up' : 'ticker-down';
+          var priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+          return '<tr><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
+            (up ? '▲' : '▼') + ' %' + Math.abs(item.change_pct).toFixed(2) + '</td></tr>';
+        }).join('');
+        body.dataset.hasData = '1';
+      } catch (e) {
+        if (body.dataset.hasData !== '1') {
+          body.innerHTML = '<tr><td colspan="3" class="trend-empty">Piyasa verisi alınamadı</td></tr>';
+        }
+      }
+    }
+
     initThemeToggle();
     refreshMarketTicker();
     refreshSectorHeatmap();
     loadTrendSummary('weekly');
     loadCommodityPanel();
+    refreshMarketSummaryTable();
     // Piyasa şeridi: sunucu tarafı önbellek süresiyle (bkz.
     // src/web/market_data.py > _CACHE_TTL_SECONDS) BİLEREK aynı tutuluyor.
     // 10 sn, gerçek bir ölçümle belirlendi. Sektör ısı haritası haber
     // verisine dayandığından (dakikalar içinde nadiren değişir) 5 dk'da bir
     // yeterli.
     setInterval(refreshMarketTicker, 10000);
+    setInterval(refreshMarketSummaryTable, 10000);
     setInterval(refreshSectorHeatmap, 300000);
     // Backend'in arka plan tazeleme aralığıyla (bkz.
     // src/commodity_report.py > _COMMODITY_REFRESH_INTERVAL_SECONDS = 180)
