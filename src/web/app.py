@@ -675,17 +675,26 @@ def dashboard(
     # bölüm(ler) daha az öğeyle gösterilir.
     featured_records = home_important_views[:5]
     home_mixed_records = home_important_views[5:15]
-    # Son Dakika şeridinin JS tarafında (bkz. dashboard.html > breakingStripStep)
-    # döngüsel gösterebilmesi için aynı `featured_records` küçük bir JSON'a
-    # çevrilir - "</script>" enjeksiyonuna karşı (ör. bir haber başlığı bu
-    # diziyi içerse) basit bir escape uygulanır, ayrı bir HTTP isteği/endpoint
-    # GEREKMEZ (veri zaten bu response içinde var).
+    # Son Dakika şeridinin VE hero kartının JS tarafında (bkz. dashboard.html
+    # > breakingStripStep/renderFeaturedItem) AYNI dönen state'i paylaşarak
+    # senkron gezinebilmesi için (kullanıcı isteği, 2026-08-18: "iki ayrı
+    # state olmasın") aynı `featured_records` hero'yu TAM olarak yeniden
+    # render edebilecek kadar zengin bir JSON'a çevrilir - "</script>"
+    # enjeksiyonuna karşı (ör. bir haber başlığı bu diziyi içerse) basit bir
+    # escape uygulanır, ayrı bir HTTP isteği/endpoint GEREKMEZ (veri zaten
+    # bu response içinde var).
     featured_records_json = json.dumps(
         [
             {
                 "time": f["published_at"],
                 "title": f["short_summary"] or f["title"],
                 "score": f["importance_score"],
+                "badge_class": f["badge_class"],
+                "badge_text": f["badge_text"],
+                "sources": f["sources"],
+                "summary": f["summary"],
+                "image_url": f["image_url"],
+                "link": (f["links"][0]["link"] if f["links"] else ""),
             }
             for f in featured_records
         ]

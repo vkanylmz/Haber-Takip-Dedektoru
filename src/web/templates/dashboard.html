@@ -960,6 +960,41 @@
       right: 1.2rem;
     }
 
+    /* Görsel üzerine bindirilmiş carousel okları (kullanıcı isteği,
+       2026-08-18) - Son Dakika şeridindeki ‹›'la AYNI JS state'ini
+       kontrol eder (bkz. breakingStripStep). Nokta göstergesi YOK. */
+    .hero-image-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0, 0, 0, 0.4);
+      color: #ffffff;
+      font-size: 1.3rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      z-index: 2;
+    }
+
+    .hero-image-nav:hover {
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    .hero-image-nav-prev {
+      left: 0.75rem;
+    }
+
+    .hero-image-nav-next {
+      right: 0.75rem;
+    }
+
     .hero-card.hero-empty {
       color: var(--text-muted);
       text-align: center;
@@ -2081,25 +2116,38 @@
            görsel HOTLINK'lemek yerine dürüst fallback tercih edildi, bkz.
            commit notu). `onerror`: bozuk/erişilemez bir görsel URL'i
            SESSİZCE görselsiz moda düşürür, kırık resim ikonu göstermez. #}
-        <div class="hero-card {% if featured_records[0].image_url %}has-image{% endif %}">
+        <div class="hero-card {% if featured_records[0].image_url %}has-image{% endif %}" id="hero-card">
           {% if featured_records[0].image_url %}
-          <div class="hero-image-wrap">
-            <img class="hero-image" src="{{ featured_records[0].image_url }}" alt="" loading="lazy"
+          <div class="hero-image-wrap" id="hero-image-wrap">
+            <img class="hero-image" id="hero-image" src="{{ featured_records[0].image_url }}" alt="" loading="lazy"
               onerror="this.closest('.hero-card').classList.remove('has-image'); this.remove();">
             <div class="hero-image-scrim"></div>
+            {# Görsel üzerindeki carousel okları (kullanıcı isteği, 2026-08-18)
+               - Son Dakika şeridindeki ‹›'la AYNI JS state'ini (bkz. altındaki
+               <script> > breakingStripStep) kontrol eder, ayrı bir sayaç/
+               state YOK. Nokta göstergesi BİLİNÇLİ OLARAK eklenmedi
+               (kullanıcı isteği). featured_records tek öğeliyse (döngü
+               anlamsız) hiç render edilmez. #}
+            {% if featured_records|length > 1 %}
+            <button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)"
+              aria-label="Önceki">‹</button>
+            <button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)"
+              aria-label="Sonraki">›</button>
+            {% endif %}
           </div>
           {% endif %}
           <div class="hero-content">
-            <span class="badge {{ featured_records[0].badge_class }} hero-badge" title="Önem skoru">{{
+            <span class="badge {{ featured_records[0].badge_class }} hero-badge" id="hero-badge" title="Önem skoru">{{
               featured_records[0].badge_text }}/5</span>
-            <div class="hero-time">{{ featured_records[0].published_at }} · Kaynak: {{ featured_records[0].sources }}
+            <div class="hero-time" id="hero-time">{{ featured_records[0].published_at }} · Kaynak: {{
+              featured_records[0].sources }}
             </div>
-            <h2 class="hero-title">{{ featured_records[0].short_summary or featured_records[0].title }}</h2>
-            <p class="hero-summary">{{ featured_records[0].summary }}</p>
-            {% if featured_records[0].links %}
-            <a class="hero-link" href="{{ featured_records[0].links[0].link }}" target="_blank" rel="noopener">Habere
+            <h2 class="hero-title" id="hero-title">{{ featured_records[0].short_summary or featured_records[0].title
+              }}</h2>
+            <p class="hero-summary" id="hero-summary">{{ featured_records[0].summary }}</p>
+            <a class="hero-link" id="hero-link" href="{{ featured_records[0].links[0].link if featured_records[0].links else '#' }}"
+              target="_blank" rel="noopener" {% if not featured_records[0].links %}style="display:none;"{% endif %}>Habere
               Git ↗</a>
-            {% endif %}
           </div>
         </div>
         {% else %}
@@ -2913,10 +2961,71 @@
         '<span class="breaking-strip-text">' + item.title.replace(/</g, '&lt;') + '</span>';
     }
 
+    // Hero kartı, Son Dakika şeridiyle (bkz. yukarıdaki renderBreakingStrip)
+    // AYNI dönen state'ten (_breakingItems/_breakingIndex) beslenir -
+    // görsel üzerindeki oklar da (bkz. .hero-image-nav) AYNI
+    // breakingStripStep()'e bağlı, ayrı bir state YOK (kullanıcı isteği,
+    // 2026-08-18). Görseli olmayan bir öğeye geçilirse .hero-image-wrap
+    // tamamen kaldırılır (kırık görsel/boşluk kalmaz) - varsa yeniden
+    // eklenir. Metin alanları `.textContent` ile yazılır (innerHTML DEĞİL)
+    // - HTML olarak yorumlanmaz, ayrı bir escape'e gerek yok.
+    function renderHeroCard() {
+      if (!_breakingItems.length) return;
+      var card = document.getElementById('hero-card');
+      if (!card) return;
+      var item = _breakingItems[_breakingIndex];
+
+      var badge = document.getElementById('hero-badge');
+      if (badge) {
+        badge.className = 'badge ' + item.badge_class + ' hero-badge';
+        badge.textContent = item.badge_text + '/5';
+      }
+      var timeEl = document.getElementById('hero-time');
+      if (timeEl) timeEl.textContent = item.time + ' · Kaynak: ' + item.sources;
+      var titleEl = document.getElementById('hero-title');
+      if (titleEl) titleEl.textContent = item.title;
+      var summaryEl = document.getElementById('hero-summary');
+      if (summaryEl) summaryEl.textContent = item.summary;
+      var linkEl = document.getElementById('hero-link');
+      if (linkEl) {
+        if (item.link) {
+          linkEl.href = item.link;
+          linkEl.style.display = '';
+        } else {
+          linkEl.style.display = 'none';
+        }
+      }
+
+      var existingWrap = document.getElementById('hero-image-wrap');
+      if (item.image_url) {
+        card.classList.add('has-image');
+        if (existingWrap) {
+          var img = document.getElementById('hero-image');
+          if (img) img.src = item.image_url;
+        } else {
+          var navHtml = _breakingItems.length > 1
+            ? '<button type="button" class="hero-image-nav hero-image-nav-prev" onclick="breakingStripStep(-1)" aria-label="Önceki">‹</button>' +
+            '<button type="button" class="hero-image-nav hero-image-nav-next" onclick="breakingStripStep(1)" aria-label="Sonraki">›</button>'
+            : '';
+          var wrap = document.createElement('div');
+          wrap.className = 'hero-image-wrap';
+          wrap.id = 'hero-image-wrap';
+          wrap.innerHTML = '<img class="hero-image" id="hero-image" src="' + item.image_url +
+            '" alt="" loading="lazy" onerror="this.closest(\'.hero-card\').classList.remove(\'has-image\'); this.remove();">' +
+            '<div class="hero-image-scrim"></div>' + navHtml;
+          card.insertBefore(wrap, card.firstChild);
+        }
+      } else {
+        card.classList.remove('has-image');
+        if (existingWrap) existingWrap.remove();
+      }
+    }
+
     function breakingStripStep(direction) {
       if (!_breakingItems.length) return;
       _breakingIndex = (_breakingIndex + direction + _breakingItems.length) % _breakingItems.length;
       renderBreakingStrip();
+      renderHeroCard();
       if (_breakingTimer) {
         clearInterval(_breakingTimer);
         _breakingTimer = setInterval(function () { breakingStripStep(1); }, 6000);
