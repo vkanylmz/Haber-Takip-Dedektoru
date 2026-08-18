@@ -286,6 +286,31 @@ KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(
 )
 KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(_JSON_SCHEMA_LINE, _KAP_JSON_SCHEMA_LINE, 1)
 
+# KAP özetlerinde somut sayısal veri kuralı (2026-08-18, kullanıcı isteği):
+# gerçek örnekte gözlemlendi - LLM "rutin bir bildirimde bulunmuştur" gibi
+# soyut ifadelere kaçıyordu, oysa KAP metninde "4.102.410 TL nominal tutar,
+# sermaye payı %8,9613'ten %8,5924'e düştü" gibi somut rakamlar VARDI. Genel
+# SYSTEM_PROMPT'taki "Önemli noktalar (key_points)" kuralı SADECE key_points
+# listesi için somutluk istiyordu, `summary` metninin kendisi için DEĞİL -
+# bu blok özellikle `summary`'nin somutluğunu KAP'a özgü hedefliyor (genel
+# haberlerde böyle bir zorunluluk YOK, SYSTEM_PROMPT'a dokunulmadı).
+_KAP_NUMERIC_DETAIL_INSTRUCTION = """KAP özetlerinde somut sayısal veri kuralı (summary için):
+- Metinde işlem tutarı, önce/sonra oranı (sermaye payı, oy hakkı vb.), \
+tarih, hisse adedi, fiyat gibi SOMUT sayısal veriler varsa bunları özete \
+MUTLAKA DAHİL ET - "rutin bir bildirimde bulunmuştur" gibi genel/soyut \
+ifadelerle GEÇİŞTİRME.
+- Örnek istenen format: "[Şirket], [hedef şirket] hisselerinde [tarih] \
+tarihinde [tutar] TL'lik satış yaptı; sermaye payı %X'ten %Y'ye, oy hakkı \
+%A'dan %B'ye düştü."
+- Bu tür sayısal veriler metinde YOKSA uydurma - sadece gerçekten mevcutsa \
+dahil et."""
+
+KAP_SYSTEM_PROMPT = KAP_SYSTEM_PROMPT.replace(
+    "Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n",
+    f"Sadece verilen metne dayan; uydurma bilgi ekleme.\n\n{_KAP_NUMERIC_DETAIL_INSTRUCTION}\n\n",
+    1,
+)
+
 # Modelden istenebilecek geçerli bölge etiketleri (bkz. SYSTEM_PROMPT).
 VALID_REGIONS = ("turkiye", "abd", "avrupa", "asya", "diger")
 
