@@ -52,9 +52,12 @@ pywebpush>=2.0
 # ortamında güvenilir çalışmasını garanti eder.
 tzdata>=2024.1
 
-# Opsiyonel: JS ile render edilen siteler için (config.yaml'da render_js: true
-# yapılırsa gereklidir). Varsayılan olarak kurulu değildir.
-# playwright>=1.45
+# JS ile render edilen siteler için (config.yaml'da render_js: true
+# yapılırsa gereklidir) VE src/fetchers/kap_fetcher.py'nin bildirim detay
+# sayfası zenginleştirmesi için (2026-08-18, bkz. o dosyadaki
+# _fetch_detail_table_via_browser notu - KAP'ın "Özet Bilgi" tablosu
+# client-side JS ile sonradan yükleniyor, düz httpx GET bunu YAKALAYAMAZ).
+playwright>=1.45
 
 # Opsiyonel: KAP (kap.org.tr) gibi doğrudan scrape edilemeyen kaynaklardan
 # anlık bildirim almak için Telegram kanal dinleyicisi (bkz.
