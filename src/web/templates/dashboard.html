@@ -1513,16 +1513,6 @@
         </div>
       </div>
 
-      <div class="commodity-panel">
-        <div class="commodity-panel-header">
-          <span class="commodity-panel-title">Haftalık Emtia Raporu</span>
-          <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
-        </div>
-        <div id="commodity-panel-body">
-          <span class="trend-empty">Yükleniyor…</span>
-        </div>
-      </div>
-
       <div id="company-modal-overlay" class="company-modal-overlay">
         <div class="company-modal">
           <div class="company-modal-header">
@@ -1693,6 +1683,22 @@
           {{ render_news_card(r) }}
           {% endfor %}
         </section>
+      </div>
+
+      {# Emtia Raporu bilinçli olarak KAP/haber sütunlarının ALTINA
+         taşındı (kullanıcı isteği, 2026-08-18) - önceden Trend Özeti'nin
+         hemen altında, haber içeriğinden ÖNCE yer alıyordu; masaüstünde
+         773px, mobilde 2081px yükseklikle kullanıcının asıl aradığı
+         KAP/haber içeriğine ulaşmadan önce gereksiz kaydırma yaptırıyordu
+         (bkz. Playwright ile ölçülen bölüm yükseklikleri). #}
+      <div class="commodity-panel">
+        <div class="commodity-panel-header">
+          <span class="commodity-panel-title">Haftalık Emtia Raporu</span>
+          <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
+        </div>
+        <div id="commodity-panel-body">
+          <span class="trend-empty">Yükleniyor…</span>
+        </div>
       </div>
   </main>
 
