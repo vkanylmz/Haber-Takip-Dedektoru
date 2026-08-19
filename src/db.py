@@ -120,6 +120,14 @@ class NewsRecord(Base):
     # düşer, bkz. templates/dashboard.html).
     short_summary = Column(String(280), nullable=True)
 
+    # TradingView entegrasyonu (2026-08-19, kullanıcı isteği) - bkz.
+    # src/models.py > NewsGroup.trading_view_symbol, src/summarizer.py >
+    # SYSTEM_PROMPT/KAP_SYSTEM_PROMPT. "BORSA:SEMBOL" formatında (ör.
+    # "NASDAQ:NFLX", "FX:USDJPY") ya da None - dashboard bu doluysa bir
+    # "Teknik Görünüm" butonu gösterir (bkz. src/web/app.py > _record_to_view,
+    # templates/dashboard.html), boşsa buton HİÇ render edilmez.
+    trading_view_symbol = Column(String(64), nullable=True)
+
     # Haber görseli (2026-08-18, kullanıcı isteği) - kaynağın kendi RSS
     # feed'inden (media:content/thumbnail/enclosure, bkz.
     # src/fetchers/rss_fetcher.py > _extract_image_url) veya lisanslı
@@ -600,6 +608,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "image_url" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN image_url VARCHAR(1024)")
             logger.info("Veritabanı migrasyonu: news_records.image_url kolonu eklendi.")
+        if "trading_view_symbol" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN trading_view_symbol VARCHAR(64)")
+            logger.info("Veritabanı migrasyonu: news_records.trading_view_symbol kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -748,6 +759,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             company_ticker=group.company_ticker,
             kap_category=group.kap_category,
             short_summary=group.short_summary,
+            trading_view_symbol=group.trading_view_symbol,
             image_url=group.image_url or None,
             notified=False,
             first_seen_at=now,
@@ -771,6 +783,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.kap_category = group.kap_category or record.kap_category
         record.title_tr = group.title_tr or record.title_tr
         record.short_summary = group.short_summary or record.short_summary
+        record.trading_view_symbol = group.trading_view_symbol or record.trading_view_symbol
         record.image_url = group.image_url or record.image_url
         record.last_seen_at = now
 

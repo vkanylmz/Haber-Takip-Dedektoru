@@ -395,6 +395,19 @@ def _calendar_event_to_view(event: Any) -> dict[str, Any]:
     }
 
 
+def _build_tradingview_url(symbol: str | None) -> str | None:
+    """"BORSA:SEMBOL" (ör. "NASDAQ:NFLX", "FX:USDJPY") -> TradingView'in
+    kendi sembol sayfası URL yapısı, ör.
+    "https://www.tradingview.com/symbols/NASDAQ-NFLX/" (iki nokta üst üste
+    tire ile değiştirilir - TradingView'in gerçek URL şeması budur, GERÇEK
+    bir tarayıcı testiyle doğrulandı, bkz. commit notu). `symbol` boş/None
+    ise None döner - kartlarda "Teknik Görünüm" butonu bu durumda HİÇ
+    render edilmez (bkz. _record_to_view, src/commodity_report.py)."""
+    if not symbol:
+        return None
+    return f"https://www.tradingview.com/symbols/{symbol.replace(':', '-')}/"
+
+
 def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
     score = record.importance_score
     if score is None:
@@ -461,6 +474,8 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "kap_category_label": KAP_CATEGORY_LABELS.get(record.kap_category or "", None),
         "short_summary": record.short_summary,
         "image_url": record.image_url,
+        "trading_view_symbol": record.trading_view_symbol,
+        "tradingview_url": _build_tradingview_url(record.trading_view_symbol),
     }
 
 

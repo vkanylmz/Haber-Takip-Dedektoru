@@ -666,6 +666,29 @@
       text-decoration: underline;
     }
 
+    /* TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği) -
+       diğer kaynak linklerinden (nötr .links a) AYIRT EDİLSİN diye
+       TradingView'in kendi marka rengine (#2962FF) yakın bir dolgu/vurgu
+       kullanılır - hem açık hem koyu temada okunur kalması için sabit bir
+       ton (tema token'larından BAĞIMSIZ, TradingView'in kendi rengi zaten
+       marka kimliğinin bir parçası). */
+    .tradingview-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      color: #fff !important;
+      background: #2962ff;
+      border-radius: 5px;
+      font-weight: 600;
+      font-size: 0.72rem;
+      padding: 0.15rem 0.45rem;
+      text-decoration: none !important;
+    }
+
+    .tradingview-link:hover {
+      background: #1e4fd6;
+    }
+
     /* --- Sektör etiketleri: önceki mor dolgu-renkli pill'ler YERİNE düz,
        nötr metin (gereksinim: "renkli rozet çeşitliliğini azalt"). --- */
     .sector-tag {
@@ -2197,6 +2220,21 @@
         {% endif %}
 
         <div class="links">
+          {# TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği) -
+             SADECE r.tradingview_url doluysa (bkz. src/web/app.py >
+             _build_tradingview_url) render edilir - LLM sembolü çözemediyse
+             (genel/soyut haber) buton HİÇ görünmez, kartı kalabalıklaştırmaz. #}
+          {% if r.tradingview_url %}
+          <a href="{{ r.tradingview_url }}" target="_blank" rel="noopener" class="tradingview-link"
+            title="TradingView'de {{ r.trading_view_symbol }} teknik görünümünü aç">
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor" />
+              <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
+              <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
+            </svg>
+            Teknik Görünüm ↗
+          </a>
+          {% endif %}
           {% for link in r.links %}
           <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
           {% endfor %}

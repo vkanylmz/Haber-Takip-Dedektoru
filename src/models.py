@@ -99,6 +99,17 @@ class NewsGroup:
     # verildiğinden (kap_stock_codes'tan, bkz. _kap_primary_ticker_code)
     # LLM sadece cümleyi kurar. KAP-dışı haberlerde HER ZAMAN None.
     short_summary: str | None = None
+    # TradingView entegrasyonu (2026-08-19, kullanıcı isteği): haberin/KAP
+    # bildiriminin en doğru TradingView sembolü, TradingView'in kendi
+    # "BORSA:SEMBOL" formatında (ör. "NASDAQ:NFLX", "FX:USDJPY", "TVC:GOLD").
+    # LLM tarafından AYNI özetleme çağrısında üretilir (bkz. summarizer.py >
+    # SYSTEM_PROMPT/KAP_SYSTEM_PROMPT) - ek bir API çağrısı YOK. Haber somut
+    # bir sembolle ilişkilendirilemiyorsa (genel/soyut bir konu) None kalır -
+    # LLM'in UYDURMA sembol üretmesi kesinlikle istenmez (bkz.
+    # _parse_trading_view_symbol, format doğrulaması yapar ama içeriğin
+    # GERÇEKTEN var olan bir sembol olduğunu garanti EDEMEZ - bu yüzden
+    # prompt'ta "emin değilsen boş bırak" talimatı var).
+    trading_view_symbol: str | None = None
 
     @property
     def representative(self) -> NewsItem:

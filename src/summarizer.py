@@ -156,6 +156,30 @@ sembolünü "BORSA: SEMBOL" formatında ver - ör. "NASDAQ: TSLA", "NYSE: XOM", 
 veya haber "sirket" kategorisinde değilse boş string ("") döndür - ASLA \
 tahmin/uydurma bir sembol üretme, emin değilsen boş bırak.
 
+TradingView sembolü tespiti (trading_view_symbol, TEK bir string):
+- Haberin/bildirimin konusunu dashboard'da bir "Teknik Görünüm" butonuyla \
+TradingView'e bağlamak için, haberin en doğru TradingView sembolünü \
+TradingView'in KENDİ format kurallarına uygun "BORSA:SEMBOL" biçiminde ver.
+- Bu alan company_ticker'dan (SADECE "sirket" haberlerinde anlamlı) DAHA \
+GENİŞ kapsamlıdır - haberin konusu NE olursa olsun (bir şirket, bir döviz \
+çifti, bir emtia, bir endeks, bir tahvil/faiz konusu) en doğru sembolü bul:
+  - Belirli bir şirket/hisse haberiyse: o şirketin borsa:ticker'ı, ör. \
+"NASDAQ:NFLX", "NYSE:XOM", "BIST:THYAO".
+  - İki ülke/para birimi arasındaki bir ilişkiyi (ör. tahvil getirisi, \
+ticaret, faiz farkı) konu alan bir haberse: ilgili döviz paritesi, ör. \
+"ABD-Japon tahvil piyasası" haberinde "FX:USDJPY".
+  - Bir emtia (altın, petrol, bakır, doğalgaz vb.) fiyat hareketiyle \
+ilgiliyse: o emtianın sembolü, ör. altın için "TVC:GOLD" veya \
+"OANDA:XAUUSD", ham petrol için "TVC:USOIL".
+  - Bir borsa endeksi/piyasa geneliyle ilgiliyse: ilgili endeks sembolü, \
+ör. "NASDAQ" endeksi için "NASDAQ:IXIC", S&P 500 için "SP:SPX".
+- Haber GENEL/SOYUT bir konuysa (belirli TEK bir sembolle net şekilde \
+ilişkilendirilemiyorsa - ör. genel bir makroekonomi yorumu, bir siyasi \
+gelişme, birden fazla farklı varlığı aynı anda ilgilendiren dağınık bir \
+haber) boş string ("") döndür.
+- ASLA tahmin/uydurma bir sembol üretme - GERÇEKTEN var olduğundan emin \
+olmadığın bir sembolü YAZMA, emin değilsen boş bırak.
+
 Başlık çevirisi (title_tr):
 - Yukarıdaki bloklardan İLKİNİN "Başlık:" alanı, bu haberin dashboard'da/\
 Telegram'da GÖSTERİLECEK ana/temsili başlığıdır.
@@ -169,7 +193,7 @@ yaz - kelimesi kelimesine birebir çeviri değil, anlamı doğru aktaran bir \
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": "", "title_tr": ""}
+{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, "importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], "sentiment": "notr", "market_impact": "...", "top_category": "makro", "company_ticker": "", "title_tr": "", "trading_view_symbol": ""}
 """
 
 # KAP (Kamuyu Aydınlatma Platformu) özel durum açıklamaları için AYRI bir
@@ -269,13 +293,14 @@ _JSON_SCHEMA_LINE = (
     '{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, '
     '"importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], '
     '"sentiment": "notr", "market_impact": "...", "top_category": "makro", '
-    '"company_ticker": "", "title_tr": ""}'
+    '"company_ticker": "", "title_tr": "", "trading_view_symbol": ""}'
 )
 _KAP_JSON_SCHEMA_LINE = (
     '{"summary": "...", "key_points": ["...", "..."], "importance_score": 3, '
     '"importance_reason": "...", "regions": ["turkiye"], "sector": ["finans"], '
     '"sentiment": "notr", "market_impact": "...", "top_category": "makro", '
-    '"company_ticker": "", "title_tr": "", "kap_category": "diger", "short_summary": ""}'
+    '"company_ticker": "", "title_tr": "", "trading_view_symbol": "", '
+    '"kap_category": "diger", "short_summary": ""}'
 )
 
 for _label, _needle in (("_JSON_SCHEMA_LINE", _JSON_SCHEMA_LINE),):
@@ -779,6 +804,7 @@ class Summarizer:
             group.title_tr = None
             group.kap_category = None
             group.short_summary = None
+            group.trading_view_symbol = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -796,6 +822,7 @@ class Summarizer:
         group.market_impact = str(parsed.get("market_impact", "")).strip() or None
         group.top_category = self._parse_top_category(parsed.get("top_category"))
         group.company_ticker = self._parse_company_ticker(parsed.get("company_ticker"))
+        group.trading_view_symbol = self._parse_trading_view_symbol(parsed.get("trading_view_symbol"))
         group.title_tr = str(parsed.get("title_tr", "")).strip() or None
         # bkz. _looks_turkish notu - LLM'in kendi "zaten Türkçeyse boş
         # bırak" talimatına HER ZAMAN uymadığı gözlemlendi, bu deterministik
@@ -829,6 +856,18 @@ class Summarizer:
             #    (ticker çözülemediyse) None kalır, kart eski davranışa
             #    (uzun başlık) düşer.
             group.short_summary = str(parsed.get("short_summary", "")).strip() or None
+
+            # 4) trading_view_symbol: KAP kayıtlarında da OTORİTER stockCodes
+            #    alanından deterministik türetilir, LLM'in tahminini EZER -
+            #    KAP her zaman Borsa İstanbul'da işlem gören bir şirketle
+            #    ilgilidir ve TradingView BIST sembollerini HER ZAMAN
+            #    "BIST:TICKER" formatında kullanır (gerçek TradingView sembol
+            #    sayfalarıyla doğrulandı) - bu yüzden LLM'e güvenip yanlış \
+            #    borsa/format riski almaya gerek yok (bkz. _kap_primary_ticker_code,
+            #    şirket ticker'ı için zaten aynı otoriter kaynak kullanılıyor).
+            kap_primary_ticker = _kap_primary_ticker_code(group.representative.kap_stock_codes)
+            if kap_primary_ticker:
+                group.trading_view_symbol = f"BIST:{kap_primary_ticker}"
         else:
             group.short_summary = None
 
@@ -1078,6 +1117,33 @@ class Summarizer:
             return None
         return value
 
+    # TradingView'in kendi format kuralı: "BORSA:SEMBOL" - iki nokta üst
+    # üste ile ayrılmış, boşluksuz, sadece harf/rakam/nokta/tire (ör.
+    # "NASDAQ:NFLX", "FX:USDJPY", "TVC:GOLD", "BIST:THYAO"). company_ticker'ın
+    # "BORSA: SEMBOL" (boşluklu) formatından FARKLI - bu, TradingView URL'ine
+    # DOĞRUDAN gömüleceğinden (bkz. src/web/app.py > _build_tradingview_url)
+    # sıkı bir biçim kontrolü burada yapılır.
+    _TRADING_VIEW_SYMBOL_RE = re.compile(r"^[A-Z0-9]+:[A-Z0-9._-]+$")
+
+    @staticmethod
+    def _parse_trading_view_symbol(raw_value: Any) -> str | None:
+        """Modelin döndürdüğü `trading_view_symbol` değerini doğrular.
+        Boş/eksik/format DIŞI (boşluk içeren, iki nokta üst üste eksik/\
+        fazla vb.) bir değer gelirse None döner - kart üzerinde hiçbir \
+        "Teknik Görünüm" butonu gösterilmez (bkz. src/web/app.py). Bu, \
+        sembolün GERÇEKTEN var olduğunu DOĞRULAMAZ (öyle bir kontrol ek bir \
+        ağ çağrısı gerektirir) - sadece TradingView'in beklediği biçimde mi \
+        diye bakar; içerik doğruluğu prompt talimatına (bkz. SYSTEM_PROMPT >
+        "ASLA tahmin/uydurma bir sembol üretme") bırakılmıştır."""
+        if raw_value is None:
+            return None
+        value = str(raw_value).strip().upper()
+        if not value or len(value) > 40:
+            return None
+        if not Summarizer._TRADING_VIEW_SYMBOL_RE.match(value):
+            return None
+        return value
+
     @staticmethod
     def _parse_kap_category(raw_value: Any) -> str:
         """Modelin döndürdüğü `kap_category` değerini VALID_KAP_CATEGORIES ile
@@ -1258,3 +1324,4 @@ class Summarizer:
         group.company_ticker = None
         group.title_tr = None
         group.kap_category = None
+        group.trading_view_symbol = None
