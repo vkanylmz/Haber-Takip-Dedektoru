@@ -393,6 +393,7 @@ def _calendar_event_to_view(event: Any) -> dict[str, Any]:
         "importance": event.importance,
         "previous_value": event.previous_value,
         "actual_value": event.actual_value,
+        "forecast_value": event.forecast_value,
         "reference_period": event.reference_period,
         "is_released": event.actual_value is not None,
     }

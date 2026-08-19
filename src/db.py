@@ -395,10 +395,16 @@ class EconomicCalendarEvent(Base):
     tablo (`news_records`e ZORLANMADI) - haber kaydı DEĞİL, tekrarlayan/
     güncellenen bir gösterge takvimi girdisi.
 
-    Kapsam (kullanıcı kararı): Türkiye için TÜM önem seviyeleri, diğer
-    ülkeler için SADECE 2-3 yıldız (bkz. economic_calendar.py > REFRESH
-    mantığı - importance=2/3 sorgularının küme farkıyla hesaplanır, TE
-    sayfası satır başına yıldız sayısını DOĞRUDAN vermiyor).
+    Kapsam (2026-08-19 kullanıcı kararı - ÖNCEKİ "Türkiye=tüm seviyeler,
+    diğerleri=2-3 yıldız" ayrımı KALDIRILDI): TÜM 7 ülke/bölge (TR, US, DE,
+    JP, CN, GB, EA) için 1-2-3 yıldızın TAMAMI DB'ye yazılır (bkz.
+    economic_calendar.py > _fetch_all_tiers, importance=2/3 sorgularının
+    küme farkıyla hesaplanır, TE sayfası satır başına yıldız sayısını
+    DOĞRUDAN vermiyor). 1 yıldızlı olayların KULLANICIYA gösterilmemesi
+    (varsayılan `importance IN (2,3)`) SORGU seviyesinde uygulanır (bkz.
+    get_upcoming_calendar_events, src/web/api_v1.py > economic_calendar_v1)
+    - böylece bir istemci açıkça 1 yıldız isterse (API `importance` param'ı)
+    veri DB'de zaten mevcut olur, yeniden taramaya gerek kalmaz.
 
     İKİ AŞAMALI güncelleme: `actual_value` başlangıçta NULL (bkz.
     previous_value - "bekleniyor" durumunda gösterilir), olayın açıklanma
@@ -420,6 +426,14 @@ class EconomicCalendarEvent(Base):
     importance = Column(Integer, nullable=False)  # 1-3 (bkz. sınıf docstring'i)
     previous_value = Column(String(64), nullable=True)
     actual_value = Column(String(64), nullable=True)  # NULL -> henüz açıklanmadı ("bekleniyor")
+    # Trading Economics'in "Consensus" kolonu (bkz. economic_calendar.py >
+    # _parse_calendar_html) - piyasa/analist beklentisi. TE'nin sayfada AYRICA
+    # gösterdiği "Forecast" kolonu KASITLI OLARAK kullanılmadı: o TE'nin
+    # KENDİ ekonometrik model tahmini (API dokümantasyonunda "TEForecast"),
+    # "Consensus" ise Investing/ForexFactory gibi diğer takvimlerde de
+    # "Forecast" denen GERÇEK piyasa-beklenti rakamı - anlamsal olarak doğru
+    # eşleşme bu. Kaynakta yoksa NULL kalır, ASLA tahmin ÜRETİLMEZ.
+    forecast_value = Column(String(64), nullable=True)
     reference_period = Column(String(32), nullable=True)  # ör. "JUN" - hangi aya/döneme ait
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
@@ -645,6 +659,11 @@ def _migrate_add_missing_columns(engine) -> None:
         if "last_active_at" not in existing_subscriber_columns:
             conn.exec_driver_sql("ALTER TABLE subscribers ADD COLUMN last_active_at TIMESTAMP")
             logger.info("Veritabanı migrasyonu: subscribers.last_active_at kolonu eklendi.")
+
+        existing_calendar_columns = {col["name"] for col in inspector.get_columns("economic_calendar_events")}
+        if "forecast_value" not in existing_calendar_columns:
+            conn.exec_driver_sql("ALTER TABLE economic_calendar_events ADD COLUMN forecast_value VARCHAR(64)")
+            logger.info("Veritabanı migrasyonu: economic_calendar_events.forecast_value kolonu eklendi.")
 
 
 def _ensure_performance_indexes(engine) -> None:
@@ -1197,6 +1216,7 @@ def upsert_economic_calendar_events(events: list[dict[str, Any]]) -> None:
                         importance=ev["importance"],
                         previous_value=ev.get("previous_value"),
                         actual_value=ev.get("actual_value"),
+                        forecast_value=ev.get("forecast_value"),
                         reference_period=ev.get("reference_period"),
                         updated_at=now,
                     )
@@ -1205,6 +1225,7 @@ def upsert_economic_calendar_events(events: list[dict[str, Any]]) -> None:
                 row.importance = ev["importance"]
                 row.previous_value = ev.get("previous_value") or row.previous_value
                 row.actual_value = ev.get("actual_value") or row.actual_value
+                row.forecast_value = ev.get("forecast_value") or row.forecast_value
                 row.reference_period = ev.get("reference_period") or row.reference_period
                 row.updated_at = now
         session.commit()
@@ -1213,8 +1234,8 @@ def upsert_economic_calendar_events(events: list[dict[str, Any]]) -> None:
 def get_upcoming_calendar_events(days: int = 7, limit: int = 500) -> list["EconomicCalendarEvent"]:
     """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (bkz.
     src/web/app.py > dashboard() > _build_calendar_days) - Türkiye saatiyle
-    BUGÜNÜN BAŞINDAN itibaren önümüzdeki `days` gün içindeki TÜM olayları,
-    zamana göre artan sırayla döner.
+    BUGÜNÜN BAŞINDAN itibaren önümüzdeki `days` gün içindeki, SADECE 2-3
+    yıldızlı olayları, zamana göre artan sırayla döner.
 
     2026-08-19 (kullanıcı isteği: "gün bazlı gezinme" - önceki `limit=8`
     tasarımı SADECE en yakın birkaç olayı gösteren düz bir liste içindi,
@@ -1225,7 +1246,13 @@ def get_upcoming_calendar_events(days: int = 7, limit: int = 500) -> list["Econo
       2) `limit` artık 8 DEĞİL, 500 (7 günlük veri için pratikte hiç
          dolmayan bir güvenlik tavanı - GERÇEK veri hacmi tek taramada
          ~100-150 olay, bkz. DB'de gözlemlenen değer) - önceki 8'lik sınır
-         2-3. günden itibaren TÜM olayları sessizce KESİYORDU."""
+         2-3. günden itibaren TÜM olayları sessizce KESİYORDU.
+
+    2026-08-19 (kullanıcı kararı: "TÜM 7 ülke/bölgede yalnızca 2-3 yıldız
+    göster") - `importance >= 2` filtresi BURADA eklendi, çünkü scraper
+    ARTIK Türkiye dahil TÜM ülkeler için 1-2-3 yıldızın tamamını DB'ye
+    yazıyor (bkz. economic_calendar.py > _fetch_all_tiers) - 1 yıldızı
+    kullanıcıdan gizlemek bu SORGU seviyesinde yapılır."""
     now_turkey = datetime.now(TURKEY_TZ)
     today_start_turkey = now_turkey.replace(hour=0, minute=0, second=0, microsecond=0)
     since = today_start_turkey.astimezone(timezone.utc)
@@ -1235,10 +1262,57 @@ def get_upcoming_calendar_events(days: int = 7, limit: int = 500) -> list["Econo
             session.query(EconomicCalendarEvent)
             .filter(EconomicCalendarEvent.event_time >= since)
             .filter(EconomicCalendarEvent.event_time < until)
+            .filter(EconomicCalendarEvent.importance >= 2)
             .order_by(EconomicCalendarEvent.event_time.asc())
             .limit(limit)
             .all()
         )
+
+
+def get_calendar_events_filtered(
+    country_code: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    importance: set[int] | None = None,
+    limit: int = 1000,
+) -> list["EconomicCalendarEvent"]:
+    """`/api/v1/economic-calendar` için (bkz. src/web/api_v1.py) genel amaçlı
+    filtreli sorgu. `start_date`/`end_date` "YYYY-MM-DD" formatında, TÜRKİYE
+    YEREL gün sınırlarıyla yorumlanır (bkz. get_upcoming_calendar_events'teki
+    AYNI Türkiye-günü mantığı - sitedeki gün sekmeleriyle TUTARLI olması
+    için). İkisi de verilmezse varsayılan Türkiye-bugününden +7 gün
+    (mevcut `get_upcoming_calendar_events` ile AYNI varsayılan pencere).
+    `importance` verilmezse varsayılan {2, 3} (kullanıcı kararı: 1 yıldız
+    varsayılan yanıta hiç gelmesin, sadece AÇIKÇA istenirse - bkz.
+    src/web/api_v1.py > economic_calendar_v1)."""
+    now_turkey = datetime.now(TURKEY_TZ)
+    today_start_turkey = now_turkey.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if start_date:
+        start_local = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=TURKEY_TZ)
+    else:
+        start_local = today_start_turkey
+    if end_date:
+        end_local = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=TURKEY_TZ) + timedelta(days=1)
+    elif start_date:
+        end_local = start_local + timedelta(days=1)
+    else:
+        end_local = today_start_turkey + timedelta(days=7)
+
+    since = start_local.astimezone(timezone.utc)
+    until = end_local.astimezone(timezone.utc)
+    importance_set = importance if importance else {2, 3}
+
+    with get_session() as session:
+        query = (
+            session.query(EconomicCalendarEvent)
+            .filter(EconomicCalendarEvent.event_time >= since)
+            .filter(EconomicCalendarEvent.event_time < until)
+            .filter(EconomicCalendarEvent.importance.in_(importance_set))
+        )
+        if country_code:
+            query = query.filter(EconomicCalendarEvent.country_code == country_code.upper())
+        return query.order_by(EconomicCalendarEvent.event_time.asc()).limit(limit).all()
 
 
 def get_pending_calendar_events_count(window_minutes: int = 3) -> int:

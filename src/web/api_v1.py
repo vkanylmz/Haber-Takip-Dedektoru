@@ -30,6 +30,7 @@ from src.db import (
     ApiKey,
     NewsRecord,
     get_api_key_by_value,
+    get_calendar_events_filtered,
     get_public_news_by_id,
     get_public_news_page,
     get_records_by_company_ticker,
@@ -206,6 +207,23 @@ class CompanyDetailOut(BaseModel):
     news: list[CompanyNewsOut] = []
 
 
+class EconomicCalendarEventOut(BaseModel):
+    id: int
+    event_time: str
+    country_code: str
+    country_name: str
+    event_name: str
+    importance: int
+    previous_value: str | None = None
+    actual_value: str | None = None
+    forecast_value: str | None = None
+    reference_period: str | None = None
+
+
+class EconomicCalendarPageOut(BaseModel):
+    events: list[EconomicCalendarEventOut]
+
+
 # --------------------------------------------------------------------------
 # Endpoint'ler
 # --------------------------------------------------------------------------
@@ -322,3 +340,60 @@ def sectors_heatmap_v1(api_key: ApiKey = Depends(require_api_key)) -> list[dict[
     from src.web.app import _get_cached_sector_heatmap
 
     return _get_cached_sector_heatmap()
+
+
+def _parse_importance_param(importance: str | None) -> set[int]:
+    """"2,3" -> {2, 3}. Boş/geçersiz girdi (ör. "abc") sessizce varsayılana
+    ({2, 3}) düşer - kullanıcı kararı: "Kullanıcı özel olarak başka bir
+    importance istemediği sürece 1★ dönme" (2026-08-19)."""
+    if not importance:
+        return {2, 3}
+    values = {int(p) for p in importance.split(",") if p.strip().isdigit() and int(p) in (1, 2, 3)}
+    return values or {2, 3}
+
+
+@router.get(
+    "/economic-calendar",
+    response_model=EconomicCalendarPageOut,
+    summary="Ekonomik takvim (TR/US/DE/JP/CN/GB/EA, ülke/tarih/önem filtrelenebilir)",
+)
+def economic_calendar_v1(
+    country: str | None = Query(default=None, description="Ülke/bölge kodu: TR, US, DE, JP, CN, GB, EA (EA = Euro Bölgesi, DE'den AYRI)"),
+    date: str | None = Query(default=None, description="Tek gün, YYYY-MM-DD (Türkiye yerel günü) - verilirse start_date/end_date yok sayılır"),
+    start_date: str | None = Query(default=None, description="Tarih aralığı başlangıcı, YYYY-MM-DD (Türkiye yerel günü)"),
+    end_date: str | None = Query(default=None, description="Tarih aralığı bitişi (dahil), YYYY-MM-DD (Türkiye yerel günü)"),
+    importance: str | None = Query(default=None, description="Virgülle ayrılmış önem seviyeleri, ör. '2,3' veya '1'. Varsayılan: 2,3 (1 yıldız varsayılan olarak DÖNMEZ)"),
+    api_key: ApiKey = Depends(require_api_key),
+) -> EconomicCalendarPageOut:
+    """`src/db.py > get_calendar_events_filtered` üzerinden mevcut Trading
+    Economics tabanlı `economic_calendar_events` tablosunu okur - EK bir
+    dış istek TETİKLEMEZ (veri zaten worker.py > _economic_calendar_refresh_job/
+    _economic_calendar_watch_job tarafından periyodik güncellenir, bkz.
+    modül docstring'i)."""
+    try:
+        events = get_calendar_events_filtered(
+            country_code=country,
+            start_date=date or start_date,
+            end_date=None if date else end_date,
+            importance=_parse_importance_param(importance),
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz tarih formatı - YYYY-MM-DD kullanın.")
+
+    return EconomicCalendarPageOut(
+        events=[
+            EconomicCalendarEventOut(
+                id=e.id,
+                event_time=e.event_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                country_code=e.country_code,
+                country_name=e.country_name,
+                event_name=e.event_name,
+                importance=e.importance,
+                previous_value=e.previous_value,
+                actual_value=e.actual_value,
+                forecast_value=e.forecast_value,
+                reference_period=e.reference_period,
+            )
+            for e in events
+        ]
+    )

@@ -20,12 +20,21 @@ Zaman dilimi: sayfanın varsayılan (çerezsiz/anonim istek) saat dilimi UTC
 (bkz. `<option selected value="0">UTC</option>` - GERÇEK sayfa kaynağıyla
 doğrulandı) - bu modül tarih+saati DOĞRUDAN UTC olarak parse eder, ek bir
 dönüşüm YAPMAZ.
+
+Forecast alanı (2026-08-19): TE tablosunda İKİ ayrı sütun var - "Consensus"
+(piyasa/analist anketi beklentisi) ve "Forecast" (TE'nin KENDİ ekonometrik
+model tahmini, resmi API dokümantasyonunda "TEForecast"). Bu modül
+"Consensus" değerini `forecast_value` olarak alır - Investing.com/
+ForexFactory gibi diğer takvimlerde "Forecast" denen GERÇEK piyasa-beklenti
+rakamı bu (GERÇEK sayfa kaynağıyla doğrulandı: `id="consensus"` vs
+`id="forecast"`, sütun başlıkları "Consensus"/"Forecast").
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
@@ -41,18 +50,16 @@ _USER_AGENT = "FinansHaberToplayiciBot/1.0 (+ekonomik takvim)"
 _REQUEST_TIMEOUT = 15.0
 _MIN_REQUEST_INTERVAL_SECONDS = 3.0  # aynı taramadaki 3 sıralı istek arası nezaket bekleme
 
-# Kullanıcı kararı (2026-08-18): Türkiye için TÜM önem seviyeleri, diğer
-# ülkeler için SADECE bu eşiği geçenler.
-_NON_TURKEY_MIN_IMPORTANCE = 2
-_TURKEY_COUNTRY_CODE = "TR"
-
-# Kullanıcı kararı (2026-08-18): Türkiye dışında SADECE bu ülke/bölgeler
-# gösterilsin (Japonya, Çin, ABD, Almanya, İngiltere, Euro Bölgesi) - Trading
-# Economics'in döndürdüğü diğer tüm ülkeler (Kanada, Avustralya, Brezilya vb.)
-# TAMAMEN filtrelenip atılır. Ülke kodları Trading Economics'in `calendar-iso`
-# hücresinde döndürdüğü GERÇEK kodlarla eşleşir (bkz. DB sorgusuyla doğrulanan
-# "EA" = Euro Area).
-_ALLOWED_NON_TURKEY_COUNTRIES = {"JP", "CN", "US", "DE", "GB", "EA"}
+# Kullanıcı kararı (2026-08-19, ÖNCEKİ "Türkiye=tüm seviyeler, diğerleri=
+# 2-3 yıldız" ayrımını KALDIRDI): TÜM 7 ülke/bölge için 1-2-3 yıldızın
+# TAMAMI DB'ye yazılır - kullanıcıya varsayılan gösterimde SADECE 2-3
+# yıldız gösterme filtresi SORGU seviyesinde uygulanır (bkz. src/db.py >
+# get_upcoming_calendar_events, get_calendar_events_filtered). Böylece bir
+# istemci API üzerinden AÇIKÇA 1 yıldız isterse (importance=1) veri zaten
+# DB'de mevcut olur. Ülke kodları Trading Economics'in `calendar-iso`
+# hücresinde döndürdüğü GERÇEK kodlarla eşleşir (bkz. DB sorgusuyla
+# doğrulanan "EA" = Euro Area, "DE"den TAMAMEN AYRI).
+_ALLOWED_COUNTRIES = {"TR", "JP", "CN", "US", "DE", "GB", "EA"}
 
 _DATE_CLASS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -115,8 +122,10 @@ def _parse_calendar_html(html: str) -> dict[tuple[str, str], dict[str, Any]]:
 
         actual_el = row.find(id="actual")
         previous_el = row.find(id="previous")
+        consensus_el = row.find(id="consensus")  # bkz. modül docstring'i: "Forecast" = piyasa beklentisi
         actual_value = actual_el.get_text(strip=True) if actual_el else None
         previous_value = previous_el.get_text(strip=True) if previous_el else None
+        forecast_value = consensus_el.get_text(strip=True) if consensus_el else None
         # previous_el içinde iç içe bir 'revised' span'i de var (bkz. GERÇEK
         # sayfa kaynağı) - get_text bunu da yakalayabilir, sadece İLK metin
         # düğümünü (revize öncesi ana değer) almak için ayrıştırılır.
@@ -132,6 +141,7 @@ def _parse_calendar_html(html: str) -> dict[tuple[str, str], dict[str, Any]]:
             "event_name": event_name,
             "previous_value": previous_value or None,
             "actual_value": actual_value or None,
+            "forecast_value": forecast_value or None,
             "reference_period": reference_period,
         }
 
@@ -158,10 +168,12 @@ def _parse_event_datetime(date_str: str, time_text: str) -> datetime | None:
 
 def _fetch_all_tiers() -> list[dict[str, Any]]:
     """3 sıralı istek (importance=1/2/3) atar, küme farkıyla her olayın
-    GERÇEK yıldız sayısını hesaplar, sonra kullanıcının kapsam kararını
-    (Türkiye=tümü, diğer ülkeler=2-3 yıldız) uygular. Herhangi bir tur
-    başarısız olursa (bkz. _fetch_importance_tier) o katman BOŞ kabul
-    edilir - tüm tarama durmaz, sadece o katmanın olayları eksik kalır."""
+    GERÇEK yıldız sayısını hesaplar, sonra 7 izinli ülke/bölge dışındakileri
+    eler (bkz. _ALLOWED_COUNTRIES - importance filtresi YOK, 1-2-3'ün TAMAMI
+    döner, kullanıcıya gösterimde SADECE 2-3 filtresi SORGU seviyesinde
+    uygulanır). Herhangi bir tur başarısız olursa (bkz. _fetch_importance_tier)
+    o katman BOŞ kabul edilir - tüm tarama durmaz, sadece o katmanın
+    olayları eksik kalır."""
     tier_html = {n: _fetch_importance_tier(n) for n in (1, 2, 3)}
     tier_events = {n: (_parse_calendar_html(html) if html else {}) for n, html in tier_html.items()}
 
@@ -178,26 +190,50 @@ def _fetch_all_tiers() -> list[dict[str, Any]]:
         else:
             importance = 1
 
-        is_turkey = ev["country_code"] == _TURKEY_COUNTRY_CODE
-        if not is_turkey:
-            if ev["country_code"] not in _ALLOWED_NON_TURKEY_COUNTRIES:
-                continue
-            if importance < _NON_TURKEY_MIN_IMPORTANCE:
-                continue
+        if ev["country_code"] not in _ALLOWED_COUNTRIES:
+            continue
 
         result.append({**ev, "importance": importance})
 
     return result
 
 
-def refresh_economic_calendar() -> int:
+class EconomicCalendarProvider(ABC):
+    """Ekonomik takvim veri sağlayıcıları için ortak arayüz (2026-08-19,
+    kullanıcı isteği) - ileride Investing.com için izinli/resmi bir erişim
+    ortaya çıkarsa `InvestingProvider(EconomicCalendarProvider)` eklenip
+    `refresh_economic_calendar(provider=...)` ile DEĞİŞTİRİLEBİLİR, DB/API/
+    frontend katmanları HİÇ değişmeden (hepsi `upsert_economic_calendar_events`'in
+    beklediği aynı sözlük şeklini görür). Şu an TEK gerçek implementasyon
+    `TradingEconomicsScraperProvider`."""
+
+    @abstractmethod
+    def fetch_events(self) -> list[dict[str, Any]]:
+        """7 izinli ülke/bölge (bkz. _ALLOWED_COUNTRIES) için 1-2-3 yıldızın
+        TAMAMINI, `upsert_economic_calendar_events`'in beklediği sözlük
+        şeklinde (event_time/country_code/country_name/event_name/
+        previous_value/actual_value/forecast_value/reference_period/
+        importance) döner."""
+
+
+class TradingEconomicsScraperProvider(EconomicCalendarProvider):
+    """Mevcut/tek aktif sağlayıcı - tradingeconomics.com/calendar sayfasını
+    3 katmanlı importance isteğiyle tarar (bkz. modül docstring'i)."""
+
+    def fetch_events(self) -> list[dict[str, Any]]:
+        return _fetch_all_tiers()
+
+
+def refresh_economic_calendar(provider: EconomicCalendarProvider | None = None) -> int:
     """Genel/hassas-izleme taramalarının TEK ortak giriş noktası (bkz.
     worker.py > _economic_calendar_refresh_job, _economic_calendar_watch_job -
     ikisi de bu fonksiyonu çağırır, farklı olan sadece HANGİ SIKLIKTA
-    çağrıldıkları). Döner: DB'ye upsert edilen olay sayısı."""
+    çağrıldıkları). `provider` verilmezse varsayılan `TradingEconomicsScraperProvider`
+    (bkz. EconomicCalendarProvider). Döner: DB'ye upsert edilen olay sayısı."""
     from src.db import upsert_economic_calendar_events  # döngüsel import'tan kaçınmak için burada
 
-    events = _fetch_all_tiers()
+    provider = provider or TradingEconomicsScraperProvider()
+    events = provider.fetch_events()
     if not events:
         logger.warning("Ekonomik takvim taraması hiç olay döndürmedi (ağ hatası veya sayfa yapısı değişmiş olabilir).")
         return 0

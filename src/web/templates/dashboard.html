@@ -1465,6 +1465,15 @@
       font-size: 0.76rem;
     }
 
+    /* "beklenti" (Trading Economics "Consensus" kolonu, bkz.
+       src/economic_calendar.py modül docstring'i) - previous ile AYNI
+       görsel ağırlık, aralarında ayırt edilebilsin diye accent renkte. */
+    .calendar-event-forecast {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-size: 0.76rem;
+    }
+
     /* Ekonomik Takvim gün-bazlı gezinme (2026-08-19, kullanıcı isteği) -
        üstte gün sekmeleri (.kap-category-chip ile aynı görsel dil) + ‹›
        ok butonları, altta SADECE aktif günün olayları (.calendar-day-panel,
@@ -1483,6 +1492,62 @@
        aktif sekmenin GERÇEKTEN ortada kalması için sabit genişlikli,
        görünmez .calendar-day-tab-placeholder kutuları kullanılır - yoksa
        aktif sekme sınırlarda yana kayardı. */
+    /* Ülke/bölge çipleri (2026-08-19, kullanıcı isteği) - .kap-category-chip
+       ile AYNI görsel dil, gün sekmelerinin ÜSTÜNDE, mobilde taşarsa yatay
+       kaydırılabilir (gün sekmelerinin AKSİNE burada scrollbar sorun değil
+       - kullanıcı SADECE gün sekmelerindeki scrollbar'ı çirkin buldu). */
+    .calendar-country-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.7rem;
+    }
+
+    .calendar-country-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .calendar-country-chip:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .calendar-country-chip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Ülke filtresi seçiliyken o günde SEÇİLİ ülkeye ait hiç olay yoksa
+       (ama gün genel olarak boş DEĞİLSE - o zaman zaten .calendar-day-empty
+       gösterilir) gösterilecek AYRI mesaj - bkz. applyCalendarCountryFilter().
+       Varsayılan gizli, JS ile .visible eklenince görünür. */
+    .calendar-day-filter-empty {
+      display: none;
+    }
+
+    .calendar-day-filter-empty.visible {
+      display: block;
+    }
+
+    .calendar-event-row-hidden {
+      display: none;
+    }
+
+    .calendar-event-list-hidden {
+      display: none;
+    }
+
     .calendar-day-nav {
       display: flex;
       align-items: center;
@@ -2848,9 +2913,35 @@
              HER ZAMAN ortada sabit kalır, kaydırma/sürükleme YOK, gezinme
              SADECE ok butonları (veya görünen komşu sekmeye tıklamak) ile.
              data-idx: gerçek sekmeler 0-6, sınırlardaki boş yer tutucular
-             -1/7 (bkz. .calendar-day-tab-placeholder, yukarıdaki CSS notu). -->
+             -1/7 (bkz. .calendar-day-tab-placeholder, yukarıdaki CSS notu).
+
+             2026-08-19 (kullanıcı isteği: "Tüm 7 ülke/bölgede yalnızca 2-3
+             yıldız göster" + ülke filtreleri) - ülke/bölge çipleri EKLENDİ
+             (.calendar-country-chip, bkz. altındaki selectCalendarCountry).
+             AJAX YOK: filtre, o gün için ZATEN sunucudan gelmiş satırları
+             (data-country) client-side gösterip/gizler - gün değiştirince
+             de filtre KORUNUR. EA (Euro Bölgesi) DE'den (Almanya) KESİNLİKLE
+             AYRI bir kod (bkz. src/economic_calendar.py > _ALLOWED_COUNTRIES). -->
         <div class="calendar-placeholder-card">
           <div class="market-summary-title">YAKLAŞAN EKONOMİK TAKVİM</div>
+          <div class="calendar-country-chips" id="calendar-country-chips">
+            <button type="button" class="calendar-country-chip active" data-country="ALL"
+              onclick="selectCalendarCountry('ALL')">Tümü</button>
+            <button type="button" class="calendar-country-chip" data-country="TR"
+              onclick="selectCalendarCountry('TR')">🇹🇷 Türkiye</button>
+            <button type="button" class="calendar-country-chip" data-country="US"
+              onclick="selectCalendarCountry('US')">🇺🇸 ABD</button>
+            <button type="button" class="calendar-country-chip" data-country="DE"
+              onclick="selectCalendarCountry('DE')">🇩🇪 Almanya</button>
+            <button type="button" class="calendar-country-chip" data-country="JP"
+              onclick="selectCalendarCountry('JP')">🇯🇵 Japonya</button>
+            <button type="button" class="calendar-country-chip" data-country="CN"
+              onclick="selectCalendarCountry('CN')">🇨🇳 Çin</button>
+            <button type="button" class="calendar-country-chip" data-country="GB"
+              onclick="selectCalendarCountry('GB')">🇬🇧 İngiltere</button>
+            <button type="button" class="calendar-country-chip" data-country="EA"
+              onclick="selectCalendarCountry('EA')">🇪🇺 Euro Bölgesi</button>
+          </div>
           <div class="calendar-day-nav">
             <button type="button" class="calendar-day-nav-btn" id="calendar-day-prev"
               onclick="calendarDayStep(-1)" aria-label="Önceki gün">‹</button>
@@ -2873,7 +2964,7 @@
             {% if d.events %}
             <div class="calendar-event-list">
               {% for e in d.events %}
-              <div class="calendar-event-row">
+              <div class="calendar-event-row" data-country="{{ e.country_code }}">
                 <div class="calendar-event-time">{{ e.time }}</div>
                 <div class="calendar-event-main">
                   <span class="calendar-event-country" title="{{ e.country_name }}">{{ e.country_code }}</span>
@@ -2885,17 +2976,19 @@
                 <div class="calendar-event-value">
                   {% if e.is_released %}
                   <span class="calendar-event-actual">{{ e.actual_value }}</span>
-                  {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
-                    }}</span>{% endif %}
                   {% else %}
                   <span class="calendar-event-pending">bekleniyor</span>
+                  {% endif %}
+                  {% if e.forecast_value %}<span class="calendar-event-forecast">beklenti: {{ e.forecast_value
+                    }}</span>{% endif %}
                   {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
                     }}</span>{% endif %}
-                  {% endif %}
                 </div>
               </div>
               {% endfor %}
             </div>
+            <div class="calendar-day-empty calendar-day-filter-empty">Seçili ülke/bölge için bu günde planlanmış bir
+              ekonomik veri açıklaması bulunmuyor.</div>
             {% else %}
             <div class="calendar-day-empty">{% if loop.first %}Bugün için planlanmış bir ekonomik veri açıklaması
               bulunmuyor.{% else %}Bu gün için planlanmış bir ekonomik veri açıklaması bulunmuyor.{% endif %}</div>
@@ -3207,6 +3300,39 @@
       // initHomeTvWidgetLazyLoad).
       _homeTvWidgetLoaded = true;
       loadHomeTvWidget();
+    }
+
+    // Ekonomik Takvim ülke/bölge filtresi (2026-08-19, kullanıcı isteği) -
+    // TÜM 7 günün satırları sunucu tarafında ZATEN render edilmiş (her
+    // satırda data-country, bkz. dashboard.html > .calendar-event-row), bu
+    // fonksiyon SADECE görünürlüğü değiştirir - AJAX YOK. Filtre TÜM
+    // panellerde (sadece aktif günde DEĞİL) uygulanır, böylece gün
+    // değiştirince filtre KORUNUR (gizli bir panelin display:none'ı, içindeki
+    // satırların KENDİ display durumunu ETKİLEMEZ/SIFIRLAMAZ).
+    let _calendarCountryFilter = 'ALL';
+
+    function selectCalendarCountry(code) {
+      _calendarCountryFilter = code;
+      document.querySelectorAll('.calendar-country-chip').forEach(function (chip) {
+        chip.classList.toggle('active', chip.getAttribute('data-country') === code);
+      });
+      applyCalendarCountryFilter();
+    }
+
+    function applyCalendarCountryFilter() {
+      document.querySelectorAll('.calendar-day-panel').forEach(function (panel) {
+        const list = panel.querySelector('.calendar-event-list');
+        if (!list) return;  // bu günün zaten hiç olayı yok (.calendar-day-empty gösteriliyor)
+        let visibleCount = 0;
+        list.querySelectorAll('.calendar-event-row').forEach(function (row) {
+          const match = _calendarCountryFilter === 'ALL' || row.getAttribute('data-country') === _calendarCountryFilter;
+          row.classList.toggle('calendar-event-row-hidden', !match);
+          if (match) visibleCount++;
+        });
+        list.classList.toggle('calendar-event-list-hidden', visibleCount === 0);
+        const filterEmptyMsg = panel.querySelector('.calendar-day-filter-empty');
+        if (filterEmptyMsg) filterEmptyMsg.classList.toggle('visible', visibleCount === 0);
+      });
     }
 
     // Ekonomik Takvim gün-bazlı gezinme (2026-08-19, kullanıcı isteği) - tüm
