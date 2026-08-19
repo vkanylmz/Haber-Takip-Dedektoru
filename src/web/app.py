@@ -83,10 +83,6 @@ _IMPORTANCE_FILTER_OPTIONS = (3, 4, 5)
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-# Sektör bazında ısı haritasında, yeterli sayıda haberi olmayan bir sektörü
-# "az hareketli" (gri) saymak için eşik - bkz. _build_sector_heatmap.
-_HEATMAP_MIN_COUNT_FOR_COLOR = 2
-
 # get_distinct_sources/get_distinct_sectors, dropdown seçeneklerini hesaplamak
 # için TÜM news_records tablosunu tarıyor (bkz. src/db.py - sources/sector
 # normalize edilmiş ayrı tablolar DEĞİL, aynı satırların içinde metin/JSON
@@ -491,12 +487,25 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
     }
 
 
+
+# Sektör bazında ısı haritasında, yeterli sayıda haberi olmayan bir sektörü
+# "az hareketli" (gri) saymak için eşik - bkz. _build_sector_heatmap.
+_HEATMAP_MIN_COUNT_FOR_COLOR = 2
+
+
 def _build_sector_heatmap() -> list[dict[str, Any]]:
     """Son 24 saatteki haberleri sektöre göre gruplayıp basit bir "etki
     yoğunluğu" hesaplar: haber sayısı * ortalama önem skoru. Renk tonu,
     pozitif/negatif sentiment dağılımının net yönüne göre belirlenir (yeşil =
-    net pozitif, kırmızı = net negatif, gri = az hareket). Karmaşık bir
-    korelasyon modeli DEĞİLDİR - kasıtlı olarak basit/anlaşılır tutulmuştur."""
+    net pozitif, kırmızı = net negatif, gri = az hareket/dengeli sentiment).
+    Karmaşık bir korelasyon modeli DEĞİLDİR - kasıtlı olarak basit/anlaşılır
+    tutulmuştur.
+
+    2026-08-19 (kullanıcı kararı): SEKTÖR BAŞINA SABİT/kategorik bir renk
+    (ör. "Finans hep mavi") DENENDİ, kullanıcı "hayır, orijinal sentiment-
+    tabanlı mantığa dön" dedi - bu fonksiyon o deneyden ÖNCEKİ (ve şu anki)
+    tasarıma döner, sadece renklerin kendisi daha da canlandırıldı (bkz.
+    aşağıdaki döngü içindeki not)."""
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     records = get_records_since(since)
 
@@ -536,25 +545,26 @@ def _build_sector_heatmap() -> list[dict[str, Any]]:
         activity_norm = activity_by_sector[sector] / max_activity
         sentiment_lean = (s["pos"] - s["neg"]) / count if count else 0.0
 
-        # Renk canlılığı (2026-08-19, kullanıcı geri bildirimi: "renkler
-        # soluk/pastel") - ÖNCEDEN taban+aralık çok düşüktü (nötr en fazla
-        # 0.50, pozitif/negatif en fazla ~0.85 ama pratikte genelde
-        # 0.3-0.5 civarına düşüyordu), bu da rgba dolgunun sayfa zeminiyle
-        # (--bg/--surface) karışıp soluklaşmasına yol açıyordu. Taban/aralık
-        # artırıldı VE ton biraz koyulaştırıldı (green-500/red-500 ->
-        # green-600/red-600) - bu HEM daha canlı görünür HEM de üstteki
-        # sabit açık renkli metinle (#f8fafc, bkz. .heatmap-box) kontrastı
-        # İYİLEŞTİRİR (düşük alfa'da metin zeminle neredeyse aynı tonda
-        # kalıyordu).
+        # Renk canlılığı - 2. tur (2026-08-19, kullanıcı geri bildirimi:
+        # "hâlâ mat/pastel kalmış olabilir" - kategorik palet denemesi geri
+        # alındıktan SONRA, AYNI sentiment-tabanlı mantık üzerinde tekrar
+        # istendi). İLK turda (bkz. eski commit) SADECE alfa/taban
+        # artırılmıştı, renk tonunun KENDİSİ (green-600/red-600) aynı
+        # kalmıştı. Bu turda tonun kendisi de daha doygun/parlak "sinyal"
+        # renklerine çekildi (yeşil: daha saf/canlı yeşil, kırmızı: daha
+        # canlı kırmızı-kırmızı) VE alfa taban/aralığı yeniden yükseltildi
+        # (nötr/gri BİLİNÇLİ OLARAK aynı nötr tonda bırakıldı - "az veri/
+        # dengeli sentiment" anlamına geldiğinden yapay biçimde renklendirip
+        # yanlış bir sinyal vermemeli).
         low_activity = count < _HEATMAP_MIN_COUNT_FOR_COLOR or abs(sentiment_lean) < 0.15
         if low_activity:
-            color = f"rgba(100, 116, 139, {0.45 + 0.35 * activity_norm:.2f})"
+            color = f"rgba(100, 116, 139, {0.60 + 0.35 * activity_norm:.2f})"
         elif sentiment_lean >= 0:
-            alpha = 0.5 + 0.45 * activity_norm * min(1.0, 0.4 + sentiment_lean)
-            color = f"rgba(22, 163, 74, {alpha:.2f})"
+            alpha = 0.65 + 0.35 * activity_norm * min(1.0, 0.4 + sentiment_lean)
+            color = f"rgba(0, 186, 89, {alpha:.2f})"
         else:
-            alpha = 0.5 + 0.45 * activity_norm * min(1.0, 0.4 - sentiment_lean)
-            color = f"rgba(220, 38, 38, {alpha:.2f})"
+            alpha = 0.65 + 0.35 * activity_norm * min(1.0, 0.4 - sentiment_lean)
+            color = f"rgba(240, 30, 60, {alpha:.2f})"
 
         result.append(
             {

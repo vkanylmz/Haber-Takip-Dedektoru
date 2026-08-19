@@ -75,14 +75,23 @@
          bkz. kullanıcı isteği): düz gri/siyah yerine AYNI soğuk-yeşilimsi hue
          ailesini açık VE koyu temada paylaşan, karakterli bir nötr zemin -
          canlılık (Ticker Green/Red/Amber) BİLEREK sadece veri noktalarına
-         (rozet/sentiment/ticker/flash) hapsedildi, zemine YAYILMADI. */
-      --bg: #f3f6f5;
-      --surface: #ffffff;
-      --surface-alt: #eaeeed;
-      --border: #dde3e1;
-      --text-primary: #12181a;
-      --text-secondary: #48524f;
-      --text-muted: #828b88;
+         (rozet/sentiment/ticker/flash) hapsedildi, zemine YAYILMADI.
+
+         2026-08-19 (kullanıcı geri bildirimi: "açık tema göz yoruyor") -
+         --surface SAF BEYAZ'dı (#ffffff), --text-primary NEREDEYSE SİYAH'tı
+         (#12181a) - bu ikisi yan yana (koyu metin/saf beyaz zemin) sert/
+         yorucu bir kontrast yaratıyordu. İkisi de KIRIK BEYAZ/YUMUŞAK KOYU
+         GRİ'ye çevrildi (AYNI soğuk-yeşilimsi hue ailesinde kalınarak, hiç
+         yeni bir renk ailesi İCAT EDİLMEDİ) - --bg de --surface'le orantılı
+         şekilde bir tık koyulaştırıldı, aksi halde ikisi birbirine çok
+         yakınlaşıp kartlar zeminden AYRIŞMAZ hale gelirdi. */
+      --bg: #eef2f1;
+      --surface: #f9fbfa;
+      --surface-alt: #e8ece9;
+      --border: #d8dfdc;
+      --text-primary: #1f2725;
+      --text-secondary: #4a5451;
+      --text-muted: #838c88;
       --accent: #2554e0;
       --accent-contrast: #ffffff;
       --positive: #0a8548;
