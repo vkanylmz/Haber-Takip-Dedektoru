@@ -1337,6 +1337,20 @@
       font-weight: 600;
     }
 
+    /* "Piyasa Özeti" satırları artık TradingView grafiğine tıklanabilir
+       (2026-08-19, kullanıcı isteği) - SADECE eşlemede (bkz.
+       _MARKET_SUMMARY_TV_SYMBOLS) bir sembolü olan satırlara uygulanır.
+       Hover'da hafif zemin rengi + imleç değişimi "tıklanabilir" hissi
+       verir - .company-chip/.commodity-label-clickable ile AYNI hafif
+       etkileşim dili. */
+    .market-summary-row-clickable {
+      cursor: pointer;
+    }
+
+    .market-summary-row-clickable:hover {
+      background: var(--surface-alt);
+    }
+
     .calendar-placeholder-text {
       color: var(--text-muted);
       font-size: 0.82rem;
@@ -3595,6 +3609,33 @@
       _heroTimer = setInterval(function () { heroStep(1); }, 9000);
     }
 
+    // "Piyasa Özeti" satırları için TradingView eşlemesi (2026-08-19,
+    // kullanıcı isteği) - Yahoo sembolüyle (bkz. src/web/market_data.py >
+    // MARKET_SYMBOLS, /api/market-data'nın döndürdüğü item.symbol) AYNI
+    // anahtar - 12 enstrüman sabit/sınırlı olduğundan (KAP/genel haberlerin
+    // AKSİNE) LLM'e SORULMAZ, emtia eşlemesiyle (bkz.
+    // src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS) AYNI desen. HER
+    // sembol GERÇEK bir TradingView sayfası ziyaretiyle (2026-08-19)
+    // doğrulandı - fiyatlar üstteki piyasa şeridiyle EŞLEŞTİĞİ görülerek
+    // teyit edildi (ör. "TVC:UKOIL" TradingView'in kendi sembol arama
+    // API'sinde 404 dönmesine RAĞMEN gerçek grafik sayfasında doğru
+    // Brent verisiyle çalışıyor - bu yüzden doğrulama arama API'si YERİNE
+    // doğrudan sayfa ziyaretiyle yapıldı, bkz. commit notu).
+    const _MARKET_SUMMARY_TV_SYMBOLS = {
+      'TRY=X': 'FX:USDTRY',
+      'EURTRY=X': 'FX:EURTRY',
+      'GC=F': 'TVC:GOLD',
+      'BZ=F': 'TVC:UKOIL',
+      '^VIX': 'CBOE:VIX',
+      'XU100.IS': 'BIST:XU100',
+      '^GSPC': 'SP:SPX',
+      '^IXIC': 'NASDAQ:IXIC',
+      '^DJI': 'DJ:DJI',
+      '^GDAXI': 'XETR:DAX',
+      '^FTSE': 'TVC:UKX',
+      '^N225': 'TVC:NI225',
+    };
+
     // Piyasa Özeti tablosu (2026-08-18) - ticker'ı besleyen AYNI
     // /api/market-data endpoint'i, sadece tablo biçiminde (yeni bir
     // backend uç noktası GEREKMEDİ).
@@ -3614,7 +3655,12 @@
           var up = item.change_pct >= 0;
           var cls = up ? 'ticker-up' : 'ticker-down';
           var priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
-          return '<tr><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
+          var tvSymbol = _MARKET_SUMMARY_TV_SYMBOLS[item.symbol];
+          var rowAttrs = tvSymbol
+            ? ' class="market-summary-row-clickable" onclick="window.open(\'' + buildTradingViewChartUrl(tvSymbol) +
+            '\', \'_blank\', \'noopener\')" title="TradingView\'de ' + tvSymbol + ' teknik görünümünü aç"'
+            : '';
+          return '<tr' + rowAttrs + '><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
             (up ? '▲' : '▼') + ' %' + Math.abs(item.change_pct).toFixed(2) + '</td></tr>';
         }).join('');
         body.dataset.hasData = '1';
