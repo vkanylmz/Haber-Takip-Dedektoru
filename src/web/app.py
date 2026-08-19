@@ -526,15 +526,25 @@ def _build_sector_heatmap() -> list[dict[str, Any]]:
         activity_norm = activity_by_sector[sector] / max_activity
         sentiment_lean = (s["pos"] - s["neg"]) / count if count else 0.0
 
+        # Renk canlılığı (2026-08-19, kullanıcı geri bildirimi: "renkler
+        # soluk/pastel") - ÖNCEDEN taban+aralık çok düşüktü (nötr en fazla
+        # 0.50, pozitif/negatif en fazla ~0.85 ama pratikte genelde
+        # 0.3-0.5 civarına düşüyordu), bu da rgba dolgunun sayfa zeminiyle
+        # (--bg/--surface) karışıp soluklaşmasına yol açıyordu. Taban/aralık
+        # artırıldı VE ton biraz koyulaştırıldı (green-500/red-500 ->
+        # green-600/red-600) - bu HEM daha canlı görünür HEM de üstteki
+        # sabit açık renkli metinle (#f8fafc, bkz. .heatmap-box) kontrastı
+        # İYİLEŞTİRİR (düşük alfa'da metin zeminle neredeyse aynı tonda
+        # kalıyordu).
         low_activity = count < _HEATMAP_MIN_COUNT_FOR_COLOR or abs(sentiment_lean) < 0.15
         if low_activity:
-            color = f"rgba(100, 116, 139, {0.25 + 0.25 * activity_norm:.2f})"
+            color = f"rgba(100, 116, 139, {0.45 + 0.35 * activity_norm:.2f})"
         elif sentiment_lean >= 0:
-            alpha = 0.25 + 0.6 * activity_norm * min(1.0, 0.4 + sentiment_lean)
-            color = f"rgba(34, 197, 94, {alpha:.2f})"
+            alpha = 0.5 + 0.45 * activity_norm * min(1.0, 0.4 + sentiment_lean)
+            color = f"rgba(22, 163, 74, {alpha:.2f})"
         else:
-            alpha = 0.25 + 0.6 * activity_norm * min(1.0, 0.4 - sentiment_lean)
-            color = f"rgba(239, 68, 68, {alpha:.2f})"
+            alpha = 0.5 + 0.45 * activity_norm * min(1.0, 0.4 - sentiment_lean)
+            color = f"rgba(220, 38, 38, {alpha:.2f})"
 
         result.append(
             {

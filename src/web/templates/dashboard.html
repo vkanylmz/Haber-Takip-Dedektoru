@@ -170,9 +170,18 @@
       font-weight: 700;
       margin: 0;
       color: var(--text-primary);
+    }
+
+    /* Logo/başlık artık ana sayfaya (/) tıklanabilir bir link (2026-08-19,
+       kullanıcı isteği) - h1'in eski flex/gap düzeni (bkz. yukarısı) BİREBİR
+       bu linke taşındı, sadece link olduğundan gelen varsayılan mavi/altı
+       çizili stil sıfırlanır (rengi h1'den miras alır - AYNI görünüm). */
+    header h1 .brand-link {
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      color: inherit;
+      text-decoration: none;
     }
 
     header h1 .brand-logo {
@@ -196,7 +205,10 @@
     .quick-nav-link {
       color: var(--text-secondary);
       font-size: 0.86rem;
-      font-weight: 600;
+      /* 600 -> 700 (2026-08-19, kullanıcı isteği: nav linkleri daha kalın
+         görünsün) - Space Grotesk (--font-heading) 600'de görece ince
+         kalıyordu, 700 (fontun en kalın yüklü ağırlığı) daha belirgin. */
+      font-weight: 700;
       text-decoration: none;
       white-space: nowrap;
     }
@@ -455,16 +467,42 @@
        justify-between vb.) BİREBİR korunuyor, sadece varsayılan
        üçgen işaretçi kaldırılıp yerine bir chevron kondu. */
     .card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 1rem;
       cursor: pointer;
       list-style: none;
     }
 
     .card-top::-webkit-details-marker {
       display: none;
+    }
+
+    /* Başlık/meta/rozet satırının flex düzeni (2026-08-19, kullanıcı
+       isteği: "Teknik Görünüm" butonu rozetin/meta satırının HEMEN
+       ALTINDA, hem kapalı hem açık halde AYNI konumda görünsün) -
+       ÖNCEDEN bu flex özellikleri doğrudan .card-top'taydı (summary'nin
+       TEK çocuğu bu satırdı). Artık .card-top'un İKİNCİ bir çocuğu
+       (.card-tv-row) var - <summary>'nin İÇİNDEKİ HER ŞEY (native
+       <details> davranışı gereği, bkz. commit notu: .card-body'nin
+       AKSİNE kapalıyken de render edilir) her zaman görünür kalsın diye
+       "Teknik Görünüm" butonu KASITLI OLARAK .card-body yerine BURAYA,
+       summary'nin bir parçası olarak taşındı - bu yüzden eski tek-satırlık
+       flex düzeni artık BU alt sarmalayıcıya taşındı, .card-top kendisi
+       düz blok akışına (üstte meta satırı, altta tv satırı) bırakıldı. */
+    .card-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    /* "Teknik Görünüm" butonunun summary İÇİNDEKİ sabit konumu - bkz.
+       yukarıdaki not. SADECE r.tradingview_url doluysa render edilir
+       (bkz. render_news_card macro'su). Link tıklaması summary'nin
+       native aç/kapa davranışını TETİKLEMESİN diye macro'da
+       onclick="event.stopPropagation()" kullanılır - GERÇEK bir
+       tarayıcı testiyle doğrulandı (bkz. commit notu), aksi halde
+       linke tıklamak kartı da açıp/kapatıyordu. */
+    .card-tv-row {
+      margin-top: 0.6rem;
     }
 
     .card-chevron {
@@ -1758,6 +1796,12 @@
       }
     }
 
+    /* .commodity-grid'in grid stretch'i (varsayılan align-items:stretch)
+       aynı satırdaki kartların DIŞ kutusunu zaten eşitler (2026-08-19,
+       kullanıcı geri bildirimi: "kartlar eşit boyutta değil" - GERÇEK
+       tarayıcı ölçümüyle doğrulandı, .commodity-grid ZATEN eşit yükseklik
+       veriyordu). Asıl sorun buton/etiketlerin kartlar arasında FARKLI
+       dikey konumlarda kalmasıydı - bkz. .commodity-card-bottom notu. */
     .commodity-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1766,12 +1810,38 @@
       box-shadow: var(--shadow-sm);
     }
 
+    /* "Teknik Görünüm" butonunun konumu (2026-08-19, kullanıcı isteği:
+       "buton/etiketlerin her kartta aynı dikey konumda hizalanması") -
+       ÖNCE denenen flex-column + margin-top:auto (butonu+etiketleri BİRLİKTE
+       kartın en altına iten yaklaşım) GERÇEK ölçümle YANLIŞ çıktı: etiket
+       sayısı/satır sayısı karttan karta değiştiğinden, "en alta itilen"
+       grup farklı yükseklikte oluyor, bu da İÇİNDEKİ butonu farklı Y
+       konumlarına kaydırıyordu (etiketler değişken, buton onlardan ÖNCE).
+       Çözüm: buton .commodity-analysis'in (SABİT 3 satır line-clamp,
+       bkz. CSS) HEMEN ardından NORMAL akışta kalır - analiz metni her
+       kartta aynı yükseklikte olduğundan buton da otomatik olarak aynı
+       Y konumunda olur. Değişken yükseklikteki etiketler butonun
+       ALTINDA, akışın DEVAMI olarak kalır - kartın toplam yüksekliğini
+       etkiler ama buton konumunu ETKİLEMEZ. */
+    .commodity-card-bottom {
+      margin-top: 0.5rem;
+    }
+
+    /* min-height (2026-08-19, kullanıcı isteği: "Teknik Görünüm" butonu
+       her kartta aynı Y konumunda dursun) - "Ham Petrol (WTI)" gibi uzun
+       emtia adları .commodity-label'ı İKİ satıra kaydırıyordu ("Brent
+       Petrol" gibi tek satırlık isimlere göre), bu da o kartın TÜM alt
+       içeriğini (fiyat/grafik/analiz/buton) ~1 satır aşağı itip satırdaki
+       diğer kartla hizasını bozuyordu - GERÇEK ölçümle bulundu. min-height
+       her kartta İKİ satırlık alan rezerve ederek (etiket 1 veya 2 satır
+       olsun fark etmez) bu kaymayı önler. */
     .commodity-card-top {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
       gap: 0.5rem;
       margin-bottom: 0.3rem;
+      min-height: 2.5rem;
     }
 
     .commodity-label {
@@ -1834,12 +1904,19 @@
       color: var(--negative);
     }
 
+    /* min-height (2026-08-19, kullanıcı isteği: "Teknik Görünüm" butonu
+       her kartta aynı Y konumunda dursun) - ".commodity-label" gibi bu
+       satır da bazı emtialarda (ör. "490.25 USX/bu (haftalık +33.25)")
+       iki satıra kayıp diğerlerinden (ör. "684 USX/bu (haftalık +31.25)",
+       tek satır) 16px daha uzun oluyordu - GERÇEK ölçümle bulundu, .commodity-
+       label/.commodity-analysis'teki AYNI kalıp burada da uygulanır. */
     .commodity-price {
       font-size: 0.78rem;
       color: var(--text-muted);
       margin-bottom: 0.4rem;
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
+      min-height: 2.1rem;
     }
 
     .commodity-sparkline {
@@ -1863,6 +1940,14 @@
       -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      /* min-height = 3 satır × line-height (2026-08-19, kullanıcı isteği:
+         "Teknik Görünüm" butonu aynı dikey konumda kalsın) - line-clamp
+         SADECE 3 satırı AŞAN metni kırpar, 3'ten KISA metinleri (ör.
+         "Mısır" analizinin "Buğday"dan daha kısa olması) doldurmaz -
+         GERÇEK ölçümle bulundu: kısa analizli kartlarda alttaki buton bir
+         satır YUKARIDA kalıyordu. min-height metin ne kadar kısa olursa
+         olsun 3 satırlık alanı REZERVE eder. */
+      min-height: 3.05rem;
     }
 
     /* Emtia analiz metninde geçen (yapılandırılmış listeyle eşleşen) şirket
@@ -2100,7 +2185,7 @@
   <header>
     <div class="header-row header-row-top">
       <div class="brand-block">
-        <h1><img src="/vy-logo.svg" alt="" width="26" height="26" class="brand-logo"><span class="live-indicator"></span> Finansal Haber Terminali</h1>
+        <h1><a href="/" class="brand-link"><img src="/vy-logo.svg" alt="" width="26" height="26" class="brand-logo"><span class="live-indicator"></span> Finansal Haber Terminali</a></h1>
         <div class="meta">Bildirim eşiği {{ threshold }}/5 · Otomatik tarama aktif</div>
       </div>
       <!-- Yalnızca GERÇEKTEN var olan sayfa/bölümlere giden linkler (kullanıcı
@@ -2218,47 +2303,86 @@
        KALDIRILMADI. #}
     <details class="card {{ r.badge_class }}">
       <summary class="card-top">
-        <div>
-          {# short_summary (2026-08-18, kullanıcı isteği): SADECE KAP
-             kayıtlarında dolu (bkz. src/summarizer.py >
-             _KAP_SHORT_SUMMARY_INSTRUCTION) - varsa kartın ana/vurgulu
-             satırı olur, uzun resmi başlık YERİNE. Genel haberlerde
-             short_summary hiç dolmadığından bu blok o kartları
-             ETKİLEMEZ - eski davranış (r.title) aynen korunur. #}
-          <h2 class="card-title">{% if r.short_summary %}{{ r.short_summary }}{% else %}{{ r.title }}{% if r.title_tr
-            %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}{% endif %}</h2>
-          <div class="card-meta">
-            <span>{{ r.published_at }}</span>
-            <span class="meta-divider">|</span>
-            <span>Kaynak: {{ r.sources }}</span>
-            {% if r.company_ticker %}
-            <span class="meta-divider">|</span>
-            <span class="ticker-badge">
-              <span class="company-avatar" data-ticker="{{ r.company_ticker }}" aria-hidden="true"></span>{{
-              r.company_ticker }}</span>
-            {% endif %}
-            {% if r.kap_category_label %}
-            <span class="meta-divider">|</span>
-            <span class="sector-tag">{{ r.kap_category_label }}</span>
-            {% endif %}
-            {% if r.sentiment_label %}
-            <span class="meta-divider">|</span>
-            <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
-            {% endif %}
-            {% if r.sector_labels %}
-            <span class="meta-divider">|</span>
-            {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
-            {% endif %}
-            {% if r.notified %}
-            <span class="meta-divider">|</span>
-            <span class="notified-flag">Telegram Aktarıldı</span>
-            {% endif %}
+        <div class="card-top-row">
+          <div>
+            {# short_summary (2026-08-18, kullanıcı isteği): SADECE KAP
+               kayıtlarında dolu (bkz. src/summarizer.py >
+               _KAP_SHORT_SUMMARY_INSTRUCTION) - varsa kartın ana/vurgulu
+               satırı olur, uzun resmi başlık YERİNE. Genel haberlerde
+               short_summary hiç dolmadığından bu blok o kartları
+               ETKİLEMEZ - eski davranış (r.title) aynen korunur. #}
+            <h2 class="card-title">{% if r.short_summary %}{{ r.short_summary }}{% else %}{{ r.title }}{% if
+              r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}{% endif %}</h2>
+            <div class="card-meta">
+              <span>{{ r.published_at }}</span>
+              <span class="meta-divider">|</span>
+              <span>Kaynak: {{ r.sources }}</span>
+              {% if r.company_ticker %}
+              <span class="meta-divider">|</span>
+              <span class="ticker-badge">
+                <span class="company-avatar" data-ticker="{{ r.company_ticker }}" aria-hidden="true"></span>{{
+                r.company_ticker }}</span>
+              {% elif r.trading_view_symbol and r.trading_view_symbol.startswith('FX:') %}
+              {# Döviz paritesi rozeti (2026-08-19, kullanıcı isteği): ayrı bir
+                 "Döviz" sekmesi YOK - genel bir haber belirli TEK bir şirketle
+                 DEĞİL de bir döviz paritesiyle ilişkiliyse (bkz. summarizer.py >
+                 trading_view_symbol, "FX:" öneki), ticker-badge ile AYNI görsel
+                 formatta ama "PARİTE:" etiketiyle gösterilir. company_ticker
+                 doluysa (yukarıdaki şart) bu dala HİÇ girilmez - ikisi asla
+                 aynı anda gösterilmez. #}
+              <span class="meta-divider">|</span>
+              <span class="ticker-badge">PARİTE: {{ r.trading_view_symbol[3:] }}</span>
+              {% endif %}
+              {% if r.kap_category_label %}
+              <span class="meta-divider">|</span>
+              <span class="sector-tag">{{ r.kap_category_label }}</span>
+              {% endif %}
+              {% if r.sentiment_label %}
+              <span class="meta-divider">|</span>
+              <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
+              {% endif %}
+              {% if r.sector_labels %}
+              <span class="meta-divider">|</span>
+              {% for sl in r.sector_labels %}<span class="sector-tag">{{ sl }}</span>{% endfor %}
+              {% endif %}
+              {% if r.notified %}
+              <span class="meta-divider">|</span>
+              <span class="notified-flag">Telegram Aktarıldı</span>
+              {% endif %}
+            </div>
           </div>
+          <span style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+            <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
+            <span class="card-chevron">▸</span>
+          </span>
         </div>
-        <span style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
-          <span class="badge {{ r.badge_class }}" title="Önem skoru">{{ r.badge_text }}/5</span>
-          <span class="card-chevron">▸</span>
-        </span>
+        {# TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği:
+           ticker/parite rozetinin HEMEN ALTINDA, kart hem kapalı hem açık
+           halde AYNI konumda) - BİLİNÇLİ OLARAK <summary> İÇİNDE (.card-body
+           YERİNE) render edilir: native <details> davranışı, kapalıyken
+           SADECE <summary>'nin içeriğini gösterir, .card-body'nin (veya
+           summary DIŞINDAKİ herhangi bir kardeşin) kapalıyken görünür
+           kalmasını CSS'le ZORLAMANIN (display:block !important dahi)
+           MÜMKÜN OLMADIĞI gerçek bir tarayıcı testiyle doğrulandı (bkz.
+           commit notu) - bu yüzden tek güvenilir çözüm butonu summary'nin
+           kendisine taşımaktı. onclick="event.stopPropagation()": link
+           tıklaması olmasa native davranış olarak summary'nin aç/kapa
+           toggle'ını da TETİKLERDİ (GERÇEK testte doğrulandı) - bu satır
+           SADECE navigasyonu bırakıp toggle'ı engeller. #}
+        {% if r.tradingview_url %}
+        <div class="card-tv-row">
+          <a href="{{ r.tradingview_url }}" target="_blank" rel="noopener" class="tradingview-link"
+            title="TradingView'de {{ r.trading_view_symbol }} teknik görünümünü aç"
+            onclick="event.stopPropagation()">
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor" />
+              <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
+              <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
+            </svg>
+            Teknik Görünüm ↗
+          </a>
+        </div>
+        {% endif %}
       </summary>
 
       <div class="card-body">
@@ -2288,21 +2412,9 @@
         {% endif %}
 
         <div class="links">
-          {# TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği) -
-             SADECE r.tradingview_url doluysa (bkz. src/web/app.py >
-             _build_tradingview_url) render edilir - LLM sembolü çözemediyse
-             (genel/soyut haber) buton HİÇ görünmez, kartı kalabalıklaştırmaz. #}
-          {% if r.tradingview_url %}
-          <a href="{{ r.tradingview_url }}" target="_blank" rel="noopener" class="tradingview-link"
-            title="TradingView'de {{ r.trading_view_symbol }} teknik görünümünü aç">
-            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-              <rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor" />
-              <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
-              <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
-            </svg>
-            Teknik Görünüm ↗
-          </a>
-          {% endif %}
+          {# "Teknik Görünüm" butonu ARTIK burada DEĞİL - yukarıdaki
+             <summary> > .card-tv-row'a taşındı (2026-08-19, kullanıcı
+             isteği: rozetin hemen altında, kapalı+açık halde SABİT konum). #}
           {% for link in r.links %}
           <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
           {% endfor %}
@@ -2976,6 +3088,16 @@
         tvIconSvg() + 'Teknik Görünüm ↗</a>'
         : '';
       __commodityRegistry[item.symbol] = item;
+      // "Teknik Görünüm" butonunun kartlar arasında AYNI dikey konumda
+      // kalması (2026-08-19, kullanıcı isteği) için tvHtml, analysisHtml'in
+      // (bkz. .commodity-analysis - SABİT 3 satır line-clamp) HEMEN
+      // ardından, DEĞİŞKEN yükseklikteki chipsHtml'DEN ÖNCE gelir - bkz.
+      // CSS > .commodity-card-bottom notu (İLK denenen flex + margin-top:auto
+      // yaklaşımı, etiketleri butonla AYNI gruba alıp GERÇEK ölçümle YANLIŞ
+      // çıktı - etiket sayısı değiştikçe buton da kayıyordu).
+      const bottomHtml = (tvHtml || chipsHtml)
+        ? '<div class="commodity-card-bottom">' + tvHtml + chipsHtml + '</div>'
+        : '';
       return '<div class="commodity-card">' +
         '<div class="commodity-card-top">' +
         '<button type="button" class="commodity-label commodity-label-clickable" onclick="openCommodityModal(\'' + item.symbol + '\')">' +
@@ -2986,8 +3108,7 @@
         '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
         sparklineSvg +
         analysisHtml +
-        tvHtml +
-        chipsHtml +
+        bottomHtml +
         '</div>';
     }
 
