@@ -49,6 +49,30 @@ COMMODITY_SYMBOLS: list[tuple[str, str, str]] = [
 
 _COMMODITY_UNIT_BY_SYMBOL: dict[str, str] = {sym: unit for sym, _label, unit in COMMODITY_SYMBOLS}
 
+# TradingView entegrasyonu (2026-08-19, kullanıcı isteği): emtialar SABİT 9
+# sembolle sınırlı ve iyi bilindiğinden ("KAP + yabancı şirket" haberlerinin
+# AKSİNE, bkz. src/summarizer.py > trading_view_symbol) LLM'e SORULMAZ - kod
+# içinde sabit bir eşleme yeterli/daha güvenilir. Her sembol GERÇEK bir
+# TradingView sayfası ziyaretiyle (2026-08-19) doğrulandı - "TVC:" öneki
+# TradingView'in bazı emtialar için AYRI bir "sürekli/spot" veri sağlayıcısı
+# olduğundan HER emtia için çalışmıyor (ör. "TVC:ALUMINUM"/"TVC:NATURALGAS"/
+# "TVC:WHEAT"/"TVC:CORN" 404 döndü) - bu durumlarda YAHOO_SEMBOLÜMÜZLE AYNI
+# vadeli işlem sözleşmesi ailesine karşılık gelen borsa:sembol kullanıldı
+# (COMEX/NYMEX/CBOT sürekli vadeli işlem "1!" sözleşmesi) - böylece
+# gösterilen fiyat (Yahoo) ile bağlanılan TradingView grafiği AYNI enstrümanı
+# temsil eder.
+COMMODITY_TRADINGVIEW_SYMBOLS: dict[str, str] = {
+    "HG=F": "COMEX:HG1!",
+    "ZW=F": "CBOT:ZW1!",
+    "CL=F": "TVC:USOIL",
+    "BZ=F": "TVC:UKOIL",
+    "GC=F": "TVC:GOLD",
+    "SI=F": "TVC:SILVER",
+    "NG=F": "NYMEX:NG1!",
+    "ALI=F": "COMEX:ALI1!",
+    "ZC=F": "CBOT:ZC1!",
+}
+
 
 async def get_commodity_snapshot() -> list[dict[str, Any]]:
     """Tüm izlenen emtiaların GÜNCEL anlık fiyatını/günlük değişim yüzdesini

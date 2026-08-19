@@ -689,6 +689,13 @@
       background: #1e4fd6;
     }
 
+    /* Emtia kartında (bkz. buildCommodityCardHtml) .links'in DIŞINDA, kartın
+       en altında bağımsız bir satır olarak render edilir - üstündeki
+       içerikten (analiz/şirket chip'leri) ayrışsın diye üst boşluk. */
+    .commodity-tradingview-link {
+      margin-top: 0.5rem;
+    }
+
     /* --- Sektör etiketleri: önceki mor dolgu-renkli pill'ler YERİNE düz,
        nötr metin (gereksinim: "renkli rozet çeşitliliğini azalt"). --- */
     .sector-tag {
@@ -732,6 +739,17 @@
     .dashboard-columns {
       display: grid;
       grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    /* "Emtia" sekmesinin ÜÇ sütunlu düzeni (2026-08-19, kullanıcı isteği:
+       Metal / Enerji / Tarım) - .dashboard-columns'un 2 sütunlu hâlinden
+       AYRI bir sınıf, çünkü diğer TÜM iki-sütun görünümler (KAP/Haberler)
+       BİREBİR korunmalı, sadece Emtia sekmesi üçe çıkıyor. */
+    .commodity-columns-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 1.25rem;
       align-items: start;
     }
@@ -842,6 +860,19 @@
     @media (max-width: 860px) {
       .dashboard-columns {
         grid-template-columns: 1fr;
+      }
+
+      .commodity-columns-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 3 sütun genişken (860-1280px arası) her sütun çok dar kalıp 2'şerli
+       emtia kart satırını sıkıştırmasın diye ara bir kademede 2 sütuna
+       düşer (3. sütun alta kayar) - 860px altında zaten tek sütun. */
+    @media (max-width: 1280px) {
+      .commodity-columns-3 {
+        grid-template-columns: 1fr 1fr;
       }
     }
 
@@ -1709,10 +1740,22 @@
       margin-bottom: 0.5rem;
     }
 
+    /* ÖNCEDEN repeat(auto-fill, minmax(220px, 1fr)) - iki geniş sütunda
+       (Metal&Enerji / Tarım) responsive olarak 3+ karta kadar sığdırıyordu.
+       Artık ÜÇ dar sütun (Metal/Enerji/Tarım, bkz. .commodity-columns-3) var
+       ve her biri KENDİ grubunu SABİT 2'şerli satırlar halinde göstermeli
+       (2026-08-19, kullanıcı isteği) - bu yüzden auto-fill YERİNE sabit
+       repeat(2, 1fr) kullanılır. */
     .commodity-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 0.65rem;
+    }
+
+    @media (max-width: 480px) {
+      .commodity-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .commodity-card {
@@ -2610,18 +2653,25 @@
         </section>
       </div>
       {% elif view == 'emtia' %}
-      {# "Emtia" sekmesi: SADECE emtia raporu, iki sütun - sol Metal &
-         Enerji, sağ Tarım (kullanıcı isteği, 2026-08-18). Veri tamamen
-         tarayıcı tarafında /api/commodity-weekly-report'tan gelir (bkz.
-         altındaki <script> > loadCommodityPanel) - DB sorgusu yok. #}
+      {# "Emtia" sekmesi: SADECE emtia raporu, ÜÇ sütun - Metal / Enerji /
+         Tarım (kullanıcı isteği, 2026-08-19 - ÖNCEDEN "Metal & Enerji" tek
+         grup + "Tarım" ayrı, iki sütundu). Veri tamamen tarayıcı tarafında
+         /api/commodity-weekly-report'tan gelir (bkz. altındaki <script> >
+         loadCommodityPanel) - DB sorgusu yok. #}
       <div class="news-section-title">HAFTALIK EMTİA RAPORU</div>
       <div class="commodity-panel-header-row">
         <span id="commodity-panel-updated" class="commodity-panel-updated"></span>
       </div>
-      <div class="dashboard-columns">
-        <section class="kap-column" aria-label="Metal ve Enerji Emtiaları">
-          <h2 class="column-title">⚙️ Metal &amp; Enerji</h2>
+      <div class="commodity-columns-3">
+        <section class="kap-column" aria-label="Metal Emtiaları">
+          <h2 class="column-title">🔩 Metal</h2>
           <div id="commodity-col-metal">
+            <span class="trend-empty">Yükleniyor…</span>
+          </div>
+        </section>
+        <section class="kap-column" aria-label="Enerji Emtiaları">
+          <h2 class="column-title">⚡ Enerji</h2>
+          <div id="commodity-col-energy">
             <span class="trend-empty">Yükleniyor…</span>
           </div>
         </section>
@@ -2816,11 +2866,14 @@
       }).join(' ');
     }
 
-    // Tarım emtiaları (Yahoo sembolleriyle, bkz. src/commodity_report.py >
-    // COMMODITY_SYMBOLS) - "Emtia" sekmesinin iki-sütun düzeninde (kullanıcı
-    // isteği, 2026-08-18: sol Metal & Enerji, sağ Tarım) ayrım burada yapılır.
-    // Geri kalan TÜM semboller (Bakır/Ham Petrol/Brent/Altın/Gümüş/Doğalgaz/
-    // Alüminyum) Metal & Enerji sütununa gider.
+    // Emtia grupları (Yahoo sembolleriyle, bkz. src/commodity_report.py >
+    // COMMODITY_SYMBOLS) - "Emtia" sekmesinin ÜÇ sütunlu düzeninde
+    // (2026-08-19, kullanıcı isteği: ÖNCEDEN "Metal & Enerji" tek grup +
+    // "Tarım" ayrıydı, şimdi METAL/ENERJİ/TARIM üç ayrı grup) ayrım burada
+    // yapılır. METAL: Bakır/Altın/Gümüş/Alüminyum. ENERJİ: Ham Petrol/Brent/
+    // Doğalgaz. TARIM: Buğday/Mısır (değişmedi).
+    const _COMMODITY_METAL_SYMBOLS = ['HG=F', 'GC=F', 'SI=F', 'ALI=F'];
+    const _COMMODITY_ENERGY_SYMBOLS = ['CL=F', 'BZ=F', 'NG=F'];
     const _COMMODITY_AGRI_SYMBOLS = ['ZW=F', 'ZC=F'];
 
     function buildCommodityCardHtml(item, accentColor, downColor) {
@@ -2850,6 +2903,23 @@
             escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
         }).join('') + '</div>'
         : '';
+      // TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği) -
+      // emtialar için sembol sabit bir eşlemeden gelir (bkz.
+      // src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS,
+      // src/commodity_report.py > build_weekly_commodity_report_data),
+      // KAP/genel haber kartlarındaki (bkz. render_news_card macro'su)
+      // AYNI görsel dil/ikonla, SADECE item.trading_view_symbol doluysa
+      // render edilir.
+      const tvHtml = item.trading_view_symbol
+        ? '<a href="https://www.tradingview.com/symbols/' + encodeURIComponent(item.trading_view_symbol.replace(/:/g, '-')) +
+        '/" target="_blank" rel="noopener" class="tradingview-link commodity-tradingview-link" ' +
+        'title="TradingView\'de ' + escapeHtml(item.trading_view_symbol) + ' teknik görünümünü aç">' +
+        '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">' +
+        '<rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor"/>' +
+        '<rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor"/>' +
+        '<rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor"/>' +
+        '</svg>Teknik Görünüm ↗</a>'
+        : '';
       __commodityRegistry[item.symbol] = item;
       return '<div class="commodity-card">' +
         '<div class="commodity-card-top">' +
@@ -2862,16 +2932,20 @@
         sparklineSvg +
         analysisHtml +
         chipsHtml +
+        tvHtml +
         '</div>';
     }
 
-    // "Emtia" sekmesinin tam raporu - iki sütuna (Metal&Enerji / Tarım)
-    // böler (bkz. _COMMODITY_AGRI_SYMBOLS). Hedef elementler o sekmede
-    // YOKSA (başka bir view render edildiyse) sessizce hiçbir şey yapmaz.
+    // "Emtia" sekmesinin tam raporu - ÜÇ sütuna (Metal / Enerji / Tarım,
+    // 2026-08-19 kullanıcı isteği) böler (bkz. _COMMODITY_METAL_SYMBOLS/
+    // _COMMODITY_ENERGY_SYMBOLS/_COMMODITY_AGRI_SYMBOLS). Hedef elementler o
+    // sekmede YOKSA (başka bir view render edildiyse) sessizce hiçbir şey
+    // yapmaz.
     async function loadCommodityPanel() {
       const metalCol = document.getElementById('commodity-col-metal');
+      const energyCol = document.getElementById('commodity-col-energy');
       const agriCol = document.getElementById('commodity-col-agri');
-      if (!metalCol || !agriCol) return;
+      if (!metalCol || !energyCol || !agriCol) return;
       const updatedEl = document.getElementById('commodity-panel-updated');
       try {
         const res = await fetch('/api/commodity-weekly-report');
@@ -2880,6 +2954,7 @@
 
         if (!items.length) {
           metalCol.innerHTML = '<span class="trend-empty">Emtia verisi henüz yok.</span>';
+          energyCol.innerHTML = '';
           agriCol.innerHTML = '';
           return;
         }
@@ -2893,12 +2968,20 @@
         const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
         const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
 
-        const metalItems = items.filter(function (i) { return _COMMODITY_AGRI_SYMBOLS.indexOf(i.symbol) === -1; });
+        const metalItems = items.filter(function (i) { return _COMMODITY_METAL_SYMBOLS.indexOf(i.symbol) !== -1; });
+        const energyItems = items.filter(function (i) { return _COMMODITY_ENERGY_SYMBOLS.indexOf(i.symbol) !== -1; });
         const agriItems = items.filter(function (i) { return _COMMODITY_AGRI_SYMBOLS.indexOf(i.symbol) !== -1; });
 
-        metalCol.innerHTML = '<div class="commodity-grid">' +
+        metalCol.innerHTML = metalItems.length
+          ? '<div class="commodity-grid">' +
           metalItems.map(function (i) { return buildCommodityCardHtml(i, accentColor, downColor); }).join('') +
-          '</div>';
+          '</div>'
+          : '<span class="trend-empty">Metal emtiası verisi yok.</span>';
+        energyCol.innerHTML = energyItems.length
+          ? '<div class="commodity-grid">' +
+          energyItems.map(function (i) { return buildCommodityCardHtml(i, accentColor, downColor); }).join('') +
+          '</div>'
+          : '<span class="trend-empty">Enerji emtiası verisi yok.</span>';
         agriCol.innerHTML = agriItems.length
           ? '<div class="commodity-grid">' +
           agriItems.map(function (i) { return buildCommodityCardHtml(i, accentColor, downColor); }).join('') +
@@ -2906,6 +2989,7 @@
           : '<span class="trend-empty">Tarım emtiası verisi yok.</span>';
       } catch (e) {
         metalCol.innerHTML = '<span class="trend-empty">Emtia verisi alınamadı.</span>';
+        energyCol.innerHTML = '';
         agriCol.innerHTML = '';
       }
     }

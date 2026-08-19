@@ -26,7 +26,7 @@ from typing import Any
 
 from datetime import datetime, timezone
 
-from src.commodities import COMMODITY_SYMBOLS, compute_period_change, get_commodity_history
+from src.commodities import COMMODITY_SYMBOLS, COMMODITY_TRADINGVIEW_SYMBOLS, compute_period_change, get_commodity_history
 from src.config import get_summarizer_api_key
 from src.db import get_all_subscriber_chat_ids, get_app_state, set_app_state
 from src.notifier import send_telegram_message_to_chat_ids
@@ -130,6 +130,7 @@ def build_weekly_commodity_report_data(summarizer: Summarizer | None = None) -> 
                 "history": history,
                 "analysis": analysis,
                 "companies": companies,
+                "trading_view_symbol": COMMODITY_TRADINGVIEW_SYMBOLS.get(symbol),
             }
         )
 
