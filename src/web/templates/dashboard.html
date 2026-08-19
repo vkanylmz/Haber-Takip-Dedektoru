@@ -1272,12 +1272,32 @@
 
     .gauge-card,
     .market-summary-card,
-    .calendar-placeholder-card {
+    .calendar-placeholder-card,
+    .tv-widget-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1rem 1.25rem;
       box-shadow: var(--shadow-sm);
+    }
+
+    /* TradingView resmi widget'ının sarmalayıcısı (2026-08-19, kullanıcı
+       isteği) - .tradingview-widget-container/.tradingview-widget-container__widget
+       sınıf adları TradingView'in KENDİ script'inin BEKLEDİĞİ isimler
+       (bkz. resmi embed kodu), DEĞİŞTİRİLEMEZ. Yükseklik sabit (widget
+       "autosize" genişlikte tam, yükseklikte konteynerin yüksekliğini
+       doldurur) - masaüstünde sağ sütundaki panellerle (Piyasa Duygusu +
+       Trend + Piyasa Özeti + Ekonomik Takvim) kabaca aynı toplam yüksekliğe
+       gelecek şekilde, mobilde daha kısa (bkz. altındaki media query). */
+    .tradingview-widget-container {
+      height: 520px;
+      width: 100%;
+    }
+
+    @media (max-width: 900px) {
+      .tradingview-widget-container {
+        height: 380px;
+      }
     }
 
     .market-summary-title {
@@ -2576,6 +2596,26 @@
           {% endfor %}
         </div>
         {% endif %}
+
+        <!-- TradingView "Advanced Real-Time Chart" resmi embed widget'ı
+             (2026-08-19, kullanıcı isteği) - Öne Çıkan Haberler listesinin
+             altındaki, sağ sütundaki (Piyasa Özeti vb.) panellere kıyasla
+             daha kısa kalan sol sütunu doldurur. Bu KENDİ yazdığımız bir
+             grafik DEĞİL - TradingView'in resmi
+             embed-widget-advanced-chart.js script'i (bkz. altındaki
+             <script> > loadHomeTvWidget, tam JSON config TradingView'in
+             kendi widget oluşturucusundan (tradingview.com/widget/
+             advanced-chart/) alındı) - kendi symbol search'ü/araç çubuğu
+             DAHİLDİR, biz sadece varsayılan sembolü/temayı geçiyoruz.
+             Üçüncü parti script sayfa yüklenmesini YAVAŞLATMASIN diye
+             lazy-load: script SADECE bu kart görünür alana girdiğinde
+             eklenir (bkz. IntersectionObserver > initHomeTvWidgetLazyLoad). -->
+        <div class="tv-widget-card" id="home-tv-widget-card">
+          <div class="market-summary-title">TEKNİK GÖRÜNÜM · USD/TRY</div>
+          <div class="tradingview-widget-container" id="home-tv-widget-container">
+            <div class="tradingview-widget-container__widget"></div>
+          </div>
+        </div>
       </section>
 
       <aside class="home-sidebar">
@@ -2877,7 +2917,108 @@
         }
         try { localStorage.setItem('theme', next); } catch (e) { /* erişilemezse sessizce yut */ }
         btn.textContent = next === 'dark' ? '☀️' : '🌙';
+        // TradingView widget'ı zaten yüklenmişse (bkz. initHomeTvWidgetLazyLoad)
+        // AYNI temayla yeniden oluştur - resmi widget script'i render
+        // edildikten SONRA temayı canlı DEĞİŞTİRMEYİ desteklemiyor, tek
+        // güvenilir yol container'ı boşaltıp script'i yeni theme config'iyle
+        // tekrar eklemek (2026-08-19, kullanıcı isteği: "widget de otomatik
+        // light/dark moda geçsin"). Henüz hiç görünür alana girmediyse
+        // (lazy-load tetiklenmediyse) hiçbir şey yapmaz - ilk göründüğünde
+        // zaten GÜNCEL temayla yüklenecek.
+        if (_homeTvWidgetLoaded) {
+          loadHomeTvWidget();
+        }
       });
+    }
+
+    // TradingView "Advanced Real-Time Chart" resmi embed widget'ı
+    // (2026-08-19, kullanıcı isteği, bkz. Ana Sayfa > .tv-widget-card) -
+    // JSON config BİREBİR TradingView'in kendi widget oluşturucusundan
+    // (tradingview.com/widget/advanced-chart/) alındı, sadece symbol/theme/
+    // locale bizim tarafımızdan ayarlanıyor. `allow_symbol_change: true`
+    // sayesinde kullanıcı widget'ın KENDİ arama kutusuyla başka bir sembole
+    // geçebilir (kullanıcı isteği - bizim ayrıca bir arama UI'ı YAZMAMIZA
+    // gerek yok, TradingView'in kendi widget'ı bunu sağlıyor).
+    let _homeTvWidgetLoaded = false;
+
+    function loadHomeTvWidget() {
+      const container = document.getElementById('home-tv-widget-container');
+      if (!container) return;
+      const widgetDiv = container.querySelector('.tradingview-widget-container__widget');
+      if (!widgetDiv) return;
+      // Tema değişince yeniden çağrıldığında ÖNCEKİ script/iframe'i temizle
+      // (widget kendi kendini birden fazla kez eklemesin diye).
+      widgetDiv.innerHTML = '';
+
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const config = {
+        allow_symbol_change: true,
+        calendar: false,
+        details: false,
+        hide_side_toolbar: true,
+        hide_top_toolbar: false,
+        hide_legend: false,
+        hide_volume: false,
+        hotlist: false,
+        interval: 'D',
+        locale: 'tr',
+        save_image: true,
+        style: '1',
+        // "BIST:XU100" DEĞİL (2026-08-19) - kullanıcı isteği BIST 100 idi,
+        // ANCAK GERÇEK bir izole testle doğrulandı: TradingView'in ÜCRETSİZ
+        // embed widget'ı HİÇBİR BIST sembolünü desteklemiyor (ne XU100
+        // endeksi ne THYAO/GARAN gibi tekil hisseler) - "Bu sembol mevcut
+        // değil" hatası veriyor. Bu widget'ın kendi tarafımızdaki bir hata
+        // DEĞİL, TradingView'in kendi web sitesinde (tradingview.com/chart)
+        // BIST sembolleri GERÇEKTEN çalışırken, üçüncü parti sitelere
+        // GÖMÜLEBİLEN ücretsiz widget'ta BIST verisi lisanslı DEĞİL (aynı
+        // NASDAQ:AAPL/FX:EURUSD gibi sembollerin sorunsuz çalıştığı GERÇEK
+        // testle doğrulandı - bkz. commit notu). En yakın Türkiye-ilişkili
+        // VE gerçekten çalışan alternatif olarak USD/TRY seçildi.
+        symbol: 'FX:USDTRY',
+        theme: isDark ? 'dark' : 'light',
+        timezone: 'Etc/UTC',
+        backgroundColor: isDark ? '#0f0f0f' : '#ffffff',
+        gridColor: isDark ? 'rgba(242, 242, 242, 0.06)' : 'rgba(46, 46, 46, 0.06)',
+        watchlist: [],
+        withdateranges: false,
+        compareSymbols: [],
+        studies: [],
+        autosize: true,
+      };
+
+      const script = document.createElement('script');
+      script.type = 'text/javascript';
+      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+      script.async = true;
+      script.innerHTML = JSON.stringify(config);
+      widgetDiv.appendChild(script);
+    }
+
+    // Lazy-load (2026-08-19, kullanıcı isteği: "sayfa yüklenme hızını fazla
+    // yavaşlatmasın") - üçüncü parti TradingView script'i SADECE kart
+    // gerçekten görünür alana girdiğinde (kullanıcı scroll edip oraya
+    // geldiğinde) eklenir, sayfa ilk açıldığında DEĞİL. IntersectionObserver
+    // TÜM modern tarayıcılarda var - yoksa (çok eski bir tarayıcı) doğrudan
+    // yükler, sayfa hiç KIRILMAZ.
+    function initHomeTvWidgetLazyLoad() {
+      const card = document.getElementById('home-tv-widget-card');
+      if (!card) return;
+      if (!('IntersectionObserver' in window)) {
+        _homeTvWidgetLoaded = true;
+        loadHomeTvWidget();
+        return;
+      }
+      const observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting && !_homeTvWidgetLoaded) {
+            _homeTvWidgetLoaded = true;
+            loadHomeTvWidget();
+            observer.disconnect();
+          }
+        });
+      }, { rootMargin: '200px' });
+      observer.observe(card);
     }
 
     // Bir önceki refreshMarketTicker() çağrısındaki fiyatlar (sembol adına
@@ -3679,6 +3820,7 @@
     loadCommodityHomeSummary();
     refreshMarketSummaryTable();
     applyCompanyAvatars();
+    initHomeTvWidgetLazyLoad();
     // Piyasa şeridi: sunucu tarafı önbellek süresiyle (bkz.
     // src/web/market_data.py > _CACHE_TTL_SECONDS) BİLEREK aynı tutuluyor.
     // 10 sn, gerçek bir ölçümle belirlendi. Sektör ısı haritası haber
