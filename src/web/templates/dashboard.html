@@ -2614,7 +2614,7 @@
              lazy-load: script SADECE bu kart görünür alana girdiğinde
              eklenir (bkz. IntersectionObserver > initHomeTvWidgetLazyLoad). -->
         <div class="tv-widget-card" id="home-tv-widget-card">
-          <div class="market-summary-title" id="home-tv-widget-title">TEKNİK GÖRÜNÜM · USD/TRY</div>
+          <div class="market-summary-title" id="home-tv-widget-title">TEKNİK GÖRÜNÜM</div>
           <!-- ".tradingview-widget-container__widget"'a style="height:calc(100% -
                32px)" ve altına ".tradingview-widget-copyright" (2026-08-19,
                kullanıcı geri bildirimi: "widget dar/sıkışık görünüyor") -
@@ -3021,12 +3021,12 @@
     // Piyasa Özeti satırına tıklayınca çağrılır (2026-08-19, kullanıcı
     // isteği: ÖNCEDEN yeni sekmede TradingView.com açılıyordu - artık
     // yerine gömülü widget'ın sembolü DEĞİŞİYOR + sayfa o bölüme smooth
-    // scroll ile kayıyor). `label`, widget kartının başlığında gösterilir
-    // (ör. "TEKNİK GÖRÜNÜM · USD/TRY").
-    function setHomeTvWidgetSymbol(symbol, label) {
+    // scroll ile kayıyor). Başlık SABİT "TEKNİK GÖRÜNÜM" kalır (2026-08-19,
+    // kullanıcı isteği: ÖNCEDEN "TEKNİK GÖRÜNÜM · USD/TRY" gibi sembol adı
+    // da ekleniyordu, KALDIRILDI) - widget'ın kendi üst çubuğu (bkz.
+    // hide_top_toolbar: false) zaten hangi sembole bakıldığını gösteriyor.
+    function setHomeTvWidgetSymbol(symbol) {
       _homeTvWidgetSymbol = symbol;
-      const titleEl = document.getElementById('home-tv-widget-title');
-      if (titleEl) titleEl.textContent = 'TEKNİK GÖRÜNÜM · ' + label;
 
       const card = document.getElementById('home-tv-widget-card');
       if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3892,8 +3892,8 @@
               buildTradingViewChartUrl(tvSymbol) + '\', \'_blank\', \'noopener\')" title="TradingView\'de ' +
               item.label + ' grafiğini yeni sekmede aç"';
           } else {
-            rowAttrs = ' class="market-summary-row-clickable" onclick="setHomeTvWidgetSymbol(\'' + tvSymbol + '\', \'' +
-              item.label + '\')" title="Teknik görünümü aç: ' + item.label + '"';
+            rowAttrs = ' class="market-summary-row-clickable" onclick="setHomeTvWidgetSymbol(\'' + tvSymbol +
+              '\')" title="Teknik görünümü aç: ' + item.label + '"';
           }
           return '<tr' + rowAttrs + '><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
             (up ? '▲' : '▼') + ' %' + Math.abs(item.change_pct).toFixed(2) + '</td></tr>';
