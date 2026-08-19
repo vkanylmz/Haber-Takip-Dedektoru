@@ -3844,6 +3844,16 @@
       '^N225': 'FOREXCOM:JPXJPY',
     };
 
+    // BIST 100 (2026-08-19, kullanıcı isteği) - GERÇEK testle KESİN olarak
+    // doğrulandı (bkz. yukarıdaki BIST 100 notu, ayrıca TradingView'in
+    // KENDİ widget önizleme sayfasında da AYNI hata): "BIST:XU100" gömülü
+    // ücretsiz widget'ta HİÇBİR ZAMAN çalışmıyor, denenecek başka bir format
+    // da YOK. Bu yüzden diğer 11 satırın AKSİNE (embed widget'ın sembolünü
+    // değiştirirler) SADECE bu satır eski davranışa döner - yeni sekmede
+    // doğrudan tradingview.com/chart açılır (mevcut "Teknik Görünüm"
+    // butonlarıyla AYNI URL formülü, bkz. buildTradingViewChartUrl).
+    const _MARKET_SUMMARY_EMBED_UNSUPPORTED = new Set(['XU100.IS']);
+
     // Piyasa Özeti tablosu (2026-08-18) - ticker'ı besleyen AYNI
     // /api/market-data endpoint'i, sadece tablo biçiminde (yeni bir
     // backend uç noktası GEREKMEDİ).
@@ -3867,11 +3877,24 @@
           // TradingView.com açılıyordu - artık YERİNE gömülü widget'ın
           // (bkz. .tv-widget-card > setHomeTvWidgetSymbol) sembolü değişiyor
           // ve sayfa o bölüme smooth scroll ile kayıyor.
+          //
+          // TEK İSTİSNA - BIST 100 (2026-08-19, kullanıcı isteği, bkz.
+          // yukarıdaki _MARKET_SUMMARY_EMBED_UNSUPPORTED notu): embed
+          // widget'ta ÇALIŞMADIĞI KESİN olarak bilindiğinden, o SATIR
+          // denemeye bile GİRMEDEN eski davranışa (yeni sekmede
+          // tradingview.com/chart) döner - diğer 11 satır ETKİLENMEZ.
           var tvSymbol = _MARKET_SUMMARY_TV_SYMBOLS[item.symbol];
-          var rowAttrs = tvSymbol
-            ? ' class="market-summary-row-clickable" onclick="setHomeTvWidgetSymbol(\'' + tvSymbol + '\', \'' +
-            item.label + '\')" title="Teknik görünümü aç: ' + item.label + '"'
-            : '';
+          var rowAttrs;
+          if (!tvSymbol) {
+            rowAttrs = '';
+          } else if (_MARKET_SUMMARY_EMBED_UNSUPPORTED.has(item.symbol)) {
+            rowAttrs = ' class="market-summary-row-clickable" onclick="window.open(\'' +
+              buildTradingViewChartUrl(tvSymbol) + '\', \'_blank\', \'noopener\')" title="TradingView\'de ' +
+              item.label + ' grafiğini yeni sekmede aç"';
+          } else {
+            rowAttrs = ' class="market-summary-row-clickable" onclick="setHomeTvWidgetSymbol(\'' + tvSymbol + '\', \'' +
+              item.label + '\')" title="Teknik görünümü aç: ' + item.label + '"';
+          }
           return '<tr' + rowAttrs + '><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
             (up ? '▲' : '▼') + ' %' + Math.abs(item.change_pct).toFixed(2) + '</td></tr>';
         }).join('');
