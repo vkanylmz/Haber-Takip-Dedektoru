@@ -397,15 +397,17 @@ def _calendar_event_to_view(event: Any) -> dict[str, Any]:
 
 def _build_tradingview_url(symbol: str | None) -> str | None:
     """"BORSA:SEMBOL" (ör. "NASDAQ:NFLX", "FX:USDJPY") -> TradingView'in
-    kendi sembol sayfası URL yapısı, ör.
-    "https://www.tradingview.com/symbols/NASDAQ-NFLX/" (iki nokta üst üste
-    tire ile değiştirilir - TradingView'in gerçek URL şeması budur, GERÇEK
-    bir tarayıcı testiyle doğrulandı, bkz. commit notu). `symbol` boş/None
-    ise None döner - kartlarda "Teknik Görünüm" butonu bu durumda HİÇ
-    render edilmez (bkz. _record_to_view, src/commodity_report.py)."""
+    interaktif grafik ekranının URL'i, ör.
+    "https://www.tradingview.com/chart/?symbol=NASDAQ:NFLX" (2026-08-19,
+    kullanıcı isteği: ÖNCEDEN /symbols/{sembol}/ - TradingView'in "sembol
+    özet/haber" sayfasına gidiyordu, kullanıcı DOĞRUDAN interaktif mum
+    grafiğinin açıldığı ekranı istedi - GERÇEK bir tarayıcı testiyle
+    doğrulandı, bkz. commit notu). `symbol` boş/None ise None döner -
+    kartlarda "Teknik Görünüm" butonu bu durumda HİÇ render edilmez (bkz.
+    _record_to_view, src/commodity_report.py)."""
     if not symbol:
         return None
-    return f"https://www.tradingview.com/symbols/{symbol.replace(':', '-')}/"
+    return f"https://www.tradingview.com/chart/?symbol={symbol}"
 
 
 def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:

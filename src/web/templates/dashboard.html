@@ -1891,18 +1891,43 @@
     }
 
     .company-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 999px;
       padding: 0.15rem 0.55rem;
       font-size: 0.68rem;
       color: var(--text-primary);
+    }
+
+    /* Emtia detay modalının KENDİ ilgili şirket listesi (bkz.
+       openCommodityModal) hâlâ tıklanabilir bir <button> - fiyat/haber
+       modalını açar, bu davranış SADECE emtia KARTLARINDAKİ etiketlerden
+       kaldırıldı (2026-08-19, kullanıcı isteği), modal içindekiler etkilenmez. */
+    button.company-chip {
       cursor: pointer;
     }
 
     .company-chip:hover,
     .company-mention:hover {
       color: var(--positive);
+    }
+
+    /* Emtia kartındaki ilgili şirket etiketlerinin yanındaki küçük
+       TradingView ikon-linki (2026-08-19, kullanıcı isteği: ÖNCEDEN
+       etiketin TAMAMI tıklanınca bozuk bir fiyat/haber modalı açılıyordu -
+       KALDIRILDI, etiketin kendisi artık tıklanamaz düz metin, SADECE bu
+       ikon TradingView grafik ekranına götürür). */
+    .company-chip-tv {
+      display: inline-flex;
+      color: #2962ff;
+      line-height: 0;
+    }
+
+    .company-chip-tv:hover {
+      color: #1e4fd6;
     }
 
     /* --- Şirket detay modalı (bkz. /api/company-detail) --- */
@@ -2876,6 +2901,26 @@
     const _COMMODITY_ENERGY_SYMBOLS = ['CL=F', 'BZ=F', 'NG=F'];
     const _COMMODITY_AGRI_SYMBOLS = ['ZW=F', 'ZC=F'];
 
+    // TradingView entegrasyonu ortak yardımcıları (2026-08-19, kullanıcı
+    // isteği) - "BORSA:SEMBOL" -> DOĞRUDAN interaktif mum grafiği ekranı
+    // (ÖNCEDEN /symbols/{sembol}/ - TradingView'in özet/haber sayfasına
+    // gidiyordu). Hem emtia kartının "Teknik Görünüm" butonu (tvHtml) hem
+    // ilgili şirket etiketlerinin yanındaki küçük ikon-link (chipsHtml)
+    // AYNI URL formülünü/ikonu paylaşır - src/web/app.py > _build_tradingview_url
+    // (KAP/genel haber kartları için) ile AYNI formül, sadece burası JS
+    // tarafında (emtia verisi tamamen tarayıcıda render edildiğinden).
+    function buildTradingViewChartUrl(symbol) {
+      return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(symbol);
+    }
+
+    function tvIconSvg() {
+      return '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">' +
+        '<rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor"/>' +
+        '<rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor"/>' +
+        '<rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor"/>' +
+        '</svg>';
+    }
+
     function buildCommodityCardHtml(item, accentColor, downColor) {
       const up = item.pct_change >= 0;
       const sign = up ? '+' : '';
@@ -2895,12 +2940,23 @@
         ? '<div class="commodity-analysis">' + buildAnalysisHtml(item.analysis, companies, foundTickers) + '</div>' +
         '<button type="button" class="commodity-more-link" onclick="openCommodityModal(\'' + item.symbol + '\')">Devamını oku →</button>'
         : '';
+      // İlgili şirket etiketleri (2026-08-19, kullanıcı isteği: ÖNCEDEN
+      // TÜM etiket tıklanınca fiyat/haber modalı açılıyordu - bu emtia
+      // kartlarındaki etiketler için YANLIŞ/istenmeyen davranıştı, bu
+      // yüzden KALDIRILDI). Artık düz metin bir "chip" + yanında SADECE o
+      // şirketin TradingView grafiğine götüren küçük bir ikon-link (bkz.
+      // buildTradingViewChartUrl) - registerCompany/openCompanyModal HİÇ
+      // kullanılmıyor (modalın kendi ilgili şirket listesi, bkz.
+      // openCommodityModal, bu değişiklikten ETKİLENMEDİ).
       const unmatched = companies.filter(function (c) { return !foundTickers[c.exchange + ': ' + c.ticker]; });
       const chipsHtml = unmatched.length
         ? '<div class="commodity-companies">' + unmatched.map(function (c) {
-          const key = registerCompany(c);
-          return '<button type="button" class="company-chip" onclick="openCompanyModal(\'' + key + '\')">' +
-            escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')</button>';
+          const symbol = c.exchange + ':' + c.ticker;
+          return '<span class="company-chip">' +
+            escapeHtml(c.name) + ' (' + escapeHtml(c.ticker) + ')' +
+            '<a href="' + buildTradingViewChartUrl(symbol) + '" target="_blank" rel="noopener" class="company-chip-tv" ' +
+            'title="TradingView\'de ' + escapeHtml(symbol) + ' grafiğini aç">' + tvIconSvg() + '</a>' +
+            '</span>';
         }).join('') + '</div>'
         : '';
       // TradingView "Teknik Görünüm" butonu (2026-08-19, kullanıcı isteği) -
@@ -2909,16 +2965,15 @@
       // src/commodity_report.py > build_weekly_commodity_report_data),
       // KAP/genel haber kartlarındaki (bkz. render_news_card macro'su)
       // AYNI görsel dil/ikonla, SADECE item.trading_view_symbol doluysa
-      // render edilir.
+      // render edilir. Kart içindeki konumu SABİT: "Devamını oku"nun HEMEN
+      // ALTINDA, ilgili şirket etiketlerinden (chipsHtml) ÖNCE (2026-08-19,
+      // kullanıcı isteği - ÖNCEDEN chipsHtml'den SONRA gelip kartlar arası
+      // tutarsız görünüyordu, bkz. commit notu).
       const tvHtml = item.trading_view_symbol
-        ? '<a href="https://www.tradingview.com/symbols/' + encodeURIComponent(item.trading_view_symbol.replace(/:/g, '-')) +
-        '/" target="_blank" rel="noopener" class="tradingview-link commodity-tradingview-link" ' +
+        ? '<a href="' + buildTradingViewChartUrl(item.trading_view_symbol) + '" target="_blank" rel="noopener" ' +
+        'class="tradingview-link commodity-tradingview-link" ' +
         'title="TradingView\'de ' + escapeHtml(item.trading_view_symbol) + ' teknik görünümünü aç">' +
-        '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">' +
-        '<rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor"/>' +
-        '<rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor"/>' +
-        '<rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor"/>' +
-        '</svg>Teknik Görünüm ↗</a>'
+        tvIconSvg() + 'Teknik Görünüm ↗</a>'
         : '';
       __commodityRegistry[item.symbol] = item;
       return '<div class="commodity-card">' +
@@ -2931,8 +2986,8 @@
         '<div class="commodity-price">' + item.last_close + ' ' + escapeHtml(item.unit) + ' (haftalık ' + sign + item.abs_change + ')</div>' +
         sparklineSvg +
         analysisHtml +
-        chipsHtml +
         tvHtml +
+        chipsHtml +
         '</div>';
     }
 
