@@ -11,24 +11,34 @@
        listesi artık otomatik yenilenmiyor (yalnızca manuel sayfa yenileme
        veya filtre değiştirme ile güncellenir) - bu kasıtlı bir değiş tokuş. -->
   <title>Finansal Haber Dashboard</title>
-  <!-- Font (2026-07): Bloomberg HT'nin serif başlık + sistem-sans gövde
-       ikilisinden BİLİNÇLİ olarak uzaklaşmak için (bkz. kullanıcı isteği)
-       Google Fonts'tan Space Grotesk (başlıklar) + Inter (gövde) yüklenir -
-       ikisi de ücretsiz/açık lisanslı (SIL Open Font License). CDN
-       erişilemezse (ör. ağ engeli) `--font-heading`/`--font-sans`
-       değişkenlerindeki sistem fontu fallback'leri devreye girer, sayfa
-       KIRILMAZ. `display=swap` FOUT'u (görünmez metin yanıp sönmesini)
-       önler - font yüklenene kadar sistem fontuyla gösterilip sonra
-       değişir. -->
+  <!-- Font (2026-08-19, kullanıcı geri bildirimi: "Space Grotesk +
+       Inter kombinasyonu çok yaygın bir 'AI ile üretilmiş site' kalıbı,
+       gerçek bir finans/haber sitesi - Bloomberg/Reuters/FT/WSJ - gibi
+       editöryel bir his versin"). ÖNCEKİ (2026-07) tercih BİLİNÇLİ OLARAK
+       Bloomberg HT'nin serif başlık + sistem-sans gövde ikilisinden
+       uzaklaşmıştı - kullanıcı bu turda TAM TERSİNİ istedi, bu yüzden
+       geometrik sans-serif (Space Grotesk, "tech/startup" hissi veren bir
+       kalıp) YERİNE editöryel bir SERİF başlık fontuna (Source Serif 4)
+       dönüldü - gövde Inter olarak KALDI (zaten temiz/humanist bir sans,
+       serif başlıklarla klasik bir editöryel eşleşme - NYT'nin
+       Cheltenham/Imperial ikilisiyle AYNI mantık). İkisi de ücretsiz/açık
+       lisanslı (SIL Open Font License). CDN erişilemezse (ör. ağ engeli)
+       `--font-heading`/`--font-sans` değişkenlerindeki sistem fontu
+       fallback'leri (serif için Georgia/Times New Roman) devreye girer,
+       sayfa KIRILMAZ. `display=swap` FOUT'u (görünmez metin yanıp
+       sönmesini) önler - font yüklenene kadar sistem fontuyla gösterilip
+       sonra değişir. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- IBM Plex Mono (2026-08 finans tema güncellemesi): fiyat/rozet/skor gibi
        sayısal alanlar için jenerik sistem mono yığını yerine, gerçek tabular
        rakamlı, fintech/terminal araçlarında tanıdık bir mono webfont - CDN
        erişilemezse `--font-mono` içindeki sistem mono fallback'i devreye
-       girer, sayfa KIRILMAZ (Space Grotesk/Inter ile AYNI desen). -->
+       girer, sayfa KIRILMAZ (Source Serif 4/Inter ile AYNI desen). Bu font
+       DEĞİŞMEDİ (2026-08-19, kullanıcı kararı: "sayılar/ticker için mono
+       doğru seçimdi") - sadece başlık fontu değişti. -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap"
     rel="stylesheet">
   <script>
     // Tema tercihini SAYFA BOYANMADAN ÖNCE uygula (FOUC/yanlış-tema
@@ -106,7 +116,11 @@
       --shadow-card-hover: 0 2px 6px rgba(16, 18, 22, 0.09), 0 8px 20px rgba(16, 18, 22, 0.09);
 
       --font-sans: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      --font-heading: 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      /* Space Grotesk (geometrik sans, "tech/AI-generated" hissi) YERİNE
+         editöryel bir serif (2026-08-19, kullanıcı isteği) - fallback
+         zinciri de SERİF (Georgia/Times New Roman), CDN erişilemezse sans
+         bir fallback'e DÜŞMEZ, sayfa yine de "gazete" hissini korur. */
+      --font-heading: 'Source Serif 4', Georgia, 'Times New Roman', serif;
       --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
@@ -539,13 +553,17 @@
       color: var(--text-primary);
     }
 
-    /* Yabancı dildeki başlıkların yanına eklenen Türkçe çevirisi (bkz.
-       src/summarizer.py > title_tr) - ana başlıktan görsel olarak ayrışsın
-       diye normal ağırlık/ikincil renk + italik kullanılır. */
-    .title-tr {
-      font-weight: 400;
-      font-style: italic;
-      color: var(--text-secondary);
+    /* Yabancı dildeki başlıkların Türkçe çevirisi (bkz. src/summarizer.py >
+       title_tr) - 2026-08-19, kullanıcı isteği: ÖNCEDEN orijinal başlığın
+       YANINA parantez içinde, italik/ikincil renkle ekleniyordu - artık
+       ayrı bir SATIRDA, orijinal başlıkla BİREBİR AYNI stilde (font ailesi/
+       boyutu/ağırlığı ebeveynden - .card-title veya .original-title'dan -
+       DEĞİŞTİRİLMEDEN miras alınır) gösteriliyor, sanki iki ayrı başlık
+       satırıymış gibi. `display: block` tek başına satır atlatmaya yeter -
+       kasıtlı olarak font-weight/style/color OVERRIDE EDİLMEZ. */
+    .title-tr-line {
+      display: block;
+      margin-top: 0.2rem;
     }
 
     .card-meta {
@@ -2321,7 +2339,7 @@
                short_summary hiç dolmadığından bu blok o kartları
                ETKİLEMEZ - eski davranış (r.title) aynen korunur. #}
             <h2 class="card-title">{% if r.short_summary %}{{ r.short_summary }}{% else %}{{ r.title }}{% if
-              r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}{% endif %}</h2>
+              r.title_tr %}<span class="title-tr-line">{{ r.title_tr }}</span>{% endif %}{% endif %}</h2>
             <div class="card-meta">
               <span>{{ r.published_at }}</span>
               <span class="meta-divider">|</span>
@@ -2396,8 +2414,8 @@
 
       <div class="card-body">
         {% if r.short_summary %}
-        <div class="original-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr
-            }})</span>{% endif %}</div>
+        <div class="original-title">{{ r.title }}{% if r.title_tr %}<span class="title-tr-line">{{ r.title_tr
+            }}</span>{% endif %}</div>
         {% endif %}
 
         {% if r.importance_reason %}
