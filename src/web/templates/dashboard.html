@@ -1286,17 +1286,20 @@
        sınıf adları TradingView'in KENDİ script'inin BEKLEDİĞİ isimler
        (bkz. resmi embed kodu), DEĞİŞTİRİLEMEZ. Yükseklik sabit (widget
        "autosize" genişlikte tam, yükseklikte konteynerin yüksekliğini
-       doldurur) - masaüstünde sağ sütundaki panellerle (Piyasa Duygusu +
-       Trend + Piyasa Özeti + Ekonomik Takvim) kabaca aynı toplam yüksekliğe
-       gelecek şekilde, mobilde daha kısa (bkz. altındaki media query). */
+       doldurur). 520px -> 640px (2026-08-19, kullanıcı geri bildirimi:
+       "grafik alanı dar/sıkışık görünüyor") - TradingView'in KENDİ widget
+       oluşturucusundaki varsayılan önizleme boyutu da 610px yükseklik
+       kullanıyor (bkz. tradingview.com/widget/advanced-chart/), 640px
+       kart genişliğine (home-main sütunu ~2fr) göre daha ferah/orantılı
+       bir en-boy oranı verir. Mobilde 380px -> 420px, aynı gerekçeyle. */
     .tradingview-widget-container {
-      height: 520px;
+      height: 640px;
       width: 100%;
     }
 
     @media (max-width: 900px) {
       .tradingview-widget-container {
-        height: 380px;
+        height: 420px;
       }
     }
 
@@ -2611,9 +2614,19 @@
              lazy-load: script SADECE bu kart görünür alana girdiğinde
              eklenir (bkz. IntersectionObserver > initHomeTvWidgetLazyLoad). -->
         <div class="tv-widget-card" id="home-tv-widget-card">
-          <div class="market-summary-title">TEKNİK GÖRÜNÜM · USD/TRY</div>
+          <div class="market-summary-title" id="home-tv-widget-title">TEKNİK GÖRÜNÜM · USD/TRY</div>
+          <!-- ".tradingview-widget-container__widget"'a style="height:calc(100% -
+               32px)" ve altına ".tradingview-widget-copyright" (2026-08-19,
+               kullanıcı geri bildirimi: "widget dar/sıkışık görünüyor") -
+               TradingView'in KENDİ resmi embed kodu (bkz. widget-docs)
+               BİREBİR bu yapıyı kullanıyor, eksik bırakılınca iframe
+               yükseklik zincirinde (CSS: height:100% tanımsız bir üst
+               öğeden miras ALINAMAZ) TARAYICIDA ÖLÇÜLEREK bulundu: iframe
+               640px'lik konteynerin SADECE 150px'ini dolduruyordu - 32px'lik
+               pay TradingView'in "by TradingView" atıf çubuğu için. -->
           <div class="tradingview-widget-container" id="home-tv-widget-container">
-            <div class="tradingview-widget-container__widget"></div>
+            <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
+            <div class="tradingview-widget-copyright"></div>
           </div>
         </div>
       </section>
@@ -2941,13 +2954,34 @@
     // gerek yok, TradingView'in kendi widget'ı bunu sağlıyor).
     let _homeTvWidgetLoaded = false;
 
+    // Widget'ın o an gösterdiği sembol (2026-08-19, kullanıcı isteği: Piyasa
+    // Özeti satırlarına tıklayınca widget'ın sembolü değişsin) - varsayılan
+    // "BIST:XU100" DEĞİL (kullanıcı isteği BIST 100 idi), ANCAK GERÇEK bir
+    // izole testle VE TradingView'in KENDİ widget yapılandırma/önizleme
+    // sayfasında ("This symbol is only available on TradingView") İKİ KEZ
+    // doğrulandı: TradingView'in ÜCRETSİZ embed widget'ı HİÇBİR BIST
+    // sembolünü desteklemiyor (ne XU100 endeksi ne THYAO/GARAN gibi tekil
+    // hisseler) - "Bu sembol mevcut değil" hatası veriyor. Bu widget'ın
+    // kendi tarafımızdaki bir hata DEĞİL, TradingView'in kendi web sitesinde
+    // (tradingview.com/chart) BIST sembolleri GERÇEKTEN çalışırken, üçüncü
+    // parti sitelere GÖMÜLEBİLEN ücretsiz widget'ta BIST verisi lisanslı
+    // DEĞİL (aynı NASDAQ:AAPL/FX:EURUSD gibi sembollerin sorunsuz çalıştığı
+    // GERÇEK testle doğrulandı - bkz. commit notu). En yakın Türkiye-ilişkili
+    // VE gerçekten çalışan alternatif olarak USD/TRY seçildi.
+    let _homeTvWidgetSymbol = 'FX:USDTRY';
+
     function loadHomeTvWidget() {
       const container = document.getElementById('home-tv-widget-container');
       if (!container) return;
       const widgetDiv = container.querySelector('.tradingview-widget-container__widget');
       if (!widgetDiv) return;
-      // Tema değişince yeniden çağrıldığında ÖNCEKİ script/iframe'i temizle
-      // (widget kendi kendini birden fazla kez eklemesin diye).
+      // Tema/sembol değişince yeniden çağrıldığında ÖNCEKİ script/iframe'i
+      // temizle (widget kendi kendini birden fazla kez eklemesin diye) -
+      // TradingView'in ücretsiz embed widget'ının sembolü SONRADAN canlı
+      // değiştirmesi için bir postMessage/JS API'si YOK (bkz. resmi widget
+      // dokümantasyonu, 2026-08-19 araştırıldı) - script'i yeni `symbol`
+      // değeriyle YENİDEN eklemek tek/en temiz yöntem (tema değişiminde
+      // ZATEN kullanılan AYNI desen).
       widgetDiv.innerHTML = '';
 
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -2964,18 +2998,7 @@
         locale: 'tr',
         save_image: true,
         style: '1',
-        // "BIST:XU100" DEĞİL (2026-08-19) - kullanıcı isteği BIST 100 idi,
-        // ANCAK GERÇEK bir izole testle doğrulandı: TradingView'in ÜCRETSİZ
-        // embed widget'ı HİÇBİR BIST sembolünü desteklemiyor (ne XU100
-        // endeksi ne THYAO/GARAN gibi tekil hisseler) - "Bu sembol mevcut
-        // değil" hatası veriyor. Bu widget'ın kendi tarafımızdaki bir hata
-        // DEĞİL, TradingView'in kendi web sitesinde (tradingview.com/chart)
-        // BIST sembolleri GERÇEKTEN çalışırken, üçüncü parti sitelere
-        // GÖMÜLEBİLEN ücretsiz widget'ta BIST verisi lisanslı DEĞİL (aynı
-        // NASDAQ:AAPL/FX:EURUSD gibi sembollerin sorunsuz çalıştığı GERÇEK
-        // testle doğrulandı - bkz. commit notu). En yakın Türkiye-ilişkili
-        // VE gerçekten çalışan alternatif olarak USD/TRY seçildi.
-        symbol: 'FX:USDTRY',
+        symbol: _homeTvWidgetSymbol,
         theme: isDark ? 'dark' : 'light',
         timezone: 'Etc/UTC',
         backgroundColor: isDark ? '#0f0f0f' : '#ffffff',
@@ -2993,6 +3016,29 @@
       script.async = true;
       script.innerHTML = JSON.stringify(config);
       widgetDiv.appendChild(script);
+    }
+
+    // Piyasa Özeti satırına tıklayınca çağrılır (2026-08-19, kullanıcı
+    // isteği: ÖNCEDEN yeni sekmede TradingView.com açılıyordu - artık
+    // yerine gömülü widget'ın sembolü DEĞİŞİYOR + sayfa o bölüme smooth
+    // scroll ile kayıyor). `label`, widget kartının başlığında gösterilir
+    // (ör. "TEKNİK GÖRÜNÜM · USD/TRY").
+    function setHomeTvWidgetSymbol(symbol, label) {
+      _homeTvWidgetSymbol = symbol;
+      const titleEl = document.getElementById('home-tv-widget-title');
+      if (titleEl) titleEl.textContent = 'TEKNİK GÖRÜNÜM · ' + label;
+
+      const card = document.getElementById('home-tv-widget-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // Widget henüz hiç yüklenmediyse (kullanıcı sayfayı yeni açtı, lazy-load
+      // tetiklenmedi) DOĞRUDAN yükle - tıklama zaten "bunu görmek istiyorum"
+      // niyetini gösteriyor, IntersectionObserver'ın scroll'un BİTMESİNİ
+      // beklemesine gerek yok. Observer YİNE DE bağlı kalır ama
+      // _homeTvWidgetLoaded=true olduğundan tekrar tetiklenmez (bkz.
+      // initHomeTvWidgetLazyLoad).
+      _homeTvWidgetLoaded = true;
+      loadHomeTvWidget();
     }
 
     // Lazy-load (2026-08-19, kullanıcı isteği: "sayfa yüklenme hızını fazla
@@ -3755,26 +3801,47 @@
     // MARKET_SYMBOLS, /api/market-data'nın döndürdüğü item.symbol) AYNI
     // anahtar - 12 enstrüman sabit/sınırlı olduğundan (KAP/genel haberlerin
     // AKSİNE) LLM'e SORULMAZ, emtia eşlemesiyle (bkz.
-    // src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS) AYNI desen. HER
-    // sembol GERÇEK bir TradingView sayfası ziyaretiyle (2026-08-19)
-    // doğrulandı - fiyatlar üstteki piyasa şeridiyle EŞLEŞTİĞİ görülerek
-    // teyit edildi (ör. "TVC:UKOIL" TradingView'in kendi sembol arama
-    // API'sinde 404 dönmesine RAĞMEN gerçek grafik sayfasında doğru
-    // Brent verisiyle çalışıyor - bu yüzden doğrulama arama API'si YERİNE
-    // doğrudan sayfa ziyaretiyle yapıldı, bkz. commit notu).
+    // src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS) AYNI desen.
+    //
+    // 2026-08-19 GÜNCELLEMESİ - ÖNEMLİ: Bu satırlar ARTIK yeni sekmede
+    // tradingview.com AÇMIYOR (bkz. setHomeTvWidgetSymbol), SAYFAYA GÖMÜLÜ
+    // widget'ın sembolünü değiştiriyor. Bu İKİ bağlam FARKLI lisans
+    // kısıtlarına tabi - "tradingview.com/chart" sayfası bir sembolü
+    // GÖSTEREBİLİR ama AYNI sembol ücretsiz EMBED widget'ta "Bu sembol
+    // mevcut değil" verebilir (GERÇEK testle bulundu, BIST:XU100 örneğinde
+    // olduğu gibi - hem izole bir test dosyasıyla hem TradingView'in KENDİ
+    // widget önizleme sayfasında doğrulandı). Bu yüzden aşağıdaki semboller
+    // önceki turdaki (tradingview.com'da doğrulanmış) sembollerden FARKLI -
+    // her biri DOĞRUDAN BU EMBED WIDGET'TA çalıştığı doğrulanarak seçildi:
+    //   - VIX/S&P 500/NASDAQ/Dow Jones/FTSE 100/Nikkei 225: orijinal
+    //     "otoriter" borsa sembolleri (CBOE:VIX, SP:SPX, NASDAQ:IXIC,
+    //     DJ:DJI, TVC:UKX, TVC:NI225) embed widget'ta ÇALIŞMIYOR - YERİNE
+    //     CFD sağlayıcı (Capital.com/FOREXCOM) sembolleri kullanılıyor,
+    //     fiyatları kendi ticker'ımızla KARŞILAŞTIRILIP eşleştiği doğrulandı
+    //     (ör. CAPITALCOM:US500 ≈ 7.699 vs bizim S&P 500 ≈ 7.691).
+    //     İSTİSNA: NASDAQ için CAPITALCOM:US100 kullanılıyor - bu NASDAQ-100
+    //     (bizim ^IXIC/Composite'imizden FARKLI, daha yüksek bir sayı,
+    //     ~29,5K vs ~26,3K) çünkü Composite'in embed widget'ta ÇALIŞAN bir
+    //     karşılığı YOK - en yakın/tek çalışan NASDAQ-ilişkili alternatif.
+    //   - BIST 100: HİÇBİR format (BIST:/TVC:/FOREXCOM:/CAPITALCOM: denendi)
+    //     embed widget'ta ÇALIŞMIYOR - TradingView'in KENDİ widget önizleme
+    //     sayfasında da AYNI "Bu sembol mevcut değil" hatası çıktı (bkz.
+    //     commit notu). Yine de tıklanabilir bırakıldı (widget'ın KENDİ
+    //     "başka bir sembol dene" mesajını gösterir, sayfa KIRILMAZ) - satırı
+    //     tıklanamaz yapmak yerine dürüst bir sınırlama olarak bırakıldı.
     const _MARKET_SUMMARY_TV_SYMBOLS = {
       'TRY=X': 'FX:USDTRY',
       'EURTRY=X': 'FX:EURTRY',
       'GC=F': 'TVC:GOLD',
       'BZ=F': 'TVC:UKOIL',
-      '^VIX': 'CBOE:VIX',
+      '^VIX': 'CAPITALCOM:VIX',
       'XU100.IS': 'BIST:XU100',
-      '^GSPC': 'SP:SPX',
-      '^IXIC': 'NASDAQ:IXIC',
-      '^DJI': 'DJ:DJI',
+      '^GSPC': 'CAPITALCOM:US500',
+      '^IXIC': 'CAPITALCOM:US100',
+      '^DJI': 'FOREXCOM:DJI',
       '^GDAXI': 'XETR:DAX',
-      '^FTSE': 'TVC:UKX',
-      '^N225': 'TVC:NI225',
+      '^FTSE': 'FOREXCOM:UKXGBP',
+      '^N225': 'FOREXCOM:JPXJPY',
     };
 
     // Piyasa Özeti tablosu (2026-08-18) - ticker'ı besleyen AYNI
@@ -3796,10 +3863,14 @@
           var up = item.change_pct >= 0;
           var cls = up ? 'ticker-up' : 'ticker-down';
           var priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+          // 2026-08-19 (kullanıcı isteği): ÖNCEDEN tıklayınca yeni sekmede
+          // TradingView.com açılıyordu - artık YERİNE gömülü widget'ın
+          // (bkz. .tv-widget-card > setHomeTvWidgetSymbol) sembolü değişiyor
+          // ve sayfa o bölüme smooth scroll ile kayıyor.
           var tvSymbol = _MARKET_SUMMARY_TV_SYMBOLS[item.symbol];
           var rowAttrs = tvSymbol
-            ? ' class="market-summary-row-clickable" onclick="window.open(\'' + buildTradingViewChartUrl(tvSymbol) +
-            '\', \'_blank\', \'noopener\')" title="TradingView\'de ' + tvSymbol + ' teknik görünümünü aç"'
+            ? ' class="market-summary-row-clickable" onclick="setHomeTvWidgetSymbol(\'' + tvSymbol + '\', \'' +
+            item.label + '\')" title="Teknik görünümü aç: ' + item.label + '"'
             : '';
           return '<tr' + rowAttrs + '><td>' + item.label + '</td><td>' + priceStr + '</td><td class="' + cls + '">' +
             (up ? '▲' : '▼') + ' %' + Math.abs(item.change_pct).toFixed(2) + '</td></tr>';
