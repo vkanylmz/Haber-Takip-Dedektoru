@@ -1468,8 +1468,21 @@
     /* Ekonomik Takvim gün-bazlı gezinme (2026-08-19, kullanıcı isteği) -
        üstte gün sekmeleri (.kap-category-chip ile aynı görsel dil) + ‹›
        ok butonları, altta SADECE aktif günün olayları (.calendar-day-panel,
-       diğerleri display:none - bkz. selectCalendarDay()). Mobilde sekme
-       satırı taşmasın diye yatay scroll (overflow-x: auto). */
+       diğerleri display:none - bkz. selectCalendarDay()).
+
+       2026-08-19 (kullanıcı isteği: "kaydırma çubuğu çirkin duruyor, kaldır")
+       - ÖNCEDEN 7 sekme tek satırda, taşınca overflow-x:auto ile YATAY
+       KAYDIRMA ÇUBUĞU vardı. Kullanıcı bunu ÇİRKİN buldu ve şunu istedi:
+       (1) scrollbar YOK, (2) aktif gün her zaman sabit/ortada bir konumda,
+       (3) gezinme SADECE ok butonlarıyla. Bunun için AYNI ANDA SADECE 3
+       sekme (önceki + AKTİF + sonraki) gösterilen bir "carousel" düzenine
+       geçildi - diğer 4 sekme JS ile display:none yapılır (bkz.
+       selectCalendarDay() > calendar-day-tab-visible), overflow tamamen
+       KAPALI olduğundan scrollbar hiç oluşmaz, taşma da mümkün değil.
+       Sınırlarda (Bugün'de "önceki" veya son günde "sonraki" yokken)
+       aktif sekmenin GERÇEKTEN ortada kalması için sabit genişlikli,
+       görünmez .calendar-day-tab-placeholder kutuları kullanılır - yoksa
+       aktif sekme sınırlarda yana kayardı. */
     .calendar-day-nav {
       display: flex;
       align-items: center;
@@ -1479,15 +1492,15 @@
 
     .calendar-day-tabs {
       display: flex;
+      align-items: center;
+      justify-content: center;
       gap: 0.35rem;
-      overflow-x: auto;
-      scrollbar-width: thin;
+      overflow: hidden;
       flex: 1;
-      padding-bottom: 0.2rem;
     }
 
     .calendar-day-tab {
-      display: inline-flex;
+      display: none;
       align-items: center;
       justify-content: center;
       padding: 0.3rem 0.7rem;
@@ -1500,6 +1513,19 @@
       white-space: nowrap;
       cursor: pointer;
       flex-shrink: 0;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .calendar-day-tab.calendar-day-tab-visible {
+      display: inline-flex;
+    }
+
+    /* Aktifin iki yanındaki "önizleme" sekmeleri - küçük/soluk, tıklanınca
+       da doğrudan o güne geçer (ok butonuyla AYNI sonucu üretir, tekrar
+       elle kaydırmaya gerek KALMAZ). */
+    .calendar-day-tab.calendar-day-tab-adjacent {
+      opacity: 0.55;
+      transform: scale(0.92);
     }
 
     .calendar-day-tab:hover {
@@ -1511,6 +1537,21 @@
       background: var(--accent);
       border-color: var(--accent);
       color: #fff;
+      opacity: 1;
+      transform: none;
+    }
+
+    /* Sınırda (ilk/son gün) eksik olan komşu sekmenin yerini tutan
+       görünmez kutu - aktif sekme YİNE DE geometrik olarak ortada kalsın
+       diye (bkz. yukarıdaki not). */
+    .calendar-day-tab-placeholder {
+      display: none;
+      width: 4.4rem;
+      flex-shrink: 0;
+    }
+
+    .calendar-day-tab-placeholder.calendar-day-tab-visible {
+      display: inline-flex;
     }
 
     .calendar-day-nav-btn {
@@ -2800,17 +2841,29 @@
              .calendar-day-panel önceden SUNUCU tarafında render edilir,
              JS (selectCalendarDay) sadece görünürlüğü değiştirir - AJAX
              YOK, diğer statik panellerle tutarlı. Varsayılan aktif: ilk
-             panel ("Bugün", bkz. calendar_days[0]). -->
+             panel ("Bugün", bkz. calendar_days[0]).
+
+             2026-08-19 (kullanıcı isteği: "scrollbar çirkin, kaldır") - AYNI
+             ANDA sadece 3 sekme (önceki + AKTİF + sonraki) görünür, aktif
+             HER ZAMAN ortada sabit kalır, kaydırma/sürükleme YOK, gezinme
+             SADECE ok butonları (veya görünen komşu sekmeye tıklamak) ile.
+             data-idx: gerçek sekmeler 0-6, sınırlardaki boş yer tutucular
+             -1/7 (bkz. .calendar-day-tab-placeholder, yukarıdaki CSS notu). -->
         <div class="calendar-placeholder-card">
           <div class="market-summary-title">YAKLAŞAN EKONOMİK TAKVİM</div>
           <div class="calendar-day-nav">
             <button type="button" class="calendar-day-nav-btn" id="calendar-day-prev"
               onclick="calendarDayStep(-1)" aria-label="Önceki gün">‹</button>
             <div class="calendar-day-tabs" id="calendar-day-tabs">
+              <span class="calendar-day-tab-placeholder calendar-day-tab-visible" data-idx="-1"
+                aria-hidden="true"></span>
               {% for d in calendar_days %}
-              <button type="button" class="calendar-day-tab{% if loop.first %} active{% endif %}"
-                data-date="{{ d.date }}" onclick="selectCalendarDay('{{ d.date }}')">{{ d.label }}</button>
+              <button type="button"
+                class="calendar-day-tab{% if loop.first %} active calendar-day-tab-visible{% elif loop.index0 == 1 %} calendar-day-tab-adjacent calendar-day-tab-visible{% endif %}"
+                data-date="{{ d.date }}" data-idx="{{ loop.index0 }}"
+                onclick="selectCalendarDay('{{ d.date }}')">{{ d.label }}</button>
               {% endfor %}
+              <span class="calendar-day-tab-placeholder" data-idx="7" aria-hidden="true"></span>
             </div>
             <button type="button" class="calendar-day-nav-btn" id="calendar-day-next"
               onclick="calendarDayStep(1)" aria-label="Sonraki gün">›</button>
@@ -3161,14 +3214,29 @@
     // dashboard.html > .calendar-day-panel, src/web/app.py >
     // _build_calendar_days), bu fonksiyon SADECE görünürlüğü ve aktif sekme
     // stilini değiştirir - AJAX/yeniden yükleme YOK.
+    //
+    // 2026-08-19 (kullanıcı isteği: "scrollbar çirkin, kaldır") - AYNI ANDA
+    // sadece 3 öğe görünür kalır: aktif gün + hemen öncesi + hemen sonrası
+    // (bkz. data-idx, -1/7 = sınırlardaki boş yer tutucular). Böylece aktif
+    // sekme HER ZAMAN geometrik olarak ortada kalır ve satır asla taşmaz -
+    // scrollbar'a hiç gerek KALMAZ (overflow zaten mümkün değil).
     function selectCalendarDay(dateIso) {
+      const allTabs = Array.from(document.querySelectorAll('.calendar-day-tab'));
+      const activeIndex = allTabs.findIndex(function (t) { return t.getAttribute('data-date') === dateIso; });
+      if (activeIndex === -1) return;
+
       document.querySelectorAll('.calendar-day-panel').forEach(function (panel) {
         panel.classList.toggle('active', panel.getAttribute('data-date') === dateIso);
       });
-      document.querySelectorAll('.calendar-day-tab').forEach(function (tab) {
-        const isActive = tab.getAttribute('data-date') === dateIso;
-        tab.classList.toggle('active', isActive);
-        if (isActive) tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
+      document.querySelectorAll('#calendar-day-tabs [data-idx]').forEach(function (el) {
+        const idx = parseInt(el.getAttribute('data-idx'), 10);
+        const visible = idx >= activeIndex - 1 && idx <= activeIndex + 1;
+        el.classList.toggle('calendar-day-tab-visible', visible);
+        if (el.classList.contains('calendar-day-tab')) {
+          el.classList.toggle('active', idx === activeIndex);
+          el.classList.toggle('calendar-day-tab-adjacent', visible && idx !== activeIndex);
+        }
       });
     }
 
