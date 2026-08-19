@@ -90,6 +90,11 @@
       --warn: #c9860a;
       --warn-contrast: #1a1206;
       --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06);
+      /* Haber kartları için (2026-08-19, "liste gibi değil ayrı kartlar
+         gibi görünsün" isteği) --shadow-sm'den daha belirgin bir gölge -
+         kart yığınının arka plandan görsel olarak ayrışması için. */
+      --shadow-card: 0 1px 3px rgba(16, 18, 22, 0.07), 0 4px 12px rgba(16, 18, 22, 0.06);
+      --shadow-card-hover: 0 2px 6px rgba(16, 18, 22, 0.09), 0 8px 20px rgba(16, 18, 22, 0.09);
 
       --font-sans: 'Inter', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
       --font-heading: 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -113,6 +118,8 @@
       --warn: #f5a623;
       --warn-contrast: #14100a;
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.3);
+      --shadow-card-hover: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 22px rgba(0, 0, 0, 0.38);
     }
 
     * {
@@ -410,13 +417,35 @@
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.25rem;
-      box-shadow: var(--shadow-sm);
+      /* Skor rengine göre sol vurgu şeridi (2026-08-19, kullanıcı isteği:
+         "5/5 kırmızı, 4/5 turuncu gibi zaten var, kontrastı güçlendir") -
+         ÖNCEDEN sadece is_highlighted (skor >= eşik) kartlarında sabit 3px
+         kırmızıydı, geri kalan TÜM kartlarda hiç şerit yoktu. Artık HER
+         kartın badge_class'ına göre (bkz. render_news_card macro'su, kart
+         class listesine eklendi) 4 kademeli bir renk/şerit var - aşağıdaki
+         .card.badge-* kuralları renk değerini geçersiz kılar, burası
+         sadece nötr varsayılan/kalınlık. */
+      border-left: 4px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.65rem;
+      box-shadow: var(--shadow-card);
+      transition: box-shadow 0.15s ease;
     }
 
-    .card.highlighted {
-      border-left: 3px solid var(--negative);
+    .card:hover {
+      box-shadow: var(--shadow-card-hover);
+    }
+
+    .card.badge-critical {
+      border-left-color: var(--negative);
+    }
+
+    .card.badge-important {
+      border-left-color: var(--warn);
+    }
+
+    .card.badge-medium {
+      border-left-color: color-mix(in srgb, var(--accent) 45%, var(--border));
     }
 
     /* Kart gövdesi (özet + tüm ikincil bilgiler) VARSAYILAN OLARAK
@@ -495,17 +524,30 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.3rem 0.7rem;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 0.95rem;
+      /* Skor rozeti kartın "en önemli sayısı" - diğer tüm rozet/etiketlerden
+         (ticker/sektör/sentiment) görsel ağırlıkça belirgin şekilde daha
+         büyük olmalı (2026-08-19, kullanıcı isteği: "hepsi aynı küçüklükte,
+         önemli olan daha belirgin olsun"). */
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 1.05rem;
       font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
     }
 
-    .badge-critical {
+    /* NOT: badge_class değerleri (badge-critical/important/medium/low/
+       unknown) artık HEM .badge rozetinde HEM .card'ın kendisinde (sol
+       vurgu şeridi rengi için, bkz. yukarıdaki .card.badge-* kuralları)
+       kullanılıyor - bu yüzden aşağıdaki dolgu/renk kuralları BİLİNÇLİ
+       OLARAK ".badge." ön ekiyle scope'landı (2026-08-19). Scope'suz halde
+       ör. ".badge-important { background: var(--warn) }" .card öğesine de
+       uygulanıp TÜM kartın arka planını turuncuya boyuyordu (gerçek
+       tarayıcı testinde bulunan bug). */
+    .badge.badge-critical {
       background: var(--negative);
       color: #fff;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--negative) 18%, transparent);
     }
 
     /* Kartın "en önemli sayısı" (önem skoru) artık 3 net kademede: kritik
@@ -513,38 +555,48 @@
        outline) - önceden important/medium/low/unknown BİREBİR AYNI nötr chip
        olduğundan eşik geçen bir haberle geçmeyen görsel olarak ayırt
        edilemiyordu (bkz. kullanıcı geri bildirimi, 2026-08). */
-    .badge-important {
+    .badge.badge-important {
       background: var(--warn);
       color: var(--warn-contrast);
     }
 
-    .badge-medium,
-    .badge-low,
-    .badge-unknown {
+    .badge.badge-medium,
+    .badge.badge-low,
+    .badge.badge-unknown {
       background: var(--surface-alt);
       color: var(--text-secondary);
       border: 1px solid var(--border);
     }
 
+    /* Duygu etiketi (Pozitif/Negatif/Nötr) - ÖNCEDEN düz renkli metindi,
+       diğer tüm meta metinlerle (kaynak/tarih/sektör) AYNI görsel ağırlıktaydı.
+       Artık hafif renkli zeminli bir "pill" - skor rozetinden küçük ama
+       ticker/sektör etiketlerinden daha belirgin bir ORTA kademe (2026-08-19,
+       kullanıcı isteği: rozet hiyerarşisi netleşsin). */
     .sentiment {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
-      font-size: 0.78rem;
-      font-weight: 600;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
     }
 
     .sentiment-positive {
       color: var(--positive);
+      background: color-mix(in srgb, var(--positive) 14%, transparent);
     }
 
     .sentiment-negative {
       color: var(--negative);
+      background: color-mix(in srgb, var(--negative) 14%, transparent);
     }
 
     .sentiment-neutral,
     .sentiment-unknown {
       color: var(--text-muted);
+      background: var(--surface-alt);
     }
 
     .reason {
@@ -664,7 +716,9 @@
     .kap-column {
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      /* 1.25rem -> 1.5rem (2026-08-19, kullanıcı isteği: kartlar arası
+         boşluk artsın, "yığın" değil "ayrı kartlar" hissi versin). */
+      gap: 1.5rem;
       /* ÖNCEDEN position: sticky ile sol sütun sayfa başında "yapışık"
          tutuluyordu - ama KAP en fazla 30, sağ sütun ise 100'e kadar kart
          gösterebildiğinden (bkz. app.py > kap_max_items = min(max_items, 30))
@@ -681,7 +735,7 @@
     .general-column {
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      gap: 1.5rem;
       /* grid item'ın minmax(0) OLMADAN taşan içerikle (uzun başlıklar vb.)
          sütunu genişletmesini önler - standart bir CSS grid tuzağı. */
       min-width: 0;
@@ -1291,7 +1345,7 @@
     .home-mixed-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
+      gap: 1.5rem;
       align-items: start;
     }
 
@@ -2063,7 +2117,15 @@
        yüzden alan yapıları zaten özdeş). Her view bloğundan ÖNCE tanımlı
        olmalı (Jinja macro'ları yukarıdan aşağı çalışır). #}
     {% macro render_news_card(r) %}
-    <details class="card {% if r.is_highlighted %}highlighted{% endif %}">
+    {# card class listesine badge_class eklendi (2026-08-19, kullanıcı
+       isteği: sol vurgu şeridi skor rengine göre netleşsin) - bkz.
+       yukarıdaki .card.badge-critical/.badge-important/.badge-medium
+       CSS kuralları. is_highlighted artık bir CSS sınıfı üretmiyor (eski
+       sabit-kırmızı "highlighted" şeridi badge_class tabanlı renklendirmeyle
+       DEĞİŞTİRİLDİ) ama alan kendisi (bkz. app.py > _record_to_view) başka
+       yerlerde (ör. detayli_inceleme.html) hâlâ kullanıldığından modelden
+       KALDIRILMADI. #}
+    <details class="card {{ r.badge_class }}">
       <summary class="card-top">
         <div>
           {# short_summary (2026-08-18, kullanıcı isteği): SADECE KAP
