@@ -110,6 +110,13 @@ class NewsGroup:
     # GERÇEKTEN var olan bir sembol olduğunu garanti EDEMEZ - bu yüzden
     # prompt'ta "emin değilsen boş bırak" talimatı var).
     trading_view_symbol: str | None = None
+    # TradingView sembol doğrulaması (2026-08-19, kullanıcı geri bildirimi:
+    # bazı KAP kayıtlarında "Teknik Görünüm" butonu TradingView'de
+    # GERÇEKTEN var olmayan bir sembole gidiyordu) - bkz. src/tradingview.py >
+    # validate_symbol. None = henüz doğrulanamadı (ağ hatası/zaman aşımı,
+    # bkz. o modülün docstring'i) - dashboard bu durumda butonu GÖSTERMEZ
+    # ama kaydı kalıcı olarak "geçersiz" işaretlemez.
+    trading_view_symbol_valid: bool | None = None
 
     @property
     def representative(self) -> NewsItem:

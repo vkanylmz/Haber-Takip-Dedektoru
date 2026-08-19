@@ -477,7 +477,17 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "short_summary": record.short_summary,
         "image_url": record.image_url,
         "trading_view_symbol": record.trading_view_symbol,
-        "tradingview_url": _build_tradingview_url(record.trading_view_symbol),
+        # SADECE trading_view_symbol_valid GERÇEKTEN True ise URL üretilir
+        # (2026-08-19, kullanıcı geri bildirimi: bazı KAP kayıtlarında
+        # buton TradingView'de GERÇEKTEN var olmayan bir sembole gidiyordu -
+        # bkz. src/tradingview.py > validate_symbol). None (henüz
+        # doğrulanamadı) veya False (doğrulandı ve GERÇEKTEN yok) durumunda
+        # buton dashboard'da HİÇ render edilmez (bkz. templates/dashboard.html
+        # > render_news_card macro'su, r.tradingview_url kontrolü) - ama
+        # `trading_view_symbol` alanının kendisi (ör. PARİTE rozeti için)
+        # HER ZAMAN döner, doğrulukla İLGİSİZ.
+        "tradingview_url": _build_tradingview_url(record.trading_view_symbol)
+        if record.trading_view_symbol_valid else None,
     }
 
 

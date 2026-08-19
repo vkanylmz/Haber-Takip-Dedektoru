@@ -31,6 +31,7 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from src.models import NewsGroup
+from src.tradingview import find_valid_bist_symbol, validate_symbol as validate_tradingview_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -805,6 +806,7 @@ class Summarizer:
             group.kap_category = None
             group.short_summary = None
             group.trading_view_symbol = None
+            group.trading_view_symbol_valid = None
             return
 
         group.summary = str(parsed.get("summary", "")).strip()
@@ -861,15 +863,32 @@ class Summarizer:
             #    alanından deterministik türetilir, LLM'in tahminini EZER -
             #    KAP her zaman Borsa İstanbul'da işlem gören bir şirketle
             #    ilgilidir ve TradingView BIST sembollerini HER ZAMAN
-            #    "BIST:TICKER" formatında kullanır (gerçek TradingView sembol
-            #    sayfalarıyla doğrulandı) - bu yüzden LLM'e güvenip yanlış \
-            #    borsa/format riski almaya gerek yok (bkz. _kap_primary_ticker_code,
-            #    şirket ticker'ı için zaten aynı otoriter kaynak kullanılıyor).
-            kap_primary_ticker = _kap_primary_ticker_code(group.representative.kap_stock_codes)
-            if kap_primary_ticker:
-                group.trading_view_symbol = f"BIST:{kap_primary_ticker}"
+            #    "BIST:TICKER" formatında kullanır - bu yüzden LLM'e güvenip
+            #    yanlış borsa/format riski almaya gerek yok (bkz.
+            #    _kap_primary_ticker_code, şirket ticker'ı için zaten aynı
+            #    otoriter kaynak kullanılıyor).
+            #    2026-08-19 (kullanıcı geri bildirimi): KAP'ın stockCodes'taki
+            #    İLK kod TradingView'de her zaman GERÇEKTEN var OLMUYORDU
+            #    (ör. "YKB" yok ama AYNI kaydın listesindeki "YKBNK" var,
+            #    GERÇEK testle bulundu - ~%32 sembol TradingView'de yoktu).
+            #    find_valid_bist_symbol artık TÜM kodları SIRAYLA dener, İLK
+            #    GEÇERLİ olanı kullanır (bkz. src/tradingview.py) - bu hem
+            #    hatalı kod seçimini düzeltir hem gerçekten var olmayan
+            #    sembollerde valid=False/None bırakıp butonun dashboard'da
+            #    HİÇ gösterilmemesini sağlar (bkz. src/web/app.py).
+            symbol, valid = find_valid_bist_symbol(group.representative.kap_stock_codes)
+            if symbol:
+                group.trading_view_symbol = symbol
+                group.trading_view_symbol_valid = valid
         else:
             group.short_summary = None
+            # Genel (KAP-dışı) haberlerde trading_view_symbol LLM'in
+            # tahminidir (bkz. yukarıda _parse_trading_view_symbol) - KAP'ın
+            # AKSİNE denenecek "alternatif kod" listesi YOK (LLM tek bir
+            # tahmin verir), bu yüzden SADECE o tek sembol doğrulanır
+            # (2026-08-19, kullanıcı geri bildirimi - bkz. src/tradingview.py).
+            if group.trading_view_symbol:
+                group.trading_view_symbol_valid = validate_tradingview_symbol(group.trading_view_symbol)
 
     def _current_quota_day(self) -> str:
         return datetime.now(_QUOTA_RESET_TZ).strftime("%Y-%m-%d")
@@ -1325,3 +1344,4 @@ class Summarizer:
         group.title_tr = None
         group.kap_category = None
         group.trading_view_symbol = None
+        group.trading_view_symbol_valid = None

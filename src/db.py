@@ -128,6 +128,13 @@ class NewsRecord(Base):
     # templates/dashboard.html), boşsa buton HİÇ render edilmez.
     trading_view_symbol = Column(String(64), nullable=True)
 
+    # TradingView sembol doğrulaması (2026-08-19, kullanıcı geri bildirimi) -
+    # bkz. src/tradingview.py > validate_symbol, src/models.py >
+    # NewsGroup.trading_view_symbol_valid. NULL = henüz doğrulanamadı (ağ
+    # hatası) - dashboard SADECE True olduğunda "Teknik Görünüm" butonunu
+    # gösterir (bkz. src/web/app.py > _record_to_view).
+    trading_view_symbol_valid = Column(Boolean, nullable=True)
+
     # Haber görseli (2026-08-18, kullanıcı isteği) - kaynağın kendi RSS
     # feed'inden (media:content/thumbnail/enclosure, bkz.
     # src/fetchers/rss_fetcher.py > _extract_image_url) veya lisanslı
@@ -611,6 +618,9 @@ def _migrate_add_missing_columns(engine) -> None:
         if "trading_view_symbol" not in existing_columns:
             conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN trading_view_symbol VARCHAR(64)")
             logger.info("Veritabanı migrasyonu: news_records.trading_view_symbol kolonu eklendi.")
+        if "trading_view_symbol_valid" not in existing_columns:
+            conn.exec_driver_sql("ALTER TABLE news_records ADD COLUMN trading_view_symbol_valid BOOLEAN")
+            logger.info("Veritabanı migrasyonu: news_records.trading_view_symbol_valid kolonu eklendi.")
 
         existing_subscriber_columns = {col["name"] for col in inspector.get_columns("subscribers")}
         if "importance_threshold" not in existing_subscriber_columns:
@@ -760,6 +770,7 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
             kap_category=group.kap_category,
             short_summary=group.short_summary,
             trading_view_symbol=group.trading_view_symbol,
+            trading_view_symbol_valid=group.trading_view_symbol_valid,
             image_url=group.image_url or None,
             notified=False,
             first_seen_at=now,
@@ -784,6 +795,14 @@ def upsert_group(session: Session, group: NewsGroup, group_key: str) -> NewsReco
         record.title_tr = group.title_tr or record.title_tr
         record.short_summary = group.short_summary or record.short_summary
         record.trading_view_symbol = group.trading_view_symbol or record.trading_view_symbol
+        # `or` DEĞİL `is not None` kontrolü (2026-08-19) - trading_view_symbol_valid
+        # bir boolean, group.trading_view_symbol_valid=False GEÇERLİ bir
+        # sonuç (sembol doğrulandı ve GERÇEKTEN yok) - `or` kullansaydık
+        # False, Python'da "falsy" olduğundan record'un ESKİ değerine
+        # sessizce düşerdi (GERÇEK bir bug, `short_summary or ...` gibi
+        # diğer satırlarla AYNI kalıbı kopyalarken fark edildi).
+        if group.trading_view_symbol_valid is not None:
+            record.trading_view_symbol_valid = group.trading_view_symbol_valid
         record.image_url = group.image_url or record.image_url
         record.last_seen_at = now
 
