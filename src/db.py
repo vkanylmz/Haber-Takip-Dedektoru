@@ -36,6 +36,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from src.models import NewsGroup
+from src.timezone_utils import TURKEY_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -1209,16 +1210,31 @@ def upsert_economic_calendar_events(events: list[dict[str, Any]]) -> None:
         session.commit()
 
 
-def get_upcoming_calendar_events(limit: int = 8) -> list["EconomicCalendarEvent"]:
+def get_upcoming_calendar_events(days: int = 7, limit: int = 500) -> list["EconomicCalendarEvent"]:
     """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (bkz.
-    src/web/app.py > dashboard()) - şu andan (UTC) itibaren gelecekteki VEYA
-    son 2 saat içinde açıklanmış (yeni açıklanan bir değeri kısa süre daha
-    görünür tutmak için) olayları, zamana göre artan sırayla döner."""
-    since = datetime.now(timezone.utc) - timedelta(hours=2)
+    src/web/app.py > dashboard() > _build_calendar_days) - Türkiye saatiyle
+    BUGÜNÜN BAŞINDAN itibaren önümüzdeki `days` gün içindeki TÜM olayları,
+    zamana göre artan sırayla döner.
+
+    2026-08-19 (kullanıcı isteği: "gün bazlı gezinme" - önceki `limit=8`
+    tasarımı SADECE en yakın birkaç olayı gösteren düz bir liste içindi,
+    artık her gün KENDİ SEKMESİNDE TÜM olaylarını göstermeli). İki değişiklik:
+      1) Alt sınır ARTIK "şu an - 2 saat" DEĞİL, "bugünün Türkiye saatiyle
+         BAŞLANGICI" - "Bugün" sekmesi o günün SABAH olaylarını da (zaten
+         geçmiş olsalar bile) göstermeli, sadece "yaklaşan"ı değil.
+      2) `limit` artık 8 DEĞİL, 500 (7 günlük veri için pratikte hiç
+         dolmayan bir güvenlik tavanı - GERÇEK veri hacmi tek taramada
+         ~100-150 olay, bkz. DB'de gözlemlenen değer) - önceki 8'lik sınır
+         2-3. günden itibaren TÜM olayları sessizce KESİYORDU."""
+    now_turkey = datetime.now(TURKEY_TZ)
+    today_start_turkey = now_turkey.replace(hour=0, minute=0, second=0, microsecond=0)
+    since = today_start_turkey.astimezone(timezone.utc)
+    until = (today_start_turkey + timedelta(days=days)).astimezone(timezone.utc)
     with get_session() as session:
         return (
             session.query(EconomicCalendarEvent)
             .filter(EconomicCalendarEvent.event_time >= since)
+            .filter(EconomicCalendarEvent.event_time < until)
             .order_by(EconomicCalendarEvent.event_time.asc())
             .limit(limit)
             .all()

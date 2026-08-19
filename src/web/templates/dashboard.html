@@ -1465,6 +1465,94 @@
       font-size: 0.76rem;
     }
 
+    /* Ekonomik Takvim gün-bazlı gezinme (2026-08-19, kullanıcı isteği) -
+       üstte gün sekmeleri (.kap-category-chip ile aynı görsel dil) + ‹›
+       ok butonları, altta SADECE aktif günün olayları (.calendar-day-panel,
+       diğerleri display:none - bkz. selectCalendarDay()). Mobilde sekme
+       satırı taşmasın diye yatay scroll (overflow-x: auto). */
+    .calendar-day-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.7rem;
+    }
+
+    .calendar-day-tabs {
+      display: flex;
+      gap: 0.35rem;
+      overflow-x: auto;
+      scrollbar-width: thin;
+      flex: 1;
+      padding-bottom: 0.2rem;
+    }
+
+    .calendar-day-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 0.74rem;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .calendar-day-tab:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .calendar-day-tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .calendar-day-nav-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      flex-shrink: 0;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .calendar-day-nav-btn:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .calendar-day-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .calendar-day-panel {
+      display: none;
+    }
+
+    .calendar-day-panel.active {
+      display: block;
+    }
+
+    .calendar-day-empty {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
     /* Emtia Özeti (Ana Sayfa, kısa önizleme) - .market-summary-card'ın
        tam genişlik hali, başlığın yanında "Tüm Emtiaları Gör" linki. */
     .commodity-summary-card {
@@ -2704,39 +2792,66 @@
              aşamalı: actual_value boşsa "bekleniyor" + previous_value
              gösterilir, açıklanınca (bkz. worker.py > 30sn'lik hassas
              izleme) otomatik dolar (sayfa yeniden yüklendiğinde görünür -
-             canlı/AJAX güncelleme YOK, diğer statik panellerle tutarlı). -->
+             canlı/AJAX güncelleme YOK, diğer statik panellerle tutarlı).
+
+             2026-08-19 (kullanıcı isteği: gün-bazlı gezinme) - artık TEK
+             düz liste yerine gün sekmeleri (bkz. src/web/app.py >
+             _build_calendar_days) + ‹›  ok butonları var. Her gün için bir
+             .calendar-day-panel önceden SUNUCU tarafında render edilir,
+             JS (selectCalendarDay) sadece görünürlüğü değiştirir - AJAX
+             YOK, diğer statik panellerle tutarlı. Varsayılan aktif: ilk
+             panel ("Bugün", bkz. calendar_days[0]). -->
         <div class="calendar-placeholder-card">
           <div class="market-summary-title">YAKLAŞAN EKONOMİK TAKVİM</div>
-          {% if upcoming_calendar_events %}
-          <div class="calendar-event-list">
-            {% for e in upcoming_calendar_events %}
-            <div class="calendar-event-row">
-              <div class="calendar-event-time">{{ e.time }}</div>
-              <div class="calendar-event-main">
-                <span class="calendar-event-country" title="{{ e.country_name }}">{{ e.country_code }}</span>
-                <span class="calendar-event-stars" title="Önem: {{ e.importance }}/3">{{ '★' * e.importance }}{{ '☆'
-                  * (3 - e.importance) }}</span>
-                <span class="calendar-event-name">{{ e.event_name }}{% if e.reference_period %} <span
-                    class="calendar-event-ref">({{ e.reference_period }})</span>{% endif %}</span>
-              </div>
-              <div class="calendar-event-value">
-                {% if e.is_released %}
-                <span class="calendar-event-actual">{{ e.actual_value }}</span>
-                {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
-                  }}</span>{% endif %}
-                {% else %}
-                <span class="calendar-event-pending">bekleniyor</span>
-                {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
-                  }}</span>{% endif %}
-                {% endif %}
-              </div>
+          <div class="calendar-day-nav">
+            <button type="button" class="calendar-day-nav-btn" id="calendar-day-prev"
+              onclick="calendarDayStep(-1)" aria-label="Önceki gün">‹</button>
+            <div class="calendar-day-tabs" id="calendar-day-tabs">
+              {% for d in calendar_days %}
+              <button type="button" class="calendar-day-tab{% if loop.first %} active{% endif %}"
+                data-date="{{ d.date }}" onclick="selectCalendarDay('{{ d.date }}')">{{ d.label }}</button>
+              {% endfor %}
             </div>
-            {% endfor %}
+            <button type="button" class="calendar-day-nav-btn" id="calendar-day-next"
+              onclick="calendarDayStep(1)" aria-label="Sonraki gün">›</button>
+          </div>
+          {% for d in calendar_days %}
+          <div class="calendar-day-panel{% if loop.first %} active{% endif %}" data-date="{{ d.date }}">
+            {% if d.events %}
+            <div class="calendar-event-list">
+              {% for e in d.events %}
+              <div class="calendar-event-row">
+                <div class="calendar-event-time">{{ e.time }}</div>
+                <div class="calendar-event-main">
+                  <span class="calendar-event-country" title="{{ e.country_name }}">{{ e.country_code }}</span>
+                  <span class="calendar-event-stars" title="Önem: {{ e.importance }}/3">{{ '★' * e.importance }}{{
+                    '☆' * (3 - e.importance) }}</span>
+                  <span class="calendar-event-name">{{ e.event_name }}{% if e.reference_period %} <span
+                      class="calendar-event-ref">({{ e.reference_period }})</span>{% endif %}</span>
+                </div>
+                <div class="calendar-event-value">
+                  {% if e.is_released %}
+                  <span class="calendar-event-actual">{{ e.actual_value }}</span>
+                  {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
+                    }}</span>{% endif %}
+                  {% else %}
+                  <span class="calendar-event-pending">bekleniyor</span>
+                  {% if e.previous_value %}<span class="calendar-event-previous">önceki: {{ e.previous_value
+                    }}</span>{% endif %}
+                  {% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="calendar-day-empty">{% if loop.first %}Bugün için planlanmış bir ekonomik veri açıklaması
+              bulunmuyor.{% else %}Bu gün için planlanmış bir ekonomik veri açıklaması bulunmuyor.{% endif %}</div>
+            {% endif %}
           </div>
           {% else %}
           <div class="calendar-placeholder-text">Önümüzdeki günlerde planlanmış bir ekonomik veri açıklaması
             bulunamadı.</div>
-          {% endif %}
+          {% endfor %}
         </div>
       </aside>
     </div>
@@ -3040,6 +3155,49 @@
       _homeTvWidgetLoaded = true;
       loadHomeTvWidget();
     }
+
+    // Ekonomik Takvim gün-bazlı gezinme (2026-08-19, kullanıcı isteği) - tüm
+    // günlerin panelleri sunucu tarafında ZATEN render edilmiş durumda (bkz.
+    // dashboard.html > .calendar-day-panel, src/web/app.py >
+    // _build_calendar_days), bu fonksiyon SADECE görünürlüğü ve aktif sekme
+    // stilini değiştirir - AJAX/yeniden yükleme YOK.
+    function selectCalendarDay(dateIso) {
+      document.querySelectorAll('.calendar-day-panel').forEach(function (panel) {
+        panel.classList.toggle('active', panel.getAttribute('data-date') === dateIso);
+      });
+      document.querySelectorAll('.calendar-day-tab').forEach(function (tab) {
+        const isActive = tab.getAttribute('data-date') === dateIso;
+        tab.classList.toggle('active', isActive);
+        if (isActive) tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      });
+    }
+
+    // ‹›  ok butonları - aktif sekmenin bir öncekine/sonrakine geçer (sekme
+    // listesinin başında/sonundaysa buton devre dışı kalır, döngü YOK).
+    function calendarDayStep(delta) {
+      const tabs = Array.from(document.querySelectorAll('.calendar-day-tab'));
+      const currentIndex = tabs.findIndex(function (t) { return t.classList.contains('active'); });
+      const nextIndex = currentIndex + delta;
+      if (nextIndex < 0 || nextIndex >= tabs.length) return;
+      selectCalendarDay(tabs[nextIndex].getAttribute('data-date'));
+    }
+
+    function updateCalendarDayNavButtons() {
+      const tabs = Array.from(document.querySelectorAll('.calendar-day-tab'));
+      const currentIndex = tabs.findIndex(function (t) { return t.classList.contains('active'); });
+      const prevBtn = document.getElementById('calendar-day-prev');
+      const nextBtn = document.getElementById('calendar-day-next');
+      if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+      if (nextBtn) nextBtn.disabled = currentIndex === -1 || currentIndex >= tabs.length - 1;
+    }
+
+    (function initCalendarDayNavButtons() {
+      const tabs = document.querySelectorAll('.calendar-day-tab');
+      if (!tabs.length) return;
+      updateCalendarDayNavButtons();
+      const observer = new MutationObserver(updateCalendarDayNavButtons);
+      tabs.forEach(function (tab) { observer.observe(tab, { attributes: true, attributeFilter: ['class'] }); });
+    })();
 
     // Lazy-load (2026-08-19, kullanıcı isteği: "sayfa yüklenme hızını fazla
     // yavaşlatmasın") - üçüncü parti TradingView script'i SADECE kart

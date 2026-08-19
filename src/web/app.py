@@ -33,7 +33,7 @@ from src.commodity_report import get_commodity_dashboard_data, start_commodity_b
 from src.company_profile import get_company_profile
 from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
-from src.timezone_utils import format_turkey_time
+from src.timezone_utils import TURKEY_TZ, format_turkey_time, to_turkey_time
 from src.config import load_config
 from src.db import (
     NewsRecord,
@@ -377,9 +377,16 @@ def _calendar_event_to_view(event: Any) -> dict[str, Any]:
     """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (bkz.
     dashboard() > upcoming_calendar_events, src/db.py > EconomicCalendarEvent) -
     diğer görünüm sözlükleriyle (bkz. _record_to_view) TUTARLI, Türkiye
-    saatine çevrilmiş bir gösterim."""
+    saatine çevrilmiş bir gösterim.
+
+    2026-08-19 (kullanıcı isteği: gün-bazlı gezinme) - `date` alanı eklendi:
+    _build_calendar_days() bu ISO tarihe göre olayları günlere dağıtır.
+    `time` artık sadece saat (HH:MM) - tarih zaten aktif gün sekmesinden
+    belli olduğu için tekrar göstermeye gerek yok."""
+    turkey_dt = to_turkey_time(event.event_time)
     return {
-        "time": format_turkey_time(event.event_time),
+        "date": turkey_dt.strftime("%Y-%m-%d"),
+        "time": turkey_dt.strftime("%H:%M"),
         "country_code": event.country_code,
         "country_name": event.country_name,
         "event_name": event.event_name,
@@ -389,6 +396,45 @@ def _calendar_event_to_view(event: Any) -> dict[str, Any]:
         "reference_period": event.reference_period,
         "is_released": event.actual_value is not None,
     }
+
+
+_TR_MONTH_ABBR = {
+    1: "Oca", 2: "Şub", 3: "Mar", 4: "Nis", 5: "May", 6: "Haz",
+    7: "Tem", 8: "Ağu", 9: "Eyl", 10: "Eki", 11: "Kas", 12: "Ara",
+}
+
+
+def _build_calendar_days(events: list[dict[str, Any]], num_days: int = 7) -> list[dict[str, Any]]:
+    """Ana sayfadaki "Yaklaşan Ekonomik Takvim" kutusu için (2026-08-19,
+    kullanıcı isteği: gün-bazlı gezinme) - `_calendar_event_to_view` ile
+    üretilmiş görünüm sözlüklerini (zaten `date` alanına sahip), bugünden
+    başlayarak `num_days` günlük sekmelere dağıtır. Boş günler de (0 olaylı)
+    listede yer alır ki frontend net bir boş-durum mesajı gösterebilsin.
+
+    Sekme etiketleri (kullanıcı isteği): index 0 = "Bugün", index 1 =
+    "Yarın", index 2+ = kısa tarih (ör. "21 Ağu") - yıl gösterilmiyor çünkü
+    pencere zaten sadece `num_days` (7) gün ileriyi kapsıyor."""
+    today_turkey = datetime.now(TURKEY_TZ).date()
+    events_by_date: dict[str, list[dict[str, Any]]] = {}
+    for e in events:
+        events_by_date.setdefault(e["date"], []).append(e)
+
+    days = []
+    for i in range(num_days):
+        day_date = today_turkey + timedelta(days=i)
+        iso_date = day_date.strftime("%Y-%m-%d")
+        if i == 0:
+            label = "Bugün"
+        elif i == 1:
+            label = "Yarın"
+        else:
+            label = f"{day_date.day} {_TR_MONTH_ABBR[day_date.month]}"
+        days.append({
+            "date": iso_date,
+            "label": label,
+            "events": events_by_date.get(iso_date, []),
+        })
+    return days
 
 
 def _build_tradingview_url(symbol: str | None) -> str | None:
@@ -711,7 +757,7 @@ def dashboard(
         if view_normalized == "home":
             home_important_records = _get_cached_home_important_records(session, limit=20)
             breaking_strip_records = _get_cached_breaking_strip_records(session)
-            upcoming_calendar_events = get_upcoming_calendar_events(limit=8)
+            upcoming_calendar_events = get_upcoming_calendar_events(days=7)
 
         # Piyasa Duygusu (bkz. _compute_fear_greed_index) için HER ZAMAN
         # genel/filtresiz "en yeni N" örneklemi kullanılır - hangi sekmede
@@ -777,6 +823,7 @@ def dashboard(
     home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
     breaking_strip_views = [_record_to_view(r, threshold) for r in breaking_strip_records]
     upcoming_calendar_views = [_calendar_event_to_view(e) for e in upcoming_calendar_events]
+    calendar_days = _build_calendar_days(upcoming_calendar_views, num_days=7)
 
     # Hero carousel'in havuzu VE sayfa altındaki "KAP+Haber karışık önemli
     # içerik" bölümü AYNI listeden (home_important_views - >=4 eşikli,
@@ -834,6 +881,7 @@ def dashboard(
             "featured_records_json": featured_records_json,
             "breaking_strip_records": breaking_strip_views,
             "upcoming_calendar_events": upcoming_calendar_views,
+            "calendar_days": calendar_days,
             "breaking_strip_json": breaking_strip_json,
             "sources": sources,
             "selected_source": source or "",
