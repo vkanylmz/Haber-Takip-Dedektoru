@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
@@ -364,6 +365,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Finansal Haber Dashboard", lifespan=lifespan)
+
+# splash-page/index.html (GitHub Pages'te barındırılıyor, vkanylmz.github.io
+# origin'inden) burayı /health ile cross-origin fetch'le yokluyor - CORS izni
+# olmadan tarayıcı bu isteği sessizce engeller (splash sayfası sonsuza kadar
+# "yükleniyor" durumunda kalır). Yalnızca GET + bu tek origin'e izin veriliyor.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://vkanylmz.github.io"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 # Genel/dış kullanıma açık, API-key korumalı REST API (bkz.
 # src/web/api_v1.py) - dashboard'un yukarıdaki iç `/api/*` rotalarından

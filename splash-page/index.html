@@ -124,8 +124,16 @@
 
   <script>
     (function () {
-      // --- Ayarlar: gerçek Render backend'iniz burada ---
-      var BACKEND_ROOT = "https://finans-haber-dashboard.onrender.com";
+      // --- Ayarlar: gerçek backend adresiniz burada ---
+      // NOT (2026-08-21): Render backend'i (finans-haber-dashboard.onrender.com)
+      // artık kullanılmıyor (boş/veri yok) - şu an ev bilgisayarındaki sunucuya
+      // Cloudflare Tunnel "quick tunnel" üzerinden yönlendiriliyor. BU ADRES
+      // GEÇİCİDİR: cloudflared her yeniden başladığında (bilgisayar/servis
+      // restart, watchdog müdahalesi vb.) YENİ bir *.trycloudflare.com adresi
+      // üretir - güncel adres restart_tunnel.ps1 tarafından
+      // data/state/tunnel_url.txt dosyasına yazılır. Kalıcı bir domain/named
+      // tunnel kurulduğunda burası o sabit adresle güncellenmeli.
+      var BACKEND_ROOT = "https://brother-participated-singles-follows.trycloudflare.com";
       var HEALTH_URL = BACKEND_ROOT + "/health";
       var POLL_INTERVAL_MS = 2500;
       var SLOW_THRESHOLD_MS = 60000;
