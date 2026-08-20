@@ -523,19 +523,40 @@ def init_db(db_path: str | Path) -> None:
         # bağlantı fazlasıyla yeterli - varsayılan (belirtilmemiş) davranış
         # zaten 5+10=15'e denk geliyordu, burada sadece kasıtlı/açık hale
         # getirildi.
-        _engine = create_engine(
-            database_url,
-            pool_pre_ping=True,
-            pool_recycle=300,
-            pool_size=5,
-            max_overflow=5,
-        )
-        Base.metadata.create_all(_engine)
-        _migrate_add_missing_columns(_engine)
-        _ensure_performance_indexes(_engine)
-        _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
-        logger.info("Veritabanı hazır (DATABASE_URL üzerinden, Postgres).")
-        return
+        #
+        # 2026-08-20 olayı: Neon ücretsiz katmanın veri transfer kotası
+        # dolduğunda `create_engine`/`create_all` OperationalError fırlatıyordu
+        # ve bu, ÖNCEDEN buradan return edilmediği için çağıran tarafta
+        # (worker.py > _init_persistence_and_bot) yakalanıp TÜM kalıcılığın
+        # (init_db bir daha hiç çağrılmadığından _SessionFactory None kalıp)
+        # atlanmasına yol açıyordu - process çökmüyordu ama pratikte hiçbir
+        # şey (dedup, DB kaydı, abone okuma, Telegram bildirimi) çalışmıyordu.
+        # Artık Postgres'e bağlanma/tablo oluşturma başarısız olursa burada
+        # yakalanıp AŞAĞIDAKİ yerel SQLite koduna (aynı fonksiyon içinde)
+        # düşülüyor - worker/bot/dashboard, paylaşımlı bulut DB'si geçici
+        # olarak erişilemez olsa bile yerel veriyle çalışmaya devam eder.
+        try:
+            _engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                pool_recycle=300,
+                pool_size=5,
+                max_overflow=5,
+            )
+            Base.metadata.create_all(_engine)
+            _migrate_add_missing_columns(_engine)
+            _ensure_performance_indexes(_engine)
+            _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
+            logger.info("Veritabanı hazır (DATABASE_URL üzerinden, Postgres).")
+            return
+        except Exception:  # noqa: BLE001
+            _engine = None
+            _SessionFactory = None
+            logger.exception(
+                "DATABASE_URL (%s) üzerinden Postgres'e bağlanılamadı - yerel SQLite'a (%s) düşülüyor.",
+                database_url.split("@")[-1] if "@" in database_url else "***",
+                db_path,
+            )
 
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
