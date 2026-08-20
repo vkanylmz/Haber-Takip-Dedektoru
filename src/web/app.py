@@ -364,22 +364,17 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
-    title="Finansal Haber Dashboard",
-    lifespan=lifespan,
-    # Bu app artık (2026-08-20'den itibaren) Cloudflare Tunnel üzerinden
-    # internete açık - /docs, /redoc, /openapi.json otomatik şema sayfaları
-    # kimlik doğrulaması İÇERMEDEN /admin/subscribers ve /api/webhook/*
-    # rotalarının TAM yolunu/parametrelerini/header adlarını (X-Webhook-Secret
-    # vb.) herkese açık şekilde listeler - gizli bir bilgi SIZDIRMAZ (secret'lar
-    # kod içinde görünmez) ama saldırı yüzeyinin keşfini gereksiz yere
-    # kolaylaştırır, bu yüzden bilinçli olarak kapatıldı. api/index.py'deki
-    # AYRI (Vercel/Render) salt-okunur genel API app'i BUNDAN ETKİLENMEZ -
-    # orası zaten kimlik doğrulamasız/herkese açık olacak şekilde tasarlandı.
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
-)
+app = FastAPI(title="Finansal Haber Dashboard", lifespan=lifespan)
+# NOT (2026-08-20): /docs (Swagger UI) BİLEREK açık bırakıldı - dashboard.html
+# içinde ("API" nav linki, bkz. API_DOCS.md) genel /api/v1/* API'sinin
+# dokümantasyonu olarak kullanıcıya gösteriliyor, kapatmak bu özelliği
+# kırardı. Bunun yerine hassas iki rota (/admin/subscribers,
+# /api/webhook/kap-bildirim - bkz. aşağıdaki `include_in_schema=False`)
+# şemadan TEK TEK gizlendi: bu app artık Cloudflare Tunnel üzerinden
+# internete açık olduğundan, bu ikisinin tam yolu/parametreleri/header
+# adının (X-Webhook-Secret vb.) kimlik doğrulamasız herkese ifşa edilmesi
+# gereksiz bir keşif kolaylığı sağlardı (secret'ların KENDİSİ hiçbir zaman
+# şemada görünmez, ama saldırı yüzeyinin haritası çıkarılmış olurdu).
 
 # splash-page/index.html (GitHub Pages'te barındırılıyor, vkanylmz.github.io
 # origin'inden) burayı /health ile cross-origin fetch'le yokluyor - CORS izni
@@ -1241,7 +1236,7 @@ def _check_admin_secret(credentials: HTTPBasicCredentials = Depends(_admin_basic
         raise HTTPException(status_code=401, detail="Geçersiz şifre.", headers={"WWW-Authenticate": "Basic"})
 
 
-@app.get("/admin/subscribers", response_class=HTMLResponse)
+@app.get("/admin/subscribers", response_class=HTMLResponse, include_in_schema=False)
 def admin_subscribers(request: Request, _: None = Depends(_check_admin_secret)) -> HTMLResponse:
     """Telegram abonelerinin (chat_id, kullanıcı adı, önem eşiği, "sadece
     KAP" modu, takip ettiği kelimeler, abone olma/son aktif olma zamanı)
@@ -1599,7 +1594,7 @@ def _check_webhook_secret(x_webhook_secret: str | None) -> None:
         raise HTTPException(status_code=401, detail="Geçersiz veya eksik X-Webhook-Secret header'ı.")
 
 
-@app.post("/api/webhook/kap-bildirim")
+@app.post("/api/webhook/kap-bildirim", include_in_schema=False)
 def webhook_kap_bildirim(
     payload: _WebhookDisclosurePayload,
     background_tasks: BackgroundTasks,
