@@ -1293,13 +1293,16 @@
        kart genişliğine (home-main sütunu ~2fr) göre daha ferah/orantılı
        bir en-boy oranı verir. Mobilde 380px -> 420px, aynı gerekçeyle. */
     .tradingview-widget-container {
-      height: 640px;
+      /* 640px -> 680px (2026-08-20, kullanıcı isteği: çizim araçları
+         çubuğu + alt zaman aralığı çubuğu (withdateranges) eklendi -
+         eski yükseklikte bu ek çubuklar grafik alanından çalardı). */
+      height: 680px;
       width: 100%;
     }
 
     @media (max-width: 900px) {
       .tradingview-widget-container {
-        height: 420px;
+        height: 460px;
       }
     }
 
@@ -3250,7 +3253,11 @@
         allow_symbol_change: true,
         calendar: false,
         details: false,
-        hide_side_toolbar: true,
+        // hide_side_toolbar: false (2026-08-20, kullanıcı isteği) - sol
+        // taraftaki çizim araçları çubuğunu (trend çizgisi, Fibonacci,
+        // dikdörtgen, ok, metin ekleme vb.) gösterir. ÖNCEDEN true'ydu,
+        // widget salt-okunur bir grafik gibi davranıyordu.
+        hide_side_toolbar: false,
         hide_top_toolbar: false,
         hide_legend: false,
         hide_volume: false,
@@ -3265,7 +3272,10 @@
         backgroundColor: isDark ? '#0f0f0f' : '#ffffff',
         gridColor: isDark ? 'rgba(242, 242, 242, 0.06)' : 'rgba(46, 46, 46, 0.06)',
         watchlist: [],
-        withdateranges: false,
+        // withdateranges: true (2026-08-20, kullanıcı isteği) - alt kısımda
+        // 1G/5G/1A/6A/YBB/1Y/5Y gibi zaman aralığı kısayollarını gösterir
+        // (TradingView'in standart arayüzüne daha yakın bir deneyim).
+        withdateranges: true,
         compareSymbols: [],
         studies: [],
         autosize: true,
