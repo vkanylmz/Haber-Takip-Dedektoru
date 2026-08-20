@@ -1486,6 +1486,10 @@ görebilirsiniz.
   (ai.google.dev/gemini-api/docs/models) güncel bir modelle değiştirin.
 - Dashboard'da şu an manuel bir "bildirimi tekrar gönder" veya haberi
   arşivleme/silme aksiyonu yok — salt-okunur bir görünüm.
+- **Geçmiş fiyat etkisi analizi** (KAP kategorisine göre hisse hareketi
+  istatistiği) — yeterli KAP veri birikimi olduğunda (birkaç ay sonra, kategori
+  başına en az 10-20 örnek olunca) uygulanacak. Şu an (2026-08) veri hacmi çok
+  az (~150 kayıt, 1 haftalık), istatistiksel olarak anlamsız olur.
 
 ## Opsiyonel: JavaScript render (Playwright)
 
