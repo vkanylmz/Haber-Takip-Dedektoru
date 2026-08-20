@@ -364,7 +364,22 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Finansal Haber Dashboard", lifespan=lifespan)
+app = FastAPI(
+    title="Finansal Haber Dashboard",
+    lifespan=lifespan,
+    # Bu app artık (2026-08-20'den itibaren) Cloudflare Tunnel üzerinden
+    # internete açık - /docs, /redoc, /openapi.json otomatik şema sayfaları
+    # kimlik doğrulaması İÇERMEDEN /admin/subscribers ve /api/webhook/*
+    # rotalarının TAM yolunu/parametrelerini/header adlarını (X-Webhook-Secret
+    # vb.) herkese açık şekilde listeler - gizli bir bilgi SIZDIRMAZ (secret'lar
+    # kod içinde görünmez) ama saldırı yüzeyinin keşfini gereksiz yere
+    # kolaylaştırır, bu yüzden bilinçli olarak kapatıldı. api/index.py'deki
+    # AYRI (Vercel/Render) salt-okunur genel API app'i BUNDAN ETKİLENMEZ -
+    # orası zaten kimlik doğrulamasız/herkese açık olacak şekilde tasarlandı.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 # splash-page/index.html (GitHub Pages'te barındırılıyor, vkanylmz.github.io
 # origin'inden) burayı /health ile cross-origin fetch'le yokluyor - CORS izni
@@ -376,6 +391,80 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+# --------------------------------------------------------------------------
+# Basit IP-bazlı rate limiting (2026-08-20 eklendi): bu app artık Cloudflare
+# Tunnel üzerinden internete açık - önceden "zaten sadece ben kullanıyorum"
+# varsayımıyla YAZILMIŞ bazı rotalar (özellikle /sirket-profili, her istekte
+# GERÇEK/ücretli bir LLM çağrısı tetikliyor - bkz. src/company_profile.py >
+# _generate_outlook_summary, HİÇBİR önbellek YOK) artık rastgele bir
+# internet ziyaretçisi tarafından tekrar tekrar çağrılıp API faturası
+# tüketebilir. src/web/api_v1.py > _check_rate_limit ile AYNI basit sabit
+# pencere (fixed-window) deseni - askeri sınıf bir çözüm değil, kişisel/
+# küçük ölçekli bir sunucu için yeterli bir engel.
+#
+# IP tespiti: cloudflared, Cloudflare'in normal reverse-proxy davranışıyla
+# gerçek istemci IP'sini Cf-Connecting-Ip header'ında iletir (bkz.
+# Cloudflare dokümantasyonu) - request.client.host burada HER ZAMAN
+# 127.0.0.1 olurdu (cloudflared yerelde localhost:8000'e bağlanıyor), bu
+# yüzden doğrudan kullanılmıyor, yalnızca header YOKSA (ör. doğrudan yerel
+# erişim) fallback olarak kullanılıyor.
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_DEFAULT_MAX = 90
+# /sirket-profili GERÇEK LLM maliyeti tetiklediğinden çok daha sıkı bir
+# tavana sahip - meşru kullanım (kendi aramalarınız) için fazlasıyla
+# yeterli, ama bir bot/kötüye kullanım denemesinin fatura etkisini ciddi
+# ölçüde sınırlar.
+_RATE_LIMIT_STRICT_PATHS: dict[str, int] = {"/sirket-profili": 5}
+_rate_limit_buckets: dict[tuple[str, str], tuple[float, int]] = {}
+_rate_limit_lock = threading.Lock()
+# İnternete açık bir sunucu, rastgele path'ler deneyen zafiyet tarayıcı
+# botlarından sürekli YENİ (ip, path) anahtarları biriktirir - bunlar
+# _RATE_LIMIT_WINDOW_SECONDS sonra bir daha HİÇ artmasa bile sözlükte kalıcı
+# olarak kalırdı (sınırsız bellek büyümesi). Sözlük bu eşiği aştığında süresi
+# dolmuş (artık pencere dışı) girdiler tek seferde temizlenir.
+_RATE_LIMIT_MAX_BUCKETS = 20_000
+
+
+def _client_ip(request: Request) -> str:
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def _simple_rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    limit = _RATE_LIMIT_STRICT_PATHS.get(path, _RATE_LIMIT_DEFAULT_MAX)
+    key = (_client_ip(request), path)
+    now = time.monotonic()
+
+    with _rate_limit_lock:
+        if len(_rate_limit_buckets) > _RATE_LIMIT_MAX_BUCKETS:
+            expired = [
+                k for k, (started, _) in _rate_limit_buckets.items() if now - started >= _RATE_LIMIT_WINDOW_SECONDS
+            ]
+            for k in expired:
+                del _rate_limit_buckets[k]
+
+        window_start, count = _rate_limit_buckets.get(key, (now, 0))
+        if now - window_start >= _RATE_LIMIT_WINDOW_SECONDS:
+            window_start, count = now, 0
+        count += 1
+        _rate_limit_buckets[key] = (window_start, count)
+        exceeded = count > limit
+
+    if exceeded:
+        return JSONResponse(
+            {"detail": f"Çok fazla istek ({limit}/dk limiti aşıldı). Lütfen bir dakika sonra tekrar deneyin."},
+            status_code=429,
+        )
+    return await call_next(request)
+
 
 # Genel/dış kullanıma açık, API-key korumalı REST API (bkz.
 # src/web/api_v1.py) - dashboard'un yukarıdaki iç `/api/*` rotalarından
@@ -1506,7 +1595,7 @@ def _check_webhook_secret(x_webhook_secret: str | None) -> None:
             status_code=503,
             detail="WEBHOOK_INGEST_SECRET .env'de tanımlı değil, webhook endpoint'i devre dışı.",
         )
-    if not x_webhook_secret or x_webhook_secret != expected:
+    if not x_webhook_secret or not secrets.compare_digest(x_webhook_secret, expected):
         raise HTTPException(status_code=401, detail="Geçersiz veya eksik X-Webhook-Secret header'ı.")
 
 
