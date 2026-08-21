@@ -902,12 +902,38 @@ def _run(bot_token: str) -> None:
     bot bir daha hiç yanıt vermez - web dashboard ve RSS worker etkilenmediği
     için bu fark edilmesi zor bir hatadır. Bu yüzden her istisna loglanıp
     kısa bir bekleme sonrası dinleyici otomatik olarak yeniden başlatılır.
+
+    GERÇEK BİR OLAYLA BULUNAN BUG (2026-08-21): `_bot_loop`, ESKİDEN bu
+    fonksiyonun EN BAŞINDA (while döngüsünün DIŞINDA) bir kez oluşturulup
+    HER retry denemesinde YENİDEN KULLANILIYORDU. `application.run_polling(
+    close_loop=True)` içeride `finally: if close_loop: loop.close()`
+    çalıştırır - bootstrap/initialize aşamasında (ör. `get_me()`) bir ağ
+    hatası (ConnectError) oluşup run_polling exception ile dönerse BİLE bu
+    finally çalışır ve loop KAPANIR. Kapanan bu AYNI `_bot_loop` nesnesi
+    hemen altta `_bot_loop.run_until_complete(asyncio.sleep(...))` için
+    TEKRAR kullanılınca `RuntimeError: Event loop is closed` fırlatılır -
+    bu hata try/except'in DIŞINDA olduğundan yakalanmaz, thread (daemon
+    olduğundan hiçbir yere loglanmadan, sadece ham bir traceback basıp)
+    SESSİZCE ölür - bot BİR DAHA HİÇ retry denemez. Restart_main.ps1'in
+    kendisi/main.py/worker/web dashboard ETKİLENMEDİĞİNDEN fark edilmesi
+    çok zor. Gerçek prod loglarında (data/logs/main_stderr.log) 2026-08-21
+    sabahı laptop restart sonrası ağın henüz tam kurulmadığı bir anda
+    tam olarak bu şekilde gerçekleşti ve bot dinleyicisi >1 saat ölü kaldı
+    (Telegram komutları yanıtsız kaldı - bildirim GÖNDERME ayrı bir kod
+    yolu olduğundan o etkilenmedi, ama bu KOLAYCA ileride farklı bir hata
+    türünde bildirim göndermeyi de etkileyebilecek AYNI kalıptı).
+
+    DÜZELTME: her retry denemesi KENDİ TAZE event loop'unu oluşturur (aşağıda
+    döngünün İÇİNDE) - `run_polling`'in kendi `close_loop=True` davranışıyla
+    ARTIK ÇAKIŞMAZ (bir sonraki denemede zaten yeni bir loop var). Backoff
+    beklemesi de artık asyncio loop'una hiç bağımlı olmayan `time.sleep`
+    kullanır - loop'un o an açık/kapalı olması bekleme adımını ETKİLEMEZ.
     """
     global _bot_loop, _active_application
-    _bot_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_bot_loop)
 
     while not _stop_event.is_set():
+        _bot_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_bot_loop)
         try:
             application = build_application(bot_token)
             _active_application = application
@@ -916,10 +942,10 @@ def _run(bot_token: str) -> None:
             # thread'inde çalışır; sinyal işleyicileri yalnızca ana thread'de
             # kurulabilir.
             application.run_polling(stop_signals=None, close_loop=True)
-            
+
             if _stop_event.is_set():
                 break
-                
+
             logger.warning(
                 "Telegram bot dinleyicisi beklenmedik şekilde durdu, %s sn sonra yeniden başlatılacak.",
                 _RESTART_BACKOFF_SECONDS,
@@ -931,11 +957,10 @@ def _run(bot_token: str) -> None:
                 "Telegram bot dinleyicisinde beklenmeyen bir hata oluştu, %s sn sonra yeniden başlatılacak.",
                 _RESTART_BACKOFF_SECONDS,
             )
-        
+
         if not _stop_event.is_set():
-            _bot_loop.run_until_complete(asyncio.sleep(_RESTART_BACKOFF_SECONDS))
-            
-    _bot_loop.close()
+            time.sleep(_RESTART_BACKOFF_SECONDS)
+
     logger.info("Telegram bot dinleyicisi başarıyla sonlandırıldı.")
 
 
