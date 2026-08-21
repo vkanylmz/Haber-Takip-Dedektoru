@@ -694,6 +694,31 @@ class Summarizer:
         self.daily_quota_guard_enabled = summarizer_cfg.get("daily_quota_guard_enabled", True)
         self._quota_state_path = Path(output_dir) / "state" / _QUOTA_STATE_FILENAME
 
+        # Yedek sağlayıcı (2026-08-21, kullanıcı isteği: "Gemini günlük kotası
+        # tükenince Anthropic'e otomatik geçiş") - Gemini'nin günlük kotası
+        # tükendiğinde, placeholder'a düşmeden ÖNCE Anthropic (ANTHROPIC_API_KEY
+        # .env'de tanımlıysa) denenir (bkz. summarize_group > _quota_exhausted_today
+        # dalı, _get_fallback_summarizer). Anthropic'in KENDİ kredisi/kotası da
+        # tükenmişse (ör. "credit balance too low") bu SESSİZCE normal
+        # placeholder davranışına düşer - hiçbir zaman çalışmayı DURDURMAZ,
+        # sadece "bir sağlayıcı daha denendi, o da olmadı" ek bir katman.
+        # `self._summarizer_cfg`/`self._output_dir` ikincil Summarizer'ı
+        # (provider="anthropic") tembel (lazy) kurmak için saklanıyor - HER
+        # grup için değil, İLK ihtiyaç anında bir kez.
+        self.quota_fallback_provider_enabled = summarizer_cfg.get("quota_fallback_provider_enabled", True)
+        self._summarizer_cfg = summarizer_cfg
+        self._output_dir = output_dir
+        self._fallback_summarizer: "Summarizer | None" = None
+        # Anthropic da başarısız olursa (ör. kredi yok) bu ÇALIŞTIRMA (process
+        # ömrü) boyunca bir daha DENENMEZ - aksi halde kota tükenmiş her grup
+        # için (potansiyel yüzlerce) boşuna bir Anthropic çağrısı/log satırı
+        # üretilirdi. Her yeni tarama turu (bkz. src/main.py > summarize_groups,
+        # HER seferinde TAZE bir Summarizer kurar) bu bayrağı sıfırlar - yani
+        # Anthropic'e sonradan kredi eklenirse EN GEÇ bir sonraki tarama
+        # turunda (varsayılan 15 dk) kendiliğinden fark edilir, süreç yeniden
+        # başlatılmasına gerek YOKTUR.
+        self._fallback_unavailable = False
+
         # Rate limit koruması: sağlayıcının dakika başına istek (RPM) limitini
         # aşmamak için istekler arasına otomatik bekleme eklenir (gereksinim:
         # Gemini ücretsiz katmanının düşük RPM limiti - varsayılan 5). 429
@@ -748,6 +773,36 @@ class Summarizer:
             parts.append(entry)
         return "\n\n---\n\n".join(parts)
 
+    def _get_fallback_summarizer(self) -> "Summarizer | None":
+        """Gemini günlük kotası tükendiğinde denenecek ikincil (Anthropic)
+        Summarizer'ı döner - bkz. __init__'teki not. Şu durumlarda None
+        döner (hiçbir zaman exception fırlatmaz):
+          - Bu Summarizer'ın kendisi zaten Anthropic ise (yedek yedeklemez,
+            sonsuz döngü riski yok çünkü hiç çağrılmaz).
+          - `quota_fallback_provider_enabled: false` ise (config.yaml).
+          - ANTHROPIC_API_KEY .env'de tanımlı değilse.
+          - Bu çalıştırmada Anthropic daha önce denenip başarısız olduysa
+            (bkz. _fallback_unavailable)."""
+        if self.provider != "gemini" or not self.quota_fallback_provider_enabled:
+            return None
+        if self._fallback_unavailable:
+            return None
+        if self._fallback_summarizer is not None:
+            return self._fallback_summarizer
+
+        from src.config import get_anthropic_api_key
+
+        try:
+            api_key = get_anthropic_api_key()
+        except RuntimeError:
+            self._fallback_unavailable = True
+            return None
+
+        self._fallback_summarizer = Summarizer(
+            self._summarizer_cfg, api_key, provider="anthropic", output_dir=self._output_dir
+        )
+        return self._fallback_summarizer
+
     def summarize_group(self, group: NewsGroup) -> None:
         """`group.summary`, `group.key_points`, `group.importance_score` ve
         `group.importance_reason` alanlarını TEK bir API çağrısıyla doldurur
@@ -761,9 +816,32 @@ class Summarizer:
         if self._quota_exhausted_today():
             # Bugün zaten GÜNLÜK kota tükendiği tespit edilmişti (bkz.
             # _mark_quota_exhausted_today) - boşuna ağ çağrısı/429 denemesi
-            # yapmadan direkt ertelenmiş fallback'e düş. importance_score
-            # None kaldığından bu haber, kota resetlenince bir sonraki
-            # taramada otomatik olarak tekrar denenir.
+            # yapmadan ÖNCE yedek sağlayıcı (Anthropic) denenir (bkz.
+            # _get_fallback_summarizer, 2026-08-21 eklendi) - başarılı olursa
+            # bu grup GERÇEK bir skorla döner, günlük ~21 saatlik "kapalı"
+            # pencere ortadan kalkar. Yedek yoksa/o da başarısızsa (ör.
+            # Anthropic'in kendi kredisi de yoksa) SESSİZCE eski davranışa
+            # (ertelenmiş fallback) düşülür - importance_score None kalır,
+            # kota resetlenince bir sonraki taramada otomatik tekrar denenir.
+            fallback = self._get_fallback_summarizer()
+            if fallback is not None:
+                logger.info(
+                    "Günlük Gemini kotası tükenmiş, '%s' için yedek sağlayıcı (%s) deneniyor.",
+                    group.representative.title,
+                    fallback.provider,
+                )
+                fallback.summarize_group(group)
+                if group.importance_score is not None:
+                    return
+                # Yedek de başarısız oldu (ör. Anthropic kredisi de yok) - bu
+                # ÇALIŞTIRMA boyunca tekrar denenmesin (bkz. __init__'teki not).
+                self._fallback_unavailable = True
+                logger.warning(
+                    "Yedek sağlayıcı (%s) de başarısız oldu - bu taramanın kalanında "
+                    "tekrar denenmeyecek, ertelenmiş fallback'e düşülüyor.",
+                    fallback.provider,
+                )
+
             logger.info(
                 "Günlük Gemini kotası bugün için tükenmiş durumda, '%s' özetlemesi "
                 "erteleniyor (bkz. data/state/%s).",

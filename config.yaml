@@ -110,6 +110,15 @@ summarizer:
   # _reuse_or_mark_for_summarization).
   daily_quota_guard_enabled: true
 
+  # --- Kota tükenince yedek sağlayıcı (2026-08-21'de eklendi) ---
+  # Gemini günlük kotası tükendiğinde (yukarıdaki guard devreye girdiğinde),
+  # placeholder'a düşmeden ÖNCE Anthropic (ANTHROPIC_API_KEY .env'de
+  # tanımlıysa) denenir - bkz. src/summarizer.py > _get_fallback_summarizer.
+  # Anthropic'in kendi kredisi/kotası da yoksa SESSİZCE eski davranışa
+  # (importance_score=None, ertesi gün otomatik tekrar deneme) düşülür -
+  # false yaparsanız bu deneme hiç yapılmaz, eski davranış aynen korunur.
+  quota_fallback_provider_enabled: true
+
 importance:
   # 1 (rutin) - 5 (piyasayı doğrudan etkileyebilecek büyük gelişme) arası
   # önem skoru. Bu değere EŞİT veya BÜYÜK skor alan haberler Telegram'a
