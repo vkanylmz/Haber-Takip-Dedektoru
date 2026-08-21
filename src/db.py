@@ -880,6 +880,7 @@ def get_recent_records(
     category_filter: str | None = None,
     additional_sector_filter: str | None = None,
     kap_category_filter: str | None = None,
+    crypto_only: bool = False,
 ) -> list[NewsRecord]:
     query = session.query(NewsRecord)
     if kap_category_filter:
@@ -893,6 +894,27 @@ def get_recent_records(
         # VALID_TOP_CATEGORIES, "Detaylı İnceleme" sayfasının kategori
         # sekmeleri bunu kullanır (bkz. src/web/app.py).
         query = query.filter(NewsRecord.top_category == category_filter)
+    if crypto_only:
+        # "Kripto" sekmesi (2026-08-21, kullanıcı isteği) için: `sector`
+        # etiketi "kripto" olan (LLM taksonomisine YENİ eklendi, bkz.
+        # src/summarizer.py > VALID_SECTORS) kayıtlar VE bu taksonomi
+        # eklenmeden ÖNCE gelmiş, henüz "finans"/"teknoloji" gibi eski
+        # etiketlerle skorlanmış kripto haberleri (anahtar kelime eşleşmesi
+        # - Bitcoin/Ethereum/kripto/blockchain vb.) BİRLİKTE (OR) gösterilir.
+        # Bu, eski kayıtları LLM'e tekrar göndermeden (ek maliyet/gecikme
+        # olmadan) hemen görünür kılar - yeni taranan haberler zaten doğru
+        # "kripto" etiketiyle gelecek. Bu sekmeye ÖZGÜ bir filtre olduğundan
+        # genel "Haberler" sekmesindeki akışı ETKİLEMEZ (orada crypto_only
+        # hiç geçilmiyor - aynı haber iki sekmede de görünebilir, kullanıcı
+        # isteği).
+        keyword_conditions = [
+            or_(NewsRecord.title.ilike(kw), NewsRecord.summary.ilike(kw))
+            for kw in [
+                "%bitcoin%", "%ethereum%", "%kripto%", "%crypto%", "%blockchain%",
+                "%xrp%", "%dogecoin%", "%binance%",
+            ]
+        ]
+        query = query.filter(or_(NewsRecord.sector.contains('"kripto"'), *keyword_conditions))
     if since is not None:
         # Şirket/hisse profili sayfası (bkz. src/company_profile.py) gibi
         # "son N gün" ile sınırlı sorgular için - diğer çağıranlar (ör.

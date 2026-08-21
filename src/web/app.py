@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
+from src.crypto import get_crypto_dashboard_data, start_crypto_background_refresh
 from src.company_profile import get_company_profile
 from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
@@ -361,6 +362,9 @@ async def lifespan(app: FastAPI):
     
     # Emtia raporu için eklendi (Phase 2 optimizasyonu)
     start_commodity_background_refresh()
+    # Kripto Paralar sekmesi için (2026-08-21) - AYNI arka plan önbellek
+    # deseni (bkz. src/crypto.py).
+    start_crypto_background_refresh()
     yield
 
 
@@ -726,7 +730,7 @@ def _build_sector_heatmap() -> list[dict[str, Any]]:
     return result
 
 
-_VALID_DASHBOARD_VIEWS = ("home", "kap", "haberler", "emtia")
+_VALID_DASHBOARD_VIEWS = ("home", "kap", "haberler", "emtia", "kripto")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -784,6 +788,7 @@ def dashboard(
     kap_important_records: list[NewsRecord] = []
     home_important_records: list[NewsRecord] = []
     breaking_strip_records: list[NewsRecord] = []
+    crypto_records: list[NewsRecord] = []
     upcoming_calendar_events: list[Any] = []
 
     with get_session() as session:
@@ -850,6 +855,13 @@ def dashboard(
             # > loadCommodityPanel/loadCommodityEmtiaView), aynı önbellekli
             # veri kaynağı (src/commodity_report.py).
             pass
+        elif view_normalized == "kripto":
+            # Fiyat kartları /api/crypto-data'dan (bkz. src/crypto.py) -
+            # emtia ile AYNI desen, DB sorgusu yok. Ama haber listesi
+            # (crypto_records) burada, sunucu tarafında sorgulanır - "Kripto"
+            # etiketli/anahtar-kelime eşleşen haberler (bkz. get_recent_records
+            # > crypto_only, src/db.py).
+            crypto_records = get_recent_records(session, limit=max_items, crypto_only=True, sort_order="newest")
 
         if view_normalized == "home":
             home_important_records = _get_cached_home_important_records(session, limit=20)
@@ -919,6 +931,7 @@ def dashboard(
     kap_important_views = [_record_to_view(r, threshold) for r in kap_important_records]
     home_important_views = [_record_to_view(r, threshold) for r in home_important_records]
     breaking_strip_views = [_record_to_view(r, threshold) for r in breaking_strip_records]
+    crypto_views = [_record_to_view(r, threshold) for r in crypto_records]
     upcoming_calendar_views = [_calendar_event_to_view(e) for e in upcoming_calendar_events]
     calendar_days = _build_calendar_days(upcoming_calendar_views, num_days=7)
 
@@ -973,6 +986,7 @@ def dashboard(
             "general_important_records": general_important_views,
             "kap_records": kap_views,
             "kap_important_records": kap_important_views,
+            "crypto_records": crypto_views,
             "home_mixed_records": home_mixed_records,
             "featured_records": featured_records,
             "featured_records_json": featured_records_json,
@@ -1302,6 +1316,15 @@ def commodity_weekly_report_endpoint() -> dict[str, Any]:
     yolunda), bu yüzden `async def` OLAMAZ (FastAPI zaten senkron route'ları
     kendi thread pool'unda çalıştırır, event loop çakışması olmaz)."""
     return get_commodity_dashboard_data()
+
+
+@app.get("/api/crypto-data")
+def crypto_data_endpoint() -> dict[str, Any]:
+    """"Kripto Paralar" sekmesindeki fiyat kartlarının çektiği veri - bkz.
+    src/crypto.py > get_crypto_dashboard_data (önbellekten; LLM analizi
+    YOK, bkz. o modülün docstring'i - /api/commodity-weekly-report İLE AYNI
+    `def` (senkron) gerekçesi: fallback yolunda `asyncio.run()` çağrılıyor."""
+    return get_crypto_dashboard_data()
 
 
 @app.get("/api/company-detail")

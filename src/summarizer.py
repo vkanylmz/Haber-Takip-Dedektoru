@@ -119,8 +119,10 @@ Sektör etiketleme kuralları (sector, bir liste):
 - Haberin hangi sektör(ler)le ilgili olduğuna karar ver. Şu kategorilerden bir \
 veya birden fazlasını seç: "teknoloji", "enerji", "finans" (bankacılık, \
 sigorta, yatırım fonları vb.), "otomotiv", "perakende", "saglik", "savunma", \
-"gayrimenkul", "tarim", "diger" (yukarıdakilerin hiçbirine net şekilde \
-girmiyorsa veya genel/makroekonomik bir haberse).
+"gayrimenkul", "tarim", "kripto" (Bitcoin/Ethereum gibi kripto paralar, \
+blockchain, borsalar - genel "finans"tan AYRI, çünkü kullanıcı bu haberleri \
+özel bir sekmede ayrıca listeliyor), "diger" (yukarıdakilerin hiçbirine net \
+şekilde girmiyorsa veya genel/makroekonomik bir haberse).
 - Haber birden fazla sektörü ilgilendiriyorsa (ör. hem enerji hem otomotiv \
 şirketlerini etkileyen bir haberse) birden fazla etiket seç.
 - Liste asla boş olmasın; hiçbiri net değilse ["diger"] kullan.
@@ -497,6 +499,7 @@ VALID_SECTORS = (
     "savunma",
     "gayrimenkul",
     "tarim",
+    "kripto",
     "diger",
 )
 
@@ -511,6 +514,7 @@ SECTOR_LABELS = {
     "savunma": "Savunma",
     "gayrimenkul": "Gayrimenkul",
     "tarim": "Tarım",
+    "kripto": "Kripto",
     "diger": "Diğer",
 }
 

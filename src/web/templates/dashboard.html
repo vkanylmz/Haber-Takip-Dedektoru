@@ -2462,6 +2462,7 @@
         <a href="/?view=kap" class="quick-nav-link {% if view=='kap' %}active{% endif %}">KAP</a>
         <a href="/?view=haberler" class="quick-nav-link {% if view=='haberler' %}active{% endif %}">Haberler</a>
         <a href="/?view=emtia" class="quick-nav-link {% if view=='emtia' %}active{% endif %}">Emtia</a>
+        <a href="/?view=kripto" class="quick-nav-link {% if view=='kripto' %}active{% endif %}">Kripto</a>
         <a href="/detayli-inceleme" class="quick-nav-link">Detaylı İnceleme</a>
         <a href="/docs" class="quick-nav-link" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
       </nav>
@@ -3177,6 +3178,33 @@
           </div>
         </section>
       </div>
+      {% elif view == 'kripto' %}
+      {# "Kripto" sekmesi (2026-08-21, kullanıcı isteği) - üstte piyasa
+         değerine göre top 10 kripto paranın fiyat kartları (emtia panosuyla
+         AYNI görsel desen: ikon+isim+değişim%+mini grafik+Teknik Görünüm,
+         ama LLM analizi/şirket etiketi YOK - bkz. buildCryptoCardHtml),
+         altında "kripto" sektörüne etiketlenmiş haberlerin listesi (bkz.
+         src/db.py > get_recent_records > crypto_only, render_news_card
+         macro'su - Haberler sekmesiyle AYNI kart formatı). #}
+      <div class="news-section-title">KRİPTO PARALAR</div>
+      <div class="commodity-panel-header-row">
+        <span id="crypto-panel-updated" class="commodity-panel-updated"></span>
+      </div>
+      <div id="crypto-price-grid">
+        <span class="trend-empty">Yükleniyor…</span>
+      </div>
+
+      <div class="news-section-title" style="margin-top: 32px;">KRİPTO HABERLERİ</div>
+      <div class="dashboard-columns">
+        <section class="general-column" aria-label="Kripto Haberleri">
+          {% if not crypto_records %}
+          <div class="empty">Şu an kripto ile ilgili bir haber yok.</div>
+          {% endif %}
+          {% for r in crypto_records %}
+          {{ render_news_card(r) }}
+          {% endfor %}
+        </section>
+      </div>
       {% endif %}
   </main>
 
@@ -3760,6 +3788,71 @@
       }
     }
 
+    // "Kripto Paralar" sekmesi (2026-08-21, kullanıcı isteği) - emtia
+    // kartlarıyla (bkz. buildCommodityCardHtml) AYNI görsel dil, ama DAHA
+    // BASİT: LLM analizi/ilgili şirket etiketi YOK (src/crypto.py hiç LLM
+    // çağırmıyor - bkz. o modülün docstring'i), sadece fiyat+değişim+
+    // sparkline+Teknik Görünüm butonu.
+    function buildCryptoCardHtml(item, accentColor, downColor) {
+      const up = item.pct_change >= 0;
+      const sign = up ? '+' : '';
+      const points = buildSparklinePoints(item.history, 200, 32);
+      const strokeColor = up ? accentColor : downColor;
+      const sparklineSvg = points
+        ? '<svg class="commodity-sparkline" viewBox="0 0 200 32" preserveAspectRatio="none">' +
+        '<polyline points="' + points + '" fill="none" stroke="' + strokeColor + '" stroke-width="1.5"/></svg>'
+        : '';
+      const tvHtml = item.trading_view_symbol
+        ? '<div class="commodity-card-bottom"><a href="' + buildTradingViewChartUrl(item.trading_view_symbol) +
+        '" target="_blank" rel="noopener" class="tradingview-link commodity-tradingview-link" ' +
+        'title="TradingView\'de ' + escapeHtml(item.trading_view_symbol) + ' teknik görünümünü aç">' +
+        tvIconSvg() + 'Teknik Görünüm ↗</a></div>'
+        : '';
+      const priceStr = item.last_close >= 1
+        ? item.last_close.toLocaleString('tr-TR', { maximumFractionDigits: 2 })
+        : item.last_close;
+      return '<div class="commodity-card">' +
+        '<div class="commodity-card-top">' +
+        '<span class="commodity-label">' + item.emoji + ' ' + escapeHtml(item.label) + '</span>' +
+        '<span class="commodity-change ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + sign + item.pct_change + '%</span>' +
+        '</div>' +
+        '<div class="commodity-price">' + priceStr + ' USD (haftalık ' + sign + item.abs_change + ')</div>' +
+        sparklineSvg +
+        tvHtml +
+        '</div>';
+    }
+
+    async function loadCryptoPanel() {
+      const grid = document.getElementById('crypto-price-grid');
+      if (!grid) return;
+      const updatedEl = document.getElementById('crypto-panel-updated');
+      try {
+        const res = await fetch('/api/crypto-data');
+        const data = await res.json();
+        const items = data.cryptos || [];
+
+        if (!items.length) {
+          grid.innerHTML = '<span class="trend-empty">Kripto verisi henüz yok.</span>';
+          return;
+        }
+
+        if (updatedEl) {
+          updatedEl.textContent = data.generated_at
+            ? 'Son güncelleme: ' + new Date(data.generated_at).toLocaleString('tr-TR')
+            : '';
+        }
+
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
+        const downColor = getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+
+        grid.innerHTML = '<div class="commodity-grid">' +
+          items.map(function (i) { return buildCryptoCardHtml(i, accentColor, downColor); }).join('') +
+          '</div>';
+      } catch (e) {
+        grid.innerHTML = '<span class="trend-empty">Kripto verisi alınamadı.</span>';
+      }
+    }
+
     // Ana sayfa "Emtia Özeti" - tam rapordan AYRI bir istek DEĞİL, AYNI
     // /api/commodity-weekly-report (backend'de zaten önbellekli, bkz.
     // src/commodity_report.py) - sadece kısa/tablo biçiminde ilk 4 kalem.
@@ -4274,6 +4367,7 @@
     loadTrendSummary('weekly');
     loadCommodityPanel();
     loadCommodityHomeSummary();
+    loadCryptoPanel();
     refreshMarketSummaryTable();
     applyCompanyAvatars();
     initHomeTvWidgetLazyLoad();
