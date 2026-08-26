@@ -66,7 +66,13 @@ COMMODITY_TRADINGVIEW_SYMBOLS: dict[str, str] = {
     "ZW=F": "CBOT:ZW1!",
     "CL=F": "TVC:USOIL",
     "BZ=F": "TVC:UKOIL",
-    "GC=F": "TVC:GOLD",
+    # "TVC:GOLD" ONCEDEN kullanılıyordu (2026-08-19) ama TVC'nin kendi CFD
+    # sağlayıcısından geliyor - kullanıcı geri bildirimiyle (2026-08-26)
+    # ons altının daha standart/otoriter bir kaynağı olan OANDA:XAUUSD'ye
+    # değiştirildi. GERÇEK testle doğrulandı (scanner.tradingview.com/symbol):
+    # 200 dönüyor VE fiyatı (~4630) Yahoo GC=F (~4682) ile aynı aralıkta -
+    # normal vadeli/spot farkı, aynı enstrümanı temsil ediyor.
+    "GC=F": "OANDA:XAUUSD",
     "SI=F": "TVC:SILVER",
     "NG=F": "NYMEX:NG1!",
     "ALI=F": "COMEX:ALI1!",

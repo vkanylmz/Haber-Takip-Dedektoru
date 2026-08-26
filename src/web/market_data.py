@@ -55,6 +55,7 @@ MARKET_SYMBOLS: list[tuple[str, str]] = [
     ("TRY=X", "USD/TRY"),
     ("EURTRY=X", "EUR/TRY"),
     ("GC=F", "Ons Altın"),
+    ("SI=F", "Gümüş"),
     ("BZ=F", "Brent Petrol"),
     ("^VIX", "VIX"),
     ("XU100.IS", "BIST 100"),
