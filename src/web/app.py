@@ -34,6 +34,7 @@ from src.commodity_report import get_commodity_dashboard_data, start_commodity_b
 from src.crypto import get_crypto_dashboard_data, start_crypto_background_refresh
 from src.company_profile import get_company_profile
 from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
+from src.fintables_financials import first_bist_ticker, load_financial_snapshot
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
 from src.timezone_utils import TURKEY_TZ, format_turkey_time, to_turkey_time
 from src.config import load_config
@@ -617,6 +618,15 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         "ticker_quote": None,
         "kap_category": record.kap_category,
         "kap_category_label": KAP_CATEGORY_LABELS.get(record.kap_category or "", None),
+        # "Detaylı Tabloyu Gör" linki için (2026-08-26, kullanıcı isteği) -
+        # SADECE finansal rapor haberlerinde VE bir BIST ticker'ı
+        # çözümlenebildiğinde dolu (bkz. src/fintables_financials.py >
+        # first_bist_ticker) - dashboard bu link'i /sirket-profili?q=TICKER'a
+        # yönlendirir, o sayfa AppState önbelleğinden okur (hiçbir zaman
+        # canlı bir Fintables/MCP çağrısı YAPMAZ).
+        "financial_table_ticker": (
+            first_bist_ticker(record.company_ticker) if record.kap_category == "finansal_rapor" else None
+        ),
         "short_summary": record.short_summary,
         "image_url": record.image_url,
         "trading_view_symbol": record.trading_view_symbol,
@@ -1182,6 +1192,26 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
 
     views = [_record_to_view(r, threshold) for r in profile["records"]] if profile else []
 
+    # Finansal Tablolar paneli (2026-08-26, kullanıcı isteği): ticker'ı önce
+    # bulunan haberlerin `company_ticker` alanından (bkz. NewsRecord) çözmeye
+    # çalışır - kullanıcı "Türk Hava Yolları" gibi bir isim aramış olsa bile
+    # KAP haberlerinden THYAO çözümlenebilir. Hiçbir haber yoksa (ör. link
+    # doğrudan bir ticker koduyla geldi, bkz. _record_to_view >
+    # financial_table_ticker), arama kutusuna yazılan metnin kendisi (BÜYÜK
+    # harfe çevrilmiş) bir ticker olabileceği varsayımıyla son çare olarak
+    # denenir - `load_financial_snapshot` önbellekte yoksa zaten None döner,
+    # yanlış bir tahmin sessizce hiçbir şey göstermemekle sonuçlanır.
+    financials_ticker: str | None = None
+    if profile and profile.get("records"):
+        for r in profile["records"]:
+            financials_ticker = first_bist_ticker(r.company_ticker)
+            if financials_ticker:
+                break
+    if not financials_ticker and q and q.strip().isalpha() and q.strip().isupper():
+        financials_ticker = q.strip().upper()
+
+    financials = load_financial_snapshot(financials_ticker) if financials_ticker else None
+
     return templates.TemplateResponse(
         request,
         "company_profile.html",
@@ -1189,6 +1219,8 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
             "query": q or "",
             "profile": profile,
             "records": views,
+            "financials_ticker": financials_ticker,
+            "financials": financials,
         },
     )
 
