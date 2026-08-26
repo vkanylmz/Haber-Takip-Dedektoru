@@ -566,19 +566,25 @@ olmadan döndür:
 # ilgili son 30 günün haberlerinden TEK bir genel görünüm (outlook) paragrafı
 # ürettirmek üzere ayrı bir sistem promptu.
 COMPANY_PROFILE_SYSTEM_PROMPT = """\
-Sen bir finans analistisin. Sana bir şirket/varlık adı ve o şirketle ilgili \
+Sen bir finans analistisin. Sana bir şirket/varlık adı ve o şirket/varlıkla ilgili \
 son 30 günde toplanmış haberlerin başlık+özetleri verilecek.
 
-Görevin: TÜM bu haberlere bakarak, bu şirket hakkında son 30 günün GENEL \
+Görevin: TÜM bu haberlere bakarak, bu şirket/varlık hakkında son 30 günün GENEL \
 GÖRÜNÜMÜNÜ (outlook) özetleyen 3-5 cümlelik TEK bir paragraf (Türkçe) \
 yazmak - hangi konular/temalar öne çıktı, genel duygu/yön ne (olumlu/olumsuz/\
 karışık), varsa en dikkat çekici gelişme(ler) neydi. Objektif ve dengeli bir \
 üslup kullan, yatırım tavsiyesi verme.
 
+Ayrıca, söz konusu varlık bir ŞİRKET DEĞİLSE (örneğin altın, petrol, emtia, \
+endeks, tahvil gibi GENEL bir finansal enstrümansa), bu varlığın TradingView'deki \
+EN DOĞRU sembol karşılığını "BORSA:SEMBOL" formatında (örneğin "TVC:US30Y", \
+"TVC:GOLD", "BIST:XU100", "BIST:XAUUSD") belirle. Eğer bu bir şirket ise veya \
+net bir karşılık bulamıyorsan bu alanı boş string ("") bırak.
+
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
 
-{"summary": "..."}
+{"summary": "...", "trading_view_symbol": ""}
 """
 
 COMMODITY_WEEKLY_SYSTEM_PROMPT = """\
@@ -1313,7 +1319,7 @@ class Summarizer:
 
         return selections[:10]
 
-    def summarize_company_profile(self, company_name: str, records: list[Any]) -> str:
+    def summarize_company_profile(self, company_name: str, records: list[Any]) -> tuple[str, str | None]:
         """Verilen şirket adı ve (son 30 günlük) `NewsRecord` listesi için,
         Gemini/Claude'a TEK bir ek çağrı ile genel görünüm (outlook) paragrafı
         ürettirir (bkz. COMPANY_PROFILE_SYSTEM_PROMPT, src/company_profile.py).
@@ -1322,7 +1328,7 @@ class Summarizer:
         fırlatmaz) - çağıran taraf bu durumda otomatik özeti göstermeden
         sadece haber listesini gösterir."""
         if not records:
-            return ""
+            return "", None
 
         lines = [f"Şirket/Varlık: {company_name}\n"]
         for r in records:
@@ -1333,15 +1339,17 @@ class Summarizer:
         try:
             raw_text = self._call_model_with_retry(user_prompt, system_prompt=COMPANY_PROFILE_SYSTEM_PROMPT)
         except Exception:  # noqa: BLE001 - profil özeti başarısız olursa çağıran taraf sessizce atlasın
-            logger.exception("Şirket profili özeti (LLM çağrısı) başarısız oldu: %s", company_name)
-            return ""
+            logger.exception("Şirket/Varlık profili özeti (LLM çağrısı) başarısız oldu: %s", company_name)
+            return "", None
 
         parsed = _extract_json(raw_text)
         if not parsed or not isinstance(parsed.get("summary"), str):
-            logger.warning("Şirket profili özeti yanıtı beklenen JSON formatında değildi: %s", company_name)
-            return ""
+            logger.warning("Şirket/Varlık profili özeti yanıtı beklenen JSON formatında değildi: %s", company_name)
+            return "", None
 
-        return parsed["summary"].strip()
+        summary = parsed["summary"].strip()
+        trading_view_symbol = self._parse_trading_view_symbol(parsed.get("trading_view_symbol"))
+        return summary, trading_view_symbol
 
     def analyze_commodity_weekly(
         self, label: str, pct_change: float, abs_change: float, unit: str

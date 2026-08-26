@@ -304,6 +304,29 @@
       border-color: var(--accent);
     }
 
+    /* "Analiz" butonu (2026-08-26, kullanıcı isteği: Ana Sayfa'daki arama
+       çubuğu KALDIRILIP header'a taşındı) - #push-toggle-btn/#theme-toggle
+       ile AYNI temel görünüm ailesi (boyut/köşe yuvarlaklığı/renk), ama bu
+       bir <a> etiketi (buton DEĞİL) olduğundan text-decoration ayrıca
+       sıfırlanır. /analiz sayfasına gider - arama kutusunun kendisi ARTIK
+       Ana Sayfa'da DEĞİL, o sayfanın içinde. */
+    #analiz-nav-btn {
+      background: var(--surface-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1;
+      text-decoration: none;
+    }
+
+    #analiz-nav-btn:hover {
+      border-color: var(--accent);
+    }
+
     /* Web Push bildirim düğmesi (bkz. src/web_push.py) - #theme-toggle ile
        AYNI temel görünüm, ".push-active" durumunda vurgu rengiyle abone
        olunduğu görsel olarak belli edilir. */
@@ -2460,13 +2483,6 @@
       <nav class="quick-nav" aria-label="Bölümler">
         <a href="/" class="quick-nav-link {% if view=='home' %}active{% endif %}">Ana Sayfa</a>
         <a href="/?view=kap" class="quick-nav-link {% if view=='kap' %}active{% endif %}">KAP</a>
-        <!-- BIST Hisseler (2026-08-26, kullanıcı isteği) - /sirket-profili
-             sayfasına gider; o sayfa ZATEN boş-durumda (q parametresi
-             yokken) kendi arama formunu gösteriyor (bkz. company_profile.html
-             > "Bir şirket/varlık adı yazıp arayın" boş durumu), bu yüzden
-             AYRI bir "giriş sayfası" route'u YAZILMADI - mevcut sayfa
-             zaten bu rolü karşılıyor. -->
-        <a href="/analiz" class="quick-nav-link">BIST Hisseler</a>
         <a href="/?view=haberler" class="quick-nav-link {% if view=='haberler' %}active{% endif %}">Haberler</a>
         <a href="/?view=emtia" class="quick-nav-link {% if view=='emtia' %}active{% endif %}">Emtia</a>
         <a href="/?view=kripto" class="quick-nav-link {% if view=='kripto' %}active{% endif %}">Kripto</a>
@@ -2474,6 +2490,7 @@
         <a href="/docs" class="quick-nav-link" title="Genel API dokümantasyonu (Swagger UI) - bkz. API_DOCS.md">API</a>
       </nav>
       <div class="header-actions">
+        <a id="analiz-nav-btn" href="/analiz" title="Şirket/hisse veya genel bir enstrüman (altın, tahvil, endeks) analizi">🔍 Analiz</a>
         <button type="button" id="push-toggle-btn" onclick="togglePushNotifications()" title="Sekme/tarayıcı kapalıyken bile bildirim al">🔔</button>
         <button type="button" id="theme-toggle" aria-label="Tema değiştir" title="Açık/koyu tema">🌙</button>
       </div>
