@@ -546,7 +546,76 @@
       font-weight: 700;
       color: var(--text-main);
     }
+
+    /* Kalıcı bölüm başlığı (2026-08-26, kullanıcı isteği: "arama kutusunun
+       hemen üstünde, sabit bir bölüm başlığı gibi") - arama SONUCU olsun
+       olmasın HER ZAMAN görünür, sayfanın ne için var olduğunu (BIST
+       hisseleri + genel enstrüman analizi) baştan netleştirir. */
+    .search-section-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.4rem;
+    }
+
+    /* Ticker başlığı + "Teknik Görünüm" linki (2026-08-26, kullanıcı
+       isteği: "ticker'ın hemen yanına") - dashboard.html > .tradingview-link
+       İLE BİREBİR AYNI stil (tekrar icat EDİLMEDİ). */
+    .tradingview-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      color: #fff !important;
+      background: #2962ff;
+      border-radius: 5px;
+      font-weight: 600;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.6rem;
+      text-decoration: none !important;
+    }
+
+    .tradingview-link:hover {
+      background: #1e4fd6;
+    }
+
+    .ticker-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .ticker-header h2 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text-main);
+    }
   </style>
+  <!-- Son bakılan hisse/enstrümanı hatırlama (2026-08-26, kullanıcı isteği:
+       "boş bir arama ekranına değil, kaldığı yere dönsün") - BİLİNÇLİ
+       OLARAK localStorage (sunucu tarafında HİÇBİR ŞEY saklanmaz, hesap
+       gerektirmez, mevcut "minimal JS" felsefesiyle tutarlı). SADECE `q`
+       parametresi YOKKEN (kullanıcı /analiz'e "temiz" geldiğinde - ör.
+       header'daki "🔍 Analiz" butonuna tıklayınca) devreye girer; bir arama
+       sonucu (`q` dolu) HER ZAMAN öncelikli - kaydedilmiş değeri EZMEZ.
+       <head> içinde, sayfa render OLMADAN ÖNCE çalışır ki "boş ekran
+       göster, sonra yönlendir" gibi bir titreme YAŞANMASIN. -->
+  <script>
+    (function () {
+      if (new URLSearchParams(window.location.search).get('q')) return;
+      try {
+        var last = localStorage.getItem('analiz_last_query');
+        if (last) {
+          window.location.replace('/analiz?q=' + encodeURIComponent(last));
+        }
+      } catch (e) { /* localStorage erişilemezse (gizli sekme vb.) sessizce yut */ }
+    })();
+  </script>
 </head>
 
 <body>
@@ -561,16 +630,22 @@
          _get_cached_company_ticker_suggestions - src/db.py >
          get_distinct_company_tickers). Native <datalist>, ek JS/kütüphane
          gerekmiyor. -->
-    <form class="search-form" method="get" action="/analiz">
-      <input type="search" name="q" value="{{ query }}" list="company-ticker-suggestions"
-        placeholder="Şirket/varlık adı veya hisse kodu (ör. THYAO)" autofocus>
-      <datalist id="company-ticker-suggestions">
-        {% for t in company_ticker_suggestions %}
-        <option value="{{ t }}"></option>
-        {% endfor %}
-      </datalist>
-      <button type="submit">Ara</button>
-    </form>
+    <div>
+      <!-- Kalıcı bölüm başlığı (2026-08-26, kullanıcı isteği) - arama
+           kutusunun hemen üstünde, sabit. -->
+      <label class="search-section-label" for="analiz-search-input">📊 BIST Hisseleri ve Genel Enstrüman
+        Analizi</label>
+      <form class="search-form" method="get" action="/analiz">
+        <input id="analiz-search-input" type="search" name="q" value="{{ query }}"
+          list="company-ticker-suggestions" placeholder="Şirket/varlık adı veya hisse kodu (ör. THYAO)" autofocus>
+        <datalist id="company-ticker-suggestions">
+          {% for t in company_ticker_suggestions %}
+          <option value="{{ t }}"></option>
+          {% endfor %}
+        </datalist>
+        <button type="submit">Ara</button>
+      </form>
+    </div>
   </header>
 
   <main>
@@ -588,23 +663,52 @@
     </div>
     {% else %}
 
+    <!-- Son bakılan hisse/enstrümanı kaydet (bkz. <head> içindeki geri
+         yükleme scripti) - SADECE gerçek bir sonuç (şirket/enstrüman)
+         bulunduğunda kaydedilir, mode="none" ASLA kaydedilmez (kaydedilirse
+         kullanıcı bir sonraki ziyaretinde hep aynı "sonuç yok" ekranına
+         düşerdi). -->
+    <script>
+      try { localStorage.setItem('analiz_last_query', {{ query|tojson }}); } catch (e) {}
+    </script>
+
+    <!-- Ticker/enstrüman başlığı + "Teknik Görünüm" linki (2026-08-26,
+         kullanıcı isteği: "ticker'ın hemen yanına... mevcut projede zaten
+         kullandığımız butonu ekle") - SADECE şirket modunda (BIST ticker
+         VAR); genel enstrüman modunda zaten aşağıdaki gömülü grafiğin
+         kendi sembol/araç çubuğu var, AYRI bir link TEKRARA düşerdi. -->
+    {% if mode == "company" %}
+    <div class="ticker-header">
+      <h2>{{ financials_ticker }}</h2>
+      <a href="https://www.tradingview.com/chart/?symbol={{ tv_symbol }}" target="_blank" rel="noopener"
+        class="tradingview-link" title="TradingView'de {{ tv_symbol }} teknik görünümünü aç">
+        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+          <rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor" />
+          <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
+          <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
+        </svg>
+        Teknik Görünüm ↗
+      </a>
+    </div>
+    {% endif %}
+
     <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - karar
          src/web/app.py > company_profile_page'de VERİLMİŞ halde gelir
          (`chart_mode`): "link" = BIST (embed widget'ta ÇALIŞMADIĞI GERÇEK
-         bir Playwright testiyle bugün doğrulandı - bkz. o dosyadaki not),
-         "embed" = BIST-dışı, `validate_symbol` ile DOĞRULANMIŞ sembol -
-         Ana Sayfa'daki (dashboard.html > loadHomeTvWidget) AYNI resmi
+         bir Playwright testiyle bugün doğrulandı - bkz. o dosyadaki not) -
+         yukarıdaki ticker-header'daki "Teknik Görünüm" linki ZATEN aynı
+         URL'e gittiğinden burada AYRI bir buton TEKRARLANMAZ (kullanıcı
+         isteği: "tekilleştir"), sadece açıklayıcı not kalır. "embed" =
+         BIST-dışı, `validate_symbol` ile DOĞRULANMIŞ sembol - Ana
+         Sayfa'daki (dashboard.html > loadHomeTvWidget) AYNI resmi
          embed-widget-advanced-chart.js script'i kullanılır (tutarlılık,
          GERÇEK testle çalıştığı zaten kanıtlanmış). -->
     {% if chart_mode == "link" %}
     <div class="chart-cta-panel">
       <div class="chart-cta-text">
-        <div class="chart-cta-title">📈 {{ financials_ticker }} — Gerçek Zamanlı Grafik</div>
         <div class="chart-cta-sub">TradingView'in ücretsiz gömülü widget'ı BIST sembollerini desteklemiyor -
-          grafik TradingView'in kendi sitesinde yeni sekmede açılır.</div>
+          yukarıdaki "Teknik Görünüm" linki grafiği TradingView'in kendi sitesinde yeni sekmede açar.</div>
       </div>
-      <a href="https://www.tradingview.com/chart/?symbol={{ tv_symbol }}" target="_blank" rel="noopener"
-        class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
     </div>
     {% elif chart_mode == "embed" %}
     <div class="card" style="padding:0; overflow:hidden; border: 1px solid rgba(37, 99, 235, 0.3);">

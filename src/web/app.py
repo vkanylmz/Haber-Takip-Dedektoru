@@ -35,6 +35,7 @@ from src.crypto import get_crypto_dashboard_data, start_crypto_background_refres
 from src.company_profile import get_company_profile
 from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
 from src.fintables_financials import first_bist_ticker, load_financial_snapshot
+from src.web import chart_helpers
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
 from src.timezone_utils import TURKEY_TZ, format_turkey_time, to_turkey_time
 from src.config import load_config
@@ -1269,21 +1270,119 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
     )
 
 
+def _row_by_kalem(detay: dict[str, Any] | None, kalem: str) -> list[Any] | None:
+    if not detay:
+        return None
+    for row in detay.get("satirlar", []):
+        if row["kalem"] == kalem:
+            return row["degerler"]
+    return None
+
+
+def _build_financial_detail_charts(financials: dict[str, Any]) -> dict[str, Any]:
+    """/analiz/{ticker}/finansal sayfasının (2026-08-26, kullanıcı isteği:
+    "Fintables'ın kendi detay sayfası gibi grafik-zengin") TÜM grafik/tablo
+    verisini AppState'teki HAM (`bilanco_detay`/`gelir_tablosu_detay`/
+    `oranlar_serisi`/`carpanlar`) veriden üretir - bkz. src/web/chart_helpers.py.
+    Hiçbir sayı burada UYDURULMAZ; bir bölüm için gereken veri yoksa
+    (`bilanco_detay` vb. None ise) o bölüm boş/None döner, şablon o bölümü
+    hiç render etmez (bkz. financial_details.html)."""
+    donemler = financials.get("donemler") or []
+    bilanco_detay = financials.get("bilanco_detay")
+    gelir_detay = financials.get("gelir_tablosu_detay")
+    oranlar_serisi = financials.get("oranlar_serisi")
+
+    # Dönem etiketleri ESKİDEN YENİYE (bar/çizgi grafikleri soldan sağa
+    # kronolojik okunsun diye) - AppState'teki sıralama (donemler[0] =
+    # EN YENİ) burada TERSİNE çevrilir, sadece grafik/tablo render'ında.
+    period_labels = list(reversed(gelir_detay["donemler"])) if gelir_detay else []
+
+    def _bars(kalem: str) -> dict[str, Any]:
+        degerler = _row_by_kalem(gelir_detay, kalem)
+        if not degerler:
+            return {"bars": [], "has_data": False}
+        return chart_helpers.build_bar_series(list(zip(period_labels, reversed(degerler))))
+
+    gelir_ozet = chart_helpers.extract_summary_rows(
+        gelir_detay,
+        ["Satış Gelirleri", "Ticari Faaliyetlerden Brüt Kar (Zarar)", "Faaliyet Karı (Zararı)", "FAVÖK", "Dönem Karı (Zararı)"],
+    )
+    bilanco_ozet_rows = chart_helpers.extract_summary_rows(
+        bilanco_detay,
+        [
+            "Toplam Dönen Varlıklar",
+            "Toplam Duran Varlıklar",
+            "Toplam Varlıklar",
+            "Toplam Finansal Borçlar",
+            "Net Borç",
+            "Toplam Özkaynaklar",
+        ],
+    )
+
+    kaynak_dagilimi = None
+    if bilanco_detay:
+        ozkaynak = (_row_by_kalem(bilanco_detay, "Toplam Özkaynaklar") or [None])[0]
+        kvy = (_row_by_kalem(bilanco_detay, "Toplam Kısa Vadeli Yükümlülükler") or [None])[0]
+        uvy = (_row_by_kalem(bilanco_detay, "Toplam Uzun Vadeli Yükümlülükler") or [None])[0]
+        if any(v is not None for v in (ozkaynak, kvy, uvy)):
+            kaynak_dagilimi = chart_helpers.build_stacked_bar(
+                [
+                    ("Özkaynaklar", ozkaynak, "#4ade80"),
+                    ("Kısa Vadeli Yükümlülükler", kvy, "#f59e0b"),
+                    ("Uzun Vadeli Yükümlülükler", uvy, "#ef4444"),
+                ]
+            )
+
+    # Marj/oran trendleri (2026-08-26, kullanıcı isteği: "son 5 dönem çizgi
+    # grafiği") - HER biri o kategori/oran şirketin şablonunda YOKSA (ör.
+    # banka şablonunda "Cari Oran" hiç yok) build_ratio_trend None döner,
+    # o kart şablonda hiç render EDİLMEZ.
+    trend_defs = [
+        ("Karlılık Oranları", "Brüt Kar Marjı", "#f472b6"),
+        ("Karlılık Oranları", "FAVÖK Marjı", "#f472b6"),
+        ("Karlılık Oranları", "Net Kar Marjı", "#f472b6"),
+        ("Likidite Oranları", "Cari Oran", "#60a5fa"),
+        ("Kaldıraç Oranları", "Kaldıraç Oranı", "#60a5fa"),
+        ("Karlılık Oranları", "Özkaynak Karlılığı", "#60a5fa"),
+    ]
+    oran_trendleri = [
+        t for t in (chart_helpers.build_ratio_trend(oranlar_serisi, kat, oran, renk) for kat, oran, renk in trend_defs) if t
+    ]
+
+    return {
+        "gelir_ozet": gelir_ozet,
+        "bilanco_ozet_rows": bilanco_ozet_rows,
+        "satis_bar": _bars("Satış Gelirleri"),
+        "favok_bar": _bars("FAVÖK"),
+        "net_kar_bar": _bars("Dönem Karı (Zararı)"),
+        "kaynak_dagilimi": kaynak_dagilimi,
+        "oran_trendleri": oran_trendleri,
+        "donemler_var": bool(donemler),
+    }
+
+
 @app.get("/analiz/{ticker}/finansal", response_class=HTMLResponse)
 def financial_details_page(request: Request, ticker: str) -> HTMLResponse:
     """Tekil bir BIST hissesi için Fintables'tan çekilip önbelleğe alınan
-    detaylı finansal tablolar (Bilanço, Gelir Tablosu, Nakit Akım, Oranlar).
+    detaylı finansal tablolar (Bilanço, Gelir Tablosu, Nakit Akım, Oranlar)
+    VE (2026-08-26, kullanıcı isteği) grafik-zengin özet bölümleri (özet
+    finansallar, çeyreklik bar grafikleri, çarpanlar, kaynak dağılımı,
+    marj/oran trend çizgileri - bkz. _build_financial_detail_charts).
     Eğer henüz önbelleğe alınmamışsa (veya hatalıysa) kısmi veri / boş veri
-    mesajı gösterilir."""
+    mesajı gösterilir - BU SAYFA SADECE bu route'a girildiğinde yüklenir,
+    /analiz özet sayfasının hızını ETKİLEMEZ (kullanıcı isteği)."""
     financials_ticker = ticker.strip().upper()
     financials = load_financial_snapshot(financials_ticker)
-    
+    charts = _build_financial_detail_charts(financials) if financials else None
+
     return templates.TemplateResponse(
         request,
         "financial_details.html",
         {
             "financials_ticker": financials_ticker,
             "financials": financials,
+            "charts": charts,
+            "tv_symbol": f"BIST:{financials_ticker}",
         },
     )
 

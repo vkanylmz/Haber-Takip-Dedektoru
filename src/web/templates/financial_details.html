@@ -14,6 +14,8 @@
             --accent-glow: rgba(37, 99, 235, 0.4);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
+            --positive: #4ade80;
+            --negative: #ef4444;
         }
 
         body {
@@ -37,22 +39,6 @@
             position: sticky;
             top: 0;
             z-index: 100;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-        }
-
-        header h1 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            margin: 0;
-            background: linear-gradient(to right, #60a5fa, #a78bfa);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.5px;
         }
 
         .back-link {
@@ -65,13 +51,73 @@
             color: var(--text-main);
         }
 
+        .ticker-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.3rem;
+            flex-wrap: wrap;
+        }
+
+        .ticker-header h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .meta {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.2rem;
+        }
+
+        /* "Teknik Görünüm" butonu - dashboard.html > .tradingview-link İLE
+           BİREBİR AYNI stil (2026-08-26, kullanıcı isteği: "mevcut
+           projede zaten kullandığımız butonu ekle... tekrar oluşturma"). */
+        .tradingview-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: #fff !important;
+            background: #2962ff;
+            border-radius: 5px;
+            font-weight: 600;
+            font-size: 0.78rem;
+            padding: 0.3rem 0.6rem;
+            text-decoration: none !important;
+        }
+
+        .tradingview-link:hover {
+            background: #1e4fd6;
+        }
+
         main {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 2rem auto;
             padding: 0 1rem;
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .card-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #93c5fd;
+            margin-bottom: 1rem;
         }
 
         .outlook-note {
@@ -80,31 +126,263 @@
             font-style: italic;
         }
 
-        /* === FINANSAL TABLOLAR PANELI === */
-        .financials-panel {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(22, 163, 74, 0.25);
-            border-radius: 12px;
-            padding: 1.5rem;
+        /* --- 1. Özet Finansallar (Gelir Tablosu + Bilanço, yan yana) --- */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
         }
 
-        .financials-title {
-            font-weight: 700;
-            font-size: 1.05rem;
-            margin-bottom: 0.25rem;
-            color: #86efac;
+        @media (max-width: 720px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .summary-table td {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .summary-table td:first-child {
+            color: var(--text-muted);
+        }
+
+        .summary-table td:nth-child(2) {
+            text-align: right;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .summary-table td:nth-child(3) {
+            text-align: right;
+            width: 70px;
+            font-size: 0.78rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pct-positive {
+            color: var(--positive);
+        }
+
+        .pct-negative {
+            color: var(--negative);
+        }
+
+        /* --- 2. Çeyreklik bar grafikleri --- */
+        .bar-charts-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+        }
+
+        .bar-charts-grid>.card {
+            min-width: 0;
+        }
+
+        @media (max-width: 900px) {
+            .bar-charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .bar-chart-plot {
+            position: relative;
+            height: 110px;
+            margin-top: 0.5rem;
+        }
+
+        .bar-chart-zeroline {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-top: 1px dashed rgba(255, 255, 255, 0.15);
+        }
+
+        .bar-chart-bars {
+            position: absolute;
+            inset: 0;
             display: flex;
-            align-items: center;
             gap: 0.4rem;
         }
 
-        .financials-updated {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-bottom: 1.2rem;
+        .bar-col {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            height: 100%;
         }
 
+        .bar-fill {
+            position: absolute;
+            left: 12%;
+            right: 12%;
+            border-radius: 3px 3px 0 0;
+            background: #60a5fa;
+        }
+
+        .bar-fill.negative {
+            border-radius: 0 0 3px 3px;
+            background: var(--negative);
+        }
+
+        .bar-chart-labels {
+            display: flex;
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+        }
+
+        .bar-label-col {
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+        }
+
+        .bar-value {
+            font-size: 0.66rem;
+            font-weight: 700;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .bar-period {
+            font-size: 0.66rem;
+            color: var(--text-muted);
+            margin-top: 0.1rem;
+        }
+
+        /* --- 3. Çarpanlar --- */
+        .ratio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .ratio-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+
+        .carpanlar-card {
+            background: rgba(22, 163, 74, 0.05);
+            border-color: rgba(22, 163, 74, 0.2);
+        }
+
+        .ratio-card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .ratio-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.4rem 0;
+            font-size: 0.85rem;
+        }
+
+        .ratio-name {
+            color: var(--text-muted);
+        }
+
+        .ratio-value {
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .carpanlar-note {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 1rem;
+            font-style: italic;
+            line-height: 1.4;
+        }
+
+        /* --- 5. Kaynak Dağılımı (stacked bar) --- */
+        .stacked-bar {
+            display: flex;
+            width: 100%;
+            height: 28px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .stacked-bar-seg {
+            height: 100%;
+        }
+
+        .stacked-bar-legend {
+            display: flex;
+            gap: 1.25rem;
+            flex-wrap: wrap;
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        .legend-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            margin-right: 0.35rem;
+        }
+
+        .legend-item {
+            color: var(--text-muted);
+        }
+
+        .legend-value {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* --- 6. Marj/Oran trendleri (çizgi grafik) --- */
+        .trend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .trend-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem 1.1rem;
+        }
+
+        .trend-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        .trend-latest {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f9a8d4;
+        }
+
+        .trend-svg-wrap {
+            margin-top: 0.4rem;
+        }
+
+        /* --- Sekmeli TAM tablolar (mevcut, korunuyor) --- */
         .financials-tabs {
             display: flex;
             gap: 0.5rem;
@@ -197,85 +475,183 @@
             background: #151518;
             z-index: 10;
         }
-
-        .financials-table tr:hover td {
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .financials-table tr:hover td:first-child {
-            background: #1a1a1f;
-        }
-
-        .ratio-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1.25rem;
-        }
-
-        .ratio-card {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 1.25rem;
-        }
-
-        .carpanlar-card {
-            background: rgba(22, 163, 74, 0.05);
-            border-color: rgba(22, 163, 74, 0.2);
-            margin-bottom: 1.5rem;
-        }
-
-        .ratio-card-title {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.9);
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .ratio-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.4rem 0;
-            font-size: 0.85rem;
-        }
-
-        .ratio-name {
-            color: var(--text-muted);
-        }
-
-        .ratio-value {
-            font-weight: 500;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .carpanlar-note {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 1rem;
-            font-style: italic;
-            line-height: 1.4;
-        }
     </style>
 </head>
 
 <body>
     <header>
-        <div>
-            <a href="/analiz?q={{ financials_ticker }}" class="back-link">← Analize Geri Dön</a>
-            <h1>Finansal Tablolar: {{ financials_ticker }}</h1>
-            <div class="meta">Bu sayfada, şirket için önbelleğe alınmış kapsamlı finansal tablolar (Bilanço, Gelir
-                Tablosu vb.) yer almaktadır.</div>
+        <a href="/analiz?q={{ financials_ticker }}" class="back-link">← Analize Geri Dön</a>
+        <div class="ticker-header">
+            <h1>{{ financials_ticker }}</h1>
+            <a href="https://www.tradingview.com/chart/?symbol={{ tv_symbol }}" target="_blank" rel="noopener"
+                class="tradingview-link" title="TradingView'de {{ tv_symbol }} teknik görünümünü aç">
+                <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                    <rect x="4" y="11" width="3.2" height="9" rx="0.6" fill="currentColor" />
+                    <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
+                    <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
+                </svg>
+                Teknik Görünüm ↗
+            </a>
         </div>
+        <div class="meta">Detaylı finansal tablolar (Bilanço, Gelir Tablosu, Nakit Akım, Oranlar &amp; Çarpanlar)</div>
     </header>
 
     <main>
-        <div class="financials-panel">
-            <div class="financials-title">📊 Finansal Tablolar — {{ financials_ticker }}</div>
-            {% if financials %}
-            <div class="financials-updated">Kaynak: Fintables · Son güncelleme: {{ financials.fetched_at[:10] }}</div>
+        {% if not financials %}
+        <div class="card">
+            <div class="outlook-note">Bu şirket için finansal veri henüz hazırlanmadı.</div>
+        </div>
+        {% else %}
 
+        <!-- 1. Özet Finansallar -->
+        {% if charts.gelir_ozet or charts.bilanco_ozet_rows %}
+        <div class="summary-grid">
+            {% if charts.gelir_ozet %}
+            <div class="card">
+                <div class="card-title">📈 Gelir Tablosu Özeti</div>
+                <table class="summary-table">
+                    {% for row in charts.gelir_ozet %}
+                    <tr>
+                        <td>{{ row.kalem }}</td>
+                        <td>{{ row.display }} TL</td>
+                        <td>
+                            {% if row.pct_change is not none %}
+                            <span class="{{ 'pct-positive' if row.pct_change >= 0 else 'pct-negative' }}">
+                                {{ "%+.1f"|format(row.pct_change) }}%
+                            </span>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endif %}
+            {% if charts.bilanco_ozet_rows %}
+            <div class="card">
+                <div class="card-title">🏦 Bilanço Özeti</div>
+                <table class="summary-table">
+                    {% for row in charts.bilanco_ozet_rows %}
+                    <tr>
+                        <td>{{ row.kalem }}</td>
+                        <td>{{ row.display }} TL</td>
+                        <td>
+                            {% if row.pct_change is not none %}
+                            <span class="{{ 'pct-positive' if row.pct_change >= 0 else 'pct-negative' }}">
+                                {{ "%+.1f"|format(row.pct_change) }}%
+                            </span>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- 2. Çeyreklik bar grafikleri -->
+        {% if charts.satis_bar.has_data or charts.favok_bar.has_data or charts.net_kar_bar.has_data %}
+        <div class="bar-charts-grid">
+            {% for title, series in [("Çeyreklik Satışlar", charts.satis_bar), ("Çeyreklik FAVÖK", charts.favok_bar), ("Çeyreklik Net Kâr", charts.net_kar_bar)] %}
+            {% if series.has_data %}
+            <div class="card">
+                <div class="card-title">{{ title }}</div>
+                <div class="bar-chart-plot">
+                    <div class="bar-chart-zeroline" style="bottom: {{ series.zero_pct }}%"></div>
+                    <div class="bar-chart-bars">
+                        {% for bar in series.bars %}
+                        <div class="bar-col">
+                            <div class="bar-fill {{ 'negative' if bar.negative else '' }}"
+                                style="height: {{ bar.height_pct }}%; bottom: {{ bar.offset_pct }}%;"></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="bar-chart-labels">
+                    {% for bar in series.bars %}
+                    <div class="bar-label-col">
+                        <div class="bar-value">{{ bar.display }}</div>
+                        <div class="bar-period">{{ bar.label }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 3. Çarpanlar -->
+        {% if financials.carpanlar %}
+        <div class="ratio-card carpanlar-card">
+            <div class="ratio-card-title">Değerleme Çarpanları (hesaplanmış)</div>
+            <div class="ratio-row"><span class="ratio-name">F/K</span><span class="ratio-value">{{
+                    "%.2f"|format(financials.carpanlar.fk) if financials.carpanlar.fk is not none else "—"
+                    }}</span></div>
+            <div class="ratio-row"><span class="ratio-name">PD/DD</span><span class="ratio-value">{{
+                    "%.2f"|format(financials.carpanlar.pd_dd) if financials.carpanlar.pd_dd is not none else "—"
+                    }}</span></div>
+            <div class="ratio-row"><span class="ratio-name">FD/FAVÖK</span><span class="ratio-value">{{
+                    "%.2f"|format(financials.carpanlar.fd_favok) if financials.carpanlar.fd_favok is not none
+                    else "—" }}</span></div>
+            {% if financials.carpanlar.net_borc_favok is defined and financials.carpanlar.net_borc_favok is not none %}
+            <div class="ratio-row"><span class="ratio-name">Net Borç/FAVÖK</span><span class="ratio-value">{{
+                    "%.2f"|format(financials.carpanlar.net_borc_favok) }}</span></div>
+            {% endif %}
+            <div class="ratio-row"><span class="ratio-name">Son Fiyat</span><span class="ratio-value">{{
+                    financials.carpanlar.son_fiyat }} TL</span></div>
+            <div class="ratio-row"><span class="ratio-name">Piyasa Değeri</span><span class="ratio-value">{{
+                    "{:,.0f}".format(financials.carpanlar.piyasa_degeri).replace(",", ".") if
+                    financials.carpanlar.piyasa_degeri is not none else "—" }} TL</span></div>
+            {% if financials.carpanlar.hesaplama_notu %}
+            <div class="carpanlar-note">{{ financials.carpanlar.hesaplama_notu }} PEG Oranı da aynı nedenle (gerekli
+                ileriye dönük büyüme tahmini verisi Fintables'ta yok) gösterilmiyor.</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- 4. Karne: Fintables'ta kategorik bir skor/gösterge (Karlılık/Büyüme/Borçluluk gibi)
+             veri seti BULUNAMADI (gerçek şema araştırmasıyla doğrulandı, bkz. sohbet 2026-08-26) -
+             kullanıcı isteği "yoksa atla, uydurma" - bu bölüm KASITLI OLARAK render edilmiyor. -->
+
+        <!-- 5. Kaynak Dağılımı -->
+        {% if charts.kaynak_dagilimi %}
+        <div class="card">
+            <div class="card-title">🧩 Kaynak Dağılımı</div>
+            <div class="stacked-bar">
+                {% for seg in charts.kaynak_dagilimi %}
+                <div class="stacked-bar-seg" style="width: {{ seg.pct }}%; background: {{ seg.color }};"
+                    title="{{ seg.label }}: %{{ seg.pct }}"></div>
+                {% endfor %}
+            </div>
+            <div class="stacked-bar-legend">
+                {% for seg in charts.kaynak_dagilimi %}
+                <span class="legend-item"><span class="legend-dot" style="background: {{ seg.color }};"></span>{{
+                    seg.label }}: <span class="legend-value">%{{ seg.pct }}</span></span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 6. Marj ve Oran Trendleri -->
+        {% if charts.oran_trendleri %}
+        <div class="card">
+            <div class="card-title">📉 Marj ve Oran Trendleri (son 5 dönem)</div>
+            <div class="trend-grid">
+                {% for t in charts.oran_trendleri %}
+                <div class="trend-card">
+                    <div class="trend-title"><span>{{ t.oran }}</span><span class="trend-latest">{{ t.latest_display
+                            }}</span></div>
+                    <div class="trend-svg-wrap">{{ t.svg|safe }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- TAM tablolar (Bilanço/Gelir Tablosu/Nakit Akım/Oranlar & Çarpanlar) -->
+        <div class="card">
+            <div class="card-title">📊 Tam Tablolar</div>
             <div class="financials-tabs" role="tablist">
                 <button type="button" class="financials-tab active" data-tab="bilanco"
                     onclick="selectFinancialsTab('bilanco')">Bilanço</button>
@@ -372,30 +748,6 @@
             </div>
 
             <div class="financials-tab-panel" id="financials-tab-oranlar">
-                {% if financials.carpanlar %}
-                <div class="ratio-card carpanlar-card">
-                    <div class="ratio-card-title">Değerleme Çarpanları (hesaplanmış)</div>
-                    <div class="ratio-row"><span class="ratio-name">F/K</span><span class="ratio-value">{{
-                            "%.2f"|format(financials.carpanlar.fk) if financials.carpanlar.fk is not none else "—"
-                            }}</span></div>
-                    <div class="ratio-row"><span class="ratio-name">PD/DD</span><span class="ratio-value">{{
-                            "%.2f"|format(financials.carpanlar.pd_dd) if financials.carpanlar.pd_dd is not none else "—"
-                            }}</span></div>
-                    <div class="ratio-row"><span class="ratio-name">FD/FAVÖK</span><span class="ratio-value">{{
-                            "%.2f"|format(financials.carpanlar.fd_favok) if financials.carpanlar.fd_favok is not none
-                            else "—"
-                            }}</span></div>
-                    <div class="ratio-row"><span class="ratio-name">Son Fiyat</span><span class="ratio-value">{{
-                            financials.carpanlar.son_fiyat }} TL</span></div>
-                    <div class="ratio-row"><span class="ratio-name">Piyasa Değeri</span><span class="ratio-value">{{
-                            "{:,.0f}".format(financials.carpanlar.piyasa_degeri).replace(",", ".") if
-                            financials.carpanlar.piyasa_degeri is not none else "—" }} TL</span></div>
-                    {% if financials.carpanlar.hesaplama_notu %}
-                    <div class="carpanlar-note">{{ financials.carpanlar.hesaplama_notu }}</div>
-                    {% endif %}
-                </div>
-                {% endif %}
-
                 {% if financials.oranlar %}
                 <div class="ratio-grid">
                     {% for kategori, oranlar in financials.oranlar.items() %}
@@ -411,14 +763,12 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="outlook-note">Oranlar &amp; Çarpanlar verisi bulunamadı veya eski format; yenilenmesi
-                    bekleniyor.</div>
+                <div class="outlook-note">Oranlar verisi bulunamadı.</div>
                 {% endif %}
             </div>
-            {% else %}
-            <div class="outlook-note">Bu şirket için detaylı finansal veri önbellekte bulunamadı.</div>
-            {% endif %}
         </div>
+
+        {% endif %}
     </main>
 
     <script>

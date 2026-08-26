@@ -96,6 +96,7 @@ def save_financial_snapshot(
     gelir_tablosu_detay: dict[str, Any] | None = None,
     nakit_akis_detay: dict[str, Any] | None = None,
     carpanlar: dict[str, Any] | None = None,
+    oranlar_serisi: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fintables'tan çekilip indirgenmiş bir şirket finansal özetini
     AppState'e yazar (upsert). Şekiller:
@@ -138,6 +139,14 @@ def save_financial_snapshot(
         geçmişi/ileriye dönük büyüme tahmini verisi bulunamadı (uydurma
         istenmedi, bkz. kullanıcı isteği).
 
+    `oranlar_serisi` (2026-08-26, kullanıcı isteği: "marj ve oran
+        trendleri... zaman içindeki değişimi çizgi grafiği") - `oranlar` ile
+        AYNI kategori/oran isimleri ama TEK bir dönem DEĞİL, `donemler` ile
+        AYNI 5 dönemin TAMAMI: {kategori: {oran_adı: {"donemler": [...],
+        "degerler": [...]}}} - `degerler` `donemler` ile AYNI sırada/uzunlukta.
+        Bu, `src/web/chart_helpers.py > build_ratio_trend`'in çizgi
+        grafiklerini üretmesi için kullanılır.
+
     Döner: DB'ye yazılan tam payload (fetched_at DAHİL)."""
     payload = {
         "ticker": ticker.strip().upper(),
@@ -145,6 +154,7 @@ def save_financial_snapshot(
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "donemler": donemler,
         "oranlar": oranlar,
+        "oranlar_serisi": oranlar_serisi,
         "bilanco_ozet": bilanco_ozet,
         "bilanco_detay": bilanco_detay,
         "gelir_tablosu_detay": gelir_tablosu_detay,
