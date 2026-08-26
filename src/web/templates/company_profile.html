@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Şirket Profili — Finansal Haber Dashboard</title>
+  <title>Analiz — Finansal Haber Dashboard</title>
   <style>
     :root {
       --bg: #09090b;
@@ -280,6 +280,79 @@
       color: var(--text-main);
     }
 
+    /* Sekmeli finansal tablolar (2026-08-26, kullanıcı isteği: "Bilanço /
+       Gelir Tablosu / Nakit Akım / Oranlar & Çarpanlar" - tam satır bazlı
+       tablolar, sayfa yenilenmeden geçiş, bkz. altındaki
+       selectFinancialsTab). */
+    .financials-tabs {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.75rem;
+    }
+
+    .financials-tab {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .financials-tab:hover {
+      color: var(--text-main);
+    }
+
+    .financials-tab.active {
+      background: rgba(74, 222, 128, 0.15);
+      border-color: #4ade80;
+      color: #86efac;
+    }
+
+    .financials-tab-panel {
+      display: none;
+    }
+
+    .financials-tab-panel.active {
+      display: block;
+    }
+
+    /* Kalem × dönem karşılaştırmalı tablo (bilanço/gelir/nakit akım) - ilk
+       sütun (kalem adı) sabit genişlikte SOLA yaslı, dönem sütunları SAĞA
+       yaslı sayısal değerler. */
+    .financials-table td:first-child,
+    .financials-table th:first-child {
+      min-width: 260px;
+    }
+
+    /* Değerleme çarpanları kartı (2026-08-26, kullanıcı isteği) - diğer
+       ratio-card'lardan AYIRT EDİLSİN diye hafif farklı bir vurgu
+       (mor/menekşe) - "bu HESAPLANMIŞ bir değer, Fintables'ın hazır
+       tablosundan DEĞİL" mesajını görsel olarak da taşır. */
+    .carpanlar-card {
+      border-color: rgba(167, 139, 250, 0.35);
+      margin-bottom: 1rem;
+    }
+
+    .carpanlar-card .ratio-card-title {
+      color: #c4b5fd;
+    }
+
+    .carpanlar-note {
+      margin-top: 0.6rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     .card {
       background: var(--card-bg);
       backdrop-filter: blur(16px);
@@ -440,82 +513,82 @@
 <body>
   <header>
     <div>
-      <h1>🏢 Şirket Profili</h1>
+      <h1>🏢 Analiz</h1>
       <div class="meta"><a class="back-link" href="/">← Dashboard'a dön</a></div>
     </div>
-    <form class="search-form" method="get" action="/sirket-profili">
-      <input type="search" name="q" value="{{ query }}" placeholder="Şirket/varlık adı (ör. Tesla)" autofocus>
+    <!-- Otomatik tamamlama (2026-08-26, kullanıcı isteği) - ÖNCEDEN Ana
+         Sayfa'daki (yanlış konumdaki, kaldırılan) arama çubuğundaydı, BURAYA
+         taşındı (bkz. src/web/app.py > company_profile_page,
+         _get_cached_company_ticker_suggestions - src/db.py >
+         get_distinct_company_tickers). Native <datalist>, ek JS/kütüphane
+         gerekmiyor. -->
+    <form class="search-form" method="get" action="/analiz">
+      <input type="search" name="q" value="{{ query }}" list="company-ticker-suggestions"
+        placeholder="Şirket/varlık adı veya hisse kodu (ör. THYAO)" autofocus>
+      <datalist id="company-ticker-suggestions">
+        {% for t in company_ticker_suggestions %}
+        <option value="{{ t }}"></option>
+        {% endfor %}
+      </datalist>
       <button type="submit">Ara</button>
     </form>
   </header>
 
   <main>
-    {% if financials_ticker %}
-    <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - Ana
-         Sayfa'daki GÖMÜLÜ TradingView widget'ı İLE AYNI teknik BURADA
-         KULLANILMADI: TradingView'in ücretsiz embed widget'ı hiçbir BIST
-         sembolünü desteklemiyor (gerçek testle doğrulanmış, bkz.
-         dashboard.html > _homeTvWidgetSymbol yorumu - "This symbol is
-         only available on TradingView" hatası veriyor). Bunun yerine
-         mevcut "Teknik Görünüm" dış-link deseni (bkz. src/web/app.py >
-         _build_tradingview_url, KAP kartları/emtia panelinde de kullanılan
-         AYNI URL formülü) kullanıldı - tradingview.com/chart'ta BIST
-         sembolleri GERÇEKTEN çalışıyor, sadece gömülebilir widget'ta
-         lisanslı değil. -->
+    {% if financials_ticker or (tv_symbol and tv_symbol_valid) %}
+    <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - BIST için dış 
+         link, yabancı/genel enstrümanlar için gömülü widget kullanıyoruz. -->
+    {% if financials_ticker or (tv_symbol and tv_symbol.startswith('BIST:')) %}
     <div class="chart-cta-panel">
       <div class="chart-cta-text">
-        <div class="chart-cta-title">📈 {{ financials_ticker }} — Gerçek Zamanlı Grafik</div>
+        <div class="chart-cta-title">📈 {{ financials_ticker or tv_symbol }} — Gerçek Zamanlı Grafik</div>
         <div class="chart-cta-sub">TradingView'in ücretsiz gömülü widget'ı BIST sembollerini desteklemiyor -
           grafik TradingView'in kendi sitesinde yeni sekmede açılır.</div>
       </div>
-      <a href="https://www.tradingview.com/chart/?symbol=BIST:{{ financials_ticker }}" target="_blank"
-        rel="noopener" class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
+      <a href="https://www.tradingview.com/chart/?symbol={% if financials_ticker %}BIST:{{ financials_ticker }}{% else %}{{ tv_symbol }}{% endif %}"
+        target="_blank" rel="noopener" class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
     </div>
-
-    <div class="financials-panel">
-      <div class="financials-title">📊 Finansal Tablolar — {{ financials_ticker }}</div>
-      {% if financials %}
-      <div class="financials-updated">Kaynak: Fintables · Son güncelleme: {{ financials.fetched_at[:10] }}</div>
-
-      <div class="financials-table-scroll">
-        <table class="financials-table">
-          <thead>
-            <tr>
-              <th>Dönem</th>
-              <th>Satış Geliri (çeyreklik)</th>
-              <th>FAVÖK (çeyreklik)</th>
-              <th>Net Kar (çeyreklik)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for d in financials.donemler %}
-            <tr>
-              <td>{{ d.yil }}/{{ "%02d"|format(d.ay) }}</td>
-              <td>{{ "{:,.0f}".format(d.satis_geliri_ceyreklik).replace(",", ".") if d.satis_geliri_ceyreklik is not none else "—" }} TL</td>
-              <td>{{ "{:,.0f}".format(d.favok_ceyreklik).replace(",", ".") if d.favok_ceyreklik is not none else "—" }} TL</td>
-              <td>{{ "{:,.0f}".format(d.net_kar_ceyreklik).replace(",", ".") if d.net_kar_ceyreklik is not none else "—" }} TL</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="ratio-grid">
-        {% for kategori, oranlar in financials.oranlar.items() %}
-        <div class="ratio-card">
-          <div class="ratio-card-title">{{ kategori }}</div>
-          {% for oran_adi, deger in oranlar.items() %}
-          <div class="ratio-row">
-            <span class="ratio-name">{{ oran_adi }}</span>
-            <span class="ratio-value">{{ "%.2f"|format(deger) if deger is not none else "—" }}</span>
-          </div>
-          {% endfor %}
+    {% else %}
+    <div class="card" style="padding:0; overflow:hidden; border: 1px solid rgba(37, 99, 235, 0.3);">
+      <!-- TradingView Widget BEGIN -->
+      <div class="tradingview-widget-container" style="height:400px;width:100%">
+        <div id="tv_chart_{{ tv_symbol|replace(':', '_') }}" style="height:calc(100% - 32px);width:100%"></div>
+        <div class="tradingview-widget-copyright"><a href="https://tr.tradingview.com/" rel="noopener nofollow"
+            target="_blank"><span class="blue-text">TradingView'de tüm piyasalardaki işlemleri takip edin</span></a>
         </div>
-        {% endfor %}
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+          new TradingView.widget(
+            {
+              "autosize": true,
+              "symbol": "{{ tv_symbol }}",
+              "interval": "D",
+              "timezone": "Etc/UTC",
+              "theme": "dark",
+              "style": "1",
+              "locale": "tr",
+              "enable_publishing": false,
+              "backgroundColor": "rgba(24, 24, 27, 1)",
+              "gridColor": "rgba(255, 255, 255, 0.06)",
+              "hide_top_toolbar": true,
+              "hide_legend": true,
+              "save_image": false,
+              "container_id": "tv_chart_{{ tv_symbol|replace(':', '_') }}"
+            }
+          );
+        </script>
       </div>
-      {% else %}
-      <div class="outlook-note">Bu şirket için finansal veri henüz hazırlanmadı.</div>
-      {% endif %}
+      <!-- TradingView Widget END -->
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if financials_ticker %}
+    <div style="margin-bottom: 2rem; display: flex; justify-content: flex-end;">
+      <a href="/analiz/{{ financials_ticker }}/finansal" class="chart-cta-button"
+        style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; background: var(--card-bg); border: 1px solid rgba(22, 163, 74, 0.4); border-radius: 8px; padding: 0.75rem 1.25rem; font-weight: 500; font-size: 0.95rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-top: 1rem;">
+        <span style="font-size: 1.1rem;">📊</span> Detaylı Finansal Verileri Gör ({{ financials_ticker }})
+      </a>
     </div>
     {% endif %}
 
@@ -549,7 +622,8 @@
     <div class="card {% if r.is_highlighted %}highlighted{% endif %}">
       <div class="card-top">
         <div>
-          <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{% endif %}</h2>
+          <h2 class="card-title">{{ r.title }}{% if r.title_tr %} <span class="title-tr">({{ r.title_tr }})</span>{%
+            endif %}</h2>
           <div class="card-meta">
             <span>{{ r.published_at }}</span>
             <span class="meta-divider">|</span>
@@ -579,6 +653,20 @@
 
     {% endif %}
   </main>
+
+  <script>
+    // Sekmeli finansal tablolar (2026-08-26, kullanıcı isteği) - sayfa
+    // yenilenmeden geçiş, dashboard.html > selectCalendarDay ile AYNI
+    // basit show/hide deseni (AJAX/harici kütüphane YOK).
+    function selectFinancialsTab(tabName) {
+      document.querySelectorAll('.financials-tab').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+      });
+      document.querySelectorAll('.financials-tab-panel').forEach(function (panel) {
+        panel.classList.toggle('active', panel.id === 'financials-tab-' + tabName);
+      });
+    }
+  </script>
 </body>
 
 </html>
