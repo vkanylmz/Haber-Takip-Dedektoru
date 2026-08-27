@@ -595,6 +595,34 @@
       margin: 0;
       color: var(--text-main);
     }
+
+    /* "Detaylı Finansal İnceleme" butonu (2026-08-27, kullanıcı isteği) -
+       .tradingview-link'in (TradingView marka mavisi) yanında GÖRSEL OLARAK
+       AYRIŞSIN diye sayfanın kendi financials-panel yeşilini kullanır (bkz.
+       yukarıdaki .financials-title #86efac) - Fintables'ın mavi/koyu
+       temasını TEKRARLAMAZ, projenin bu sayfada zaten kurduğu ikinci vurgu
+       rengi. */
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-weight: 700;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 5px;
+      text-decoration: none !important;
+      white-space: nowrap;
+    }
+
+    .action-btn-financial {
+      background: rgba(74, 222, 128, 0.18);
+      color: #86efac !important;
+      border: 1px solid rgba(74, 222, 128, 0.4);
+    }
+
+    .action-btn-financial:hover {
+      background: rgba(74, 222, 128, 0.28);
+    }
   </style>
   <!-- Son bakılan hisse/enstrümanı hatırlama (2026-08-26, kullanıcı isteği:
        "boş bir arama ekranına değil, kaldığı yere dönsün") - BİLİNÇLİ
@@ -672,14 +700,22 @@
       try { localStorage.setItem('analiz_last_query', {{ query|tojson }}); } catch (e) {}
     </script>
 
-    <!-- Ticker/enstrüman başlığı + "Teknik Görünüm" linki (2026-08-26,
-         kullanıcı isteği: "ticker'ın hemen yanına... mevcut projede zaten
-         kullandığımız butonu ekle") - SADECE şirket modunda (BIST ticker
-         VAR); genel enstrüman modunda zaten aşağıdaki gömülü grafiğin
-         kendi sembol/araç çubuğu var, AYRI bir link TEKRARA düşerdi. -->
+    <!-- Ticker/enstrüman başlığı + "Detaylı Finansal İnceleme"/"Teknik
+         Analiz" butonları (2026-08-27, kullanıcı isteği) - SADECE şirket
+         modunda (BIST ticker VAR); genel enstrüman modunda zaten aşağıdaki
+         gömülü grafiğin kendi sembol/araç çubuğu var, AYRI bir link
+         TEKRARA düşerdi. -->
     {% if mode == "company" %}
     <div class="ticker-header">
       <h2>{{ financials_ticker }}</h2>
+      <!-- İki ayrı, görsel olarak net ayrışan buton (2026-08-27, kullanıcı
+           isteği) - "Detaylı Finansal İnceleme" sayfanın kendi financials-panel
+           yeşiliyle (bkz. yukarıdaki .financials-title), "Teknik Analiz"
+           TradingView'in marka mavisiyle (mevcut .tradingview-link, DEĞİŞMEDİ). -->
+      <a href="/analiz/{{ financials_ticker }}/finansal" class="action-btn action-btn-financial"
+        title="{{ financials_ticker }} için Bilanço, Gelir Tablosu ve Nakit Akış Tablosu">
+        📊 Detaylı Finansal İnceleme
+      </a>
       <a href="https://www.tradingview.com/chart/?symbol={{ tv_symbol }}" target="_blank" rel="noopener"
         class="tradingview-link" title="TradingView'de {{ tv_symbol }} teknik görünümünü aç">
         <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
@@ -687,7 +723,7 @@
           <rect x="10.4" y="5" width="3.2" height="15" rx="0.6" fill="currentColor" />
           <rect x="16.8" y="14" width="3.2" height="6" rx="0.6" fill="currentColor" />
         </svg>
-        Teknik Görünüm ↗
+        📈 Teknik Analiz ↗
       </a>
     </div>
     {% endif %}
@@ -696,7 +732,7 @@
          src/web/app.py > company_profile_page'de VERİLMİŞ halde gelir
          (`chart_mode`): "link" = BIST (embed widget'ta ÇALIŞMADIĞI GERÇEK
          bir Playwright testiyle bugün doğrulandı - bkz. o dosyadaki not) -
-         yukarıdaki ticker-header'daki "Teknik Görünüm" linki ZATEN aynı
+         yukarıdaki ticker-header'daki "Teknik Analiz" linki ZATEN aynı
          URL'e gittiğinden burada AYRI bir buton TEKRARLANMAZ (kullanıcı
          isteği: "tekilleştir"), sadece açıklayıcı not kalır. "embed" =
          BIST-dışı, `validate_symbol` ile DOĞRULANMIŞ sembol - Ana
@@ -739,8 +775,8 @@
 
     {% if mode == "company" and financials %}
     <!-- Kısa Finansal Özet (2026-08-26, kullanıcı isteği: SADE kalsın, en
-         fazla 4-6 rakam) - TAM tablolar için "Detaylı Finansal Verileri
-         Gör" butonu, bkz. altındaki blok. -->
+         fazla 4-6 rakam) - TAM tablolar için "Detaylı Finansal İnceleme"
+         butonu artık yukarıdaki ticker-header'da (2026-08-27). -->
     {% set d0 = financials.donemler[0] if financials.donemler else None %}
     <div class="quick-metrics-panel">
       <div class="quick-metrics-title">📌 Kısa Finansal Özet — {{ financials.fetched_at[:10] }}</div>
@@ -775,12 +811,10 @@
         </div>
         {% endif %}
       </div>
-      <div style="margin-top: 1.1rem; text-align: right;">
-        <a href="/analiz/{{ financials_ticker }}/finansal" class="chart-cta-button"
-          style="text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem;">
-          📊 Detaylı Finansal Verileri Gör ↗
-        </a>
-      </div>
+      <!-- "Detaylı Finansal Verileri Gör" CTA'sı KALDIRILDI (2026-08-27) -
+           artık AYNI hedefe (/analiz/{ticker}/finansal) giden buton
+           yukarıdaki .ticker-header'da, ticker'ın hemen yanında (bkz.
+           kullanıcı isteği) - iki AYRI yerde AYNI link TEKRAR EDİLMEZ. -->
     </div>
     {% elif mode == "company" %}
     <div class="outlook-note">{{ financials_ticker }} için finansal veri henüz hazırlanmadı.</div>

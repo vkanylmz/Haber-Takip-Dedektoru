@@ -57,6 +57,39 @@ def _empty_result(query: str) -> dict[str, Any]:
     }
 
 
+def resolve_financials_ticker(query: str) -> tuple[str | None, list[NewsRecord]]:
+    """`query`'den (ticker VEYA şirket adı) Fintables önbelleğinde veri
+    bulunan bir BIST ticker'ı çözümler - bkz. modül docstring'i > "ŞİRKET vs
+    GENEL ENSTRÜMAN" ayrımındaki İKİ sinyal. BİLEREK HİÇBİR LLM ÇAĞRISI
+    YAPMAZ (get_company_profile'ın aksine) - `src/web/app.py > finansallar_page`
+    gibi sadece finansal özet gösteren, haber/outlook özeti GEREKMEYEN
+    çağıranlar için. `records` de döner (aynı sorguyu tekrar
+    ÇALIŞTIRMASIN diye - get_company_profile bu fonksiyonu kullanır)."""
+    query = query.strip()
+    if not query:
+        return None, []
+
+    since = datetime.now(timezone.utc) - timedelta(days=_PROFILE_WINDOW_DAYS)
+    with get_session() as session:
+        records = get_recent_records(session, limit=200, search_query=query, since=since)
+
+    looks_like_ticker = query.isalpha() and query.isupper() and 2 <= len(query) <= 10
+    if looks_like_ticker and load_financial_snapshot(query) is not None:
+        return query, records
+
+    # Bkz. modül docstring'i - tesadüfi tek isabetleri elemek için bir
+    # ticker'ın AYNI aramada en az 2 farklı kayıtta çözümlenmesi ARANIR.
+    ticker_counts: dict[str, int] = {}
+    for r in records:
+        t = first_bist_ticker(r.company_ticker)
+        if t:
+            ticker_counts[t] = ticker_counts.get(t, 0) + 1
+    repeated = [t for t, count in ticker_counts.items() if count >= 2]
+    if repeated:
+        return max(repeated, key=lambda t: ticker_counts[t]), records
+    return None, records
+
+
 def get_company_profile(query: str, config: dict[str, Any]) -> dict[str, Any]:
     """Verilen arama terimi için Analiz sayfasının tüm verisini döner.
 
@@ -79,34 +112,10 @@ def get_company_profile(query: str, config: dict[str, Any]) -> dict[str, Any]:
     if not query:
         return _empty_result("")
 
-    since = datetime.now(timezone.utc) - timedelta(days=_PROFILE_WINDOW_DAYS)
-    with get_session() as session:
-        records = get_recent_records(session, limit=200, search_query=query, since=since)
-
-    # --- Şirket tespiti (bkz. modül docstring'i > iki sinyal) ---
-    financials_ticker: str | None = None
-    looks_like_ticker = query.isalpha() and query.isupper() and 2 <= len(query) <= 10
-    if looks_like_ticker and load_financial_snapshot(query) is not None:
-        financials_ticker = query
-    if not financials_ticker:
-        # Genel/geniş bir metin araması ("altın" gibi) YÜZLERCE kaydı
-        # eşleştirebilir - bunlardan SADECE BİRİNİN, aramayla İLGİSİZ bir
-        # nedenle (ör. bir KAP bildiriminin metninde "altın" kelimesinin
-        # geçmesi) bir BIST ticker'ı çözümlenmesi YANLIŞ POZİTİF üretir
-        # (GERÇEK bir örnekle bulundu, bkz. sohbet 2026-08-26: "altın"
-        # araması SKP/LINK gibi alakasız tickerlara TEK SEFERLİK isabet
-        # ediyordu). Bu yüzden bir ticker'ın "şirket" sayılması için AYNI
-        # ticker'ın en az 2 FARKLI kayıtta çözümlenmesi ARANIR - tesadüfi
-        # tek isabetleri elemek için ucuz ama etkili bir eşik.
-        ticker_counts: dict[str, int] = {}
-        for r in records:
-            t = first_bist_ticker(r.company_ticker)
-            if t:
-                ticker_counts[t] = ticker_counts.get(t, 0) + 1
-        repeated = [t for t, count in ticker_counts.items() if count >= 2]
-        if repeated:
-            # Birden fazla ticker tekrar ediyorsa en sık geçeni seç.
-            financials_ticker = max(repeated, key=lambda t: ticker_counts[t])
+    # --- Şirket tespiti (bkz. modül docstring'i > iki sinyal, artık
+    # resolve_financials_ticker'da - src/web/app.py > finansallar_page de
+    # AYNI fonksiyonu kullanır, LLM çağrısı OLMADAN). ---
+    financials_ticker, records = resolve_financials_ticker(query)
 
     if financials_ticker:
         summary = _generate_outlook_summary(query, records, config) if records else None

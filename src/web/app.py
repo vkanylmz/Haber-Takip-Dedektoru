@@ -32,9 +32,9 @@ from pydantic import BaseModel
 
 from src.commodity_report import get_commodity_dashboard_data, start_commodity_background_refresh
 from src.crypto import get_crypto_dashboard_data, start_crypto_background_refresh
-from src.company_profile import get_company_profile
+from src.company_profile import get_company_profile, resolve_financials_ticker
 from src.fetchers.kap_fetcher import KAP_SOURCE_NAME
-from src.fintables_financials import first_bist_ticker, load_financial_snapshot
+from src.fintables_financials import first_bist_ticker, list_cached_financial_tickers, load_financial_snapshot
 from src.web import chart_helpers
 from src.fetchers.webhook import DEFAULT_SOURCE_NAME, IncomingDisclosure, process_incoming_disclosure
 from src.timezone_utils import TURKEY_TZ, format_turkey_time, to_turkey_time
@@ -1383,6 +1383,62 @@ def financial_details_page(request: Request, ticker: str) -> HTMLResponse:
             "financials": financials,
             "charts": charts,
             "tv_symbol": f"BIST:{financials_ticker}",
+        },
+    )
+
+
+_FINANSALLAR_SUGGESTION_LIMIT = 8
+
+
+@app.get("/finansallar", response_class=HTMLResponse)
+def finansallar_page(request: Request, q: str | None = None) -> HTMLResponse:
+    """Üst nav menüsündeki "Finansallar" sekmesi (2026-08-27, kullanıcı
+    isteği): /analiz'in aksine haber listesi/LLM outlook özeti GÖSTERMEZ,
+    SADECE Fintables önbelleğindeki Gelir Tablosu Özeti + Bilanço Özeti
+    panelini (dönem karşılaştırmalı, % değişimli - _build_financial_detail_charts
+    > gelir_ozet/bilanco_ozet_rows, bkz. chart_helpers.extract_summary_rows)
+    gösterir - bu yüzden resolve_financials_ticker() (LLM ÇAĞRISI YAPMAZ,
+    company_profile.py) kullanılır, get_company_profile() (LLM'li outlook
+    özeti üretir) DEĞİL - gereksiz LLM maliyeti/gecikmesi önlenir.
+
+    `q` boşsa şablon <head>'teki script SADECE localStorage'daki
+    'analiz_last_query' değerini (company_profile.html İLE AYNI anahtar,
+    kullanıcı isteği: "mevcut localStorage mekanizmasıyla") okuyup
+    yönlendirir; hiç geçmiş yoksa arama kutusu + popüler (finansal
+    önbelleği DOLU) birkaç şirket önerisi gösterilir (bkz. popular_tickers).
+
+    Girilen değer ticker-şeklindeyse (2-10 harf, tamamı büyük/küçük fark
+    etmez) ama önbellekte YOKSA yine de o ticker "hazırlanıyor" mesajıyla
+    gösterilir (kullanıcı isteği: "Cache'te olmayan bir hisse aranırsa 'Bu
+    şirket için finansal veri hazırlanıyor' mesajı göster") - SADECE ne
+    ticker-şeklinde ne haberlerden çözümlenebilen bir girdi "eşleşme yok"
+    sayılır."""
+    financials_ticker: str | None = None
+    financials: dict[str, Any] | None = None
+    charts: dict[str, Any] | None = None
+    if q:
+        q_stripped = q.strip()
+        resolved_ticker, _records = resolve_financials_ticker(q_stripped)
+        ticker_guess = (
+            q_stripped.upper() if q_stripped.isalpha() and 2 <= len(q_stripped) <= 10 else None
+        )
+        financials_ticker = resolved_ticker or ticker_guess
+        if financials_ticker:
+            financials = load_financial_snapshot(financials_ticker)
+            charts = _build_financial_detail_charts(financials) if financials else None
+
+    popular_tickers = list_cached_financial_tickers()[:_FINANSALLAR_SUGGESTION_LIMIT]
+
+    return templates.TemplateResponse(
+        request,
+        "finansallar.html",
+        {
+            "query": q or "",
+            "financials_ticker": financials_ticker,
+            "financials": financials,
+            "charts": charts,
+            "popular_tickers": popular_tickers,
+            "tv_symbol": f"BIST:{financials_ticker}" if financials_ticker else None,
         },
     )
 
