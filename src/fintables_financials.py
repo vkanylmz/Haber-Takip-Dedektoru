@@ -11,14 +11,12 @@ endpoint DEĞİL. Bu yüzden bu modül İKİ AYRI role bölünür:
      `save_financial_snapshot`, `load_financial_snapshot`) SAF PYTHON'dur,
      hiçbir MCP çağrısı içermez - watchlist'i DB'den okur, sonucu DB'ye
      (AppState) yazar/okur.
-  2. Gerçek Fintables sorgusu MANUEL/OTURUM-İÇİ yapılır (2026-08-26 kullanıcı
-     kararı): haftalık bir cloud routine DENENDİ ama kurulamadı (Fintables
-     MCP'nin claude.ai connector'ı yok, cloud agent'lar bu oturuma özel
-     yerel MCP sunucusuna erişemiyor) - bu yüzden bir kullanıcı `q=TICKER`
-     ile önbellekte olmayan bir şirket aradığında, Claude (bu dosyanın
-     `get_financial_watchlist_tickers`'ıyla hangi ticker'ların eksik
-     olduğunu görüp) o an açık bir Claude Code oturumunda Fintables MCP'yi
-     sorgulayıp `save_financial_snapshot`'ı çağırarak önbelleği doldurur.
+  2. Gerçek Fintables sorgusu, haftalık çalışan bir Claude Code cloud
+     agent'ı (bkz. `schedule` skill ile kurulan "fintables-financials-sync"
+     routine'i) tarafından yapılır: o agent `get_financial_watchlist_tickers`
+     ile hangi ticker'ların tazelenmesi gerektiğini öğrenir, her biri için
+     Fintables MCP'yi CANLI sorgular, sonucu bu modüldeki
+     `save_financial_snapshot`'ın beklediği şekle indirger ve DB'ye yazar.
 
 Önbellek AYRI bir SQLAlchemy tablosu/migrasyon GEREKTİRMEZ - mevcut
 `AppState` key-value tablosu (bkz. src/db.py, docstring'inde zaten "yeni bir
@@ -92,10 +90,6 @@ def save_financial_snapshot(
     oranlar: dict[str, dict[str, float]],
     bilanco_ozet: dict[str, Any],
     sablon: str = "default",
-    bilanco_detay: dict[str, Any] | None = None,
-    gelir_tablosu_detay: dict[str, Any] | None = None,
-    nakit_akis_detay: dict[str, Any] | None = None,
-    carpanlar: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fintables'tan çekilip indirgenmiş bir şirket finansal özetini
     AppState'e yazar (upsert). Şekiller:
@@ -103,40 +97,12 @@ def save_financial_snapshot(
     `donemler`: son ~5 çeyreğin listesi, en yeni İLK sırada, her biri
         {"yil": int, "ay": int (3/6/9/12), "satis_geliri_ceyreklik": int|None,
          "favok_ceyreklik": int|None, "net_kar_ceyreklik": int|None} - TRY,
-        Fintables'ın `try_ceyreklik` kolonundan. GERİYE DÖNÜK UYUMLULUK için
-        korunuyor (ilk sürümdeki tek panel) - dashboard artık bunun yerine
-        `gelir_tablosu_detay`'ı gösteriyor (aynı bilgiyi TÜM kalemlerle
-        içerir), ama alan silinmedi.
+        Fintables'ın `try_ceyreklik` kolonundan.
     `oranlar`: kategori -> {oran_adı: değer} - bkz. Fintables
-        `finansal_tablolar` skill'i > "Finansal Oranlar". `default` şablonu
-        (THYAO/CUSAN gibi) için 4 kategori var: Likidite/Kaldıraç/Faaliyet
-        Etkinlik/Karlılık - HER kategorideki TÜM oranlar (Fintables'ın o
-        kategoride döndürdüğü satırların TAMAMI) buraya konur, kürasyon
-        YAPILMAZ (2026-08-26, kullanıcı isteği: "sadece öne çıkanlar değil").
+        `finansal_tablolar` skill'i > "Finansal Oranlar" (Likidite/Kaldıraç/
+        Faaliyet Etkinlik/Karlılık Oranları kategorileri).
     `bilanco_ozet`: son dönem {"toplam_varlik": int|None,
         "toplam_ozkaynak": int|None, "net_borc": int|None} - TRY.
-
-    `bilanco_detay`/`gelir_tablosu_detay`/`nakit_akis_detay` (2026-08-26,
-        kullanıcı isteği: "tam finansal tablolar", sekmeli görünüm) - HER
-        BİRİ aynı şekilde: {"donemler": ["2026/06", "2026/03", ...] (sütun
-        başlıkları, en yeni İLK), "satirlar": [{"kalem": str,
-        "degerler": [try_değer|None, ...]}, ...]} - `degerler` listesi
-        `donemler` ile AYNI sırada/uzunlukta (satir_no sırasına göre,
-        Fintables'ın ham `kalem`/tutar çiftleri - hiçbir satır atlanmaz).
-        None ise (henüz çekilmediyse) o sekme dashboard'da "veri yok" gösterir.
-
-    `carpanlar` (2026-08-26, kullanıcı isteği: "değerleme çarpanları") -
-        {"son_fiyat": float, "piyasa_degeri": float, "fk": float|None,
-         "pd_dd": float|None, "fd_favok": float|None, "hesaplama_notu": str}.
-        ÖNEMLİ: Fintables'ta hazır bir "değerleme çarpanları" tablosu YOK
-        (gerçek şemayla doğrulandı, bkz. sohbet 2026-08-26) - bu üç çarpan
-        Fintables'ın HAM verilerinden (hisse_senetleri.son_fiyat/piyasa_degeri,
-        finansal_oranlari.Hisse Başına Kar, bilanço Net Borç/Özkaynaklar,
-        gelir tablosu FAVÖK-TTM) standart formüllerle Claude tarafından
-        HESAPLANIR - `hesaplama_notu` bunu şeffaf şekilde belirtir. Temettü
-        Verimi ve PEG Oranı KASITLI OLARAK YOK - Fintables'ta temettü
-        geçmişi/ileriye dönük büyüme tahmini verisi bulunamadı (uydurma
-        istenmedi, bkz. kullanıcı isteği).
 
     Döner: DB'ye yazılan tam payload (fetched_at DAHİL)."""
     payload = {
@@ -146,10 +112,6 @@ def save_financial_snapshot(
         "donemler": donemler,
         "oranlar": oranlar,
         "bilanco_ozet": bilanco_ozet,
-        "bilanco_detay": bilanco_detay,
-        "gelir_tablosu_detay": gelir_tablosu_detay,
-        "nakit_akis_detay": nakit_akis_detay,
-        "carpanlar": carpanlar,
     }
     set_app_state(financials_state_key(ticker), payload)
     logger.info("Finansal tablo önbelleği güncellendi: %s (%d dönem).", ticker, len(donemler))

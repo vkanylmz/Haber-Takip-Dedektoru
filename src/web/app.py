@@ -322,11 +322,10 @@ def _get_cached_filter_options(session) -> tuple[list[str], list[dict[str, str]]
     return sources, sectors
 
 
-# "/analiz" arama kutusu otomatik tamamlama önbelleği (2026-08-26,
-# kullanıcı isteği - ÖNCE Ana Sayfa'daki bir arama çubuğunda kullanılıyordu,
-# o çubuk YANLIŞ konumdaydı diye kaldırıldı, otomatik tamamlama BU sayfaya
-# taşındı, bkz. company_profile_page). `_filter_options_cache` ile AYNI
-# 60sn'lik TTL deseni, AYRI bir dict/fonksiyon: sources/sectors sadece
+# "Şirket İncele" arama çubuğu otomatik tamamlama önbelleği (2026-08-26,
+# kullanıcı isteği) - `_filter_options_cache` ile AYNI 60sn'lik TTL deseni,
+# AYRI bir dict/fonksiyon: ticker listesi HER view'da (bkz. dashboard() ->
+# şablon TÜM view'lar için ortak) gerekiyor, sources/sectors ise sadece
 # "Haberler" sekmesinin filtre formunda anlamlı - ikisini AYNI cache'e
 # karıştırmak gereksiz bağımlılık yaratırdı.
 _ticker_suggestions_cache: dict[str, Any] = {"tickers": None, "fetched_at": 0.0}
@@ -419,7 +418,7 @@ app.add_middleware(
 # --------------------------------------------------------------------------
 # Basit IP-bazlı rate limiting (2026-08-20 eklendi): bu app artık Cloudflare
 # Tunnel üzerinden internete açık - önceden "zaten sadece ben kullanıyorum"
-# varsayımıyla YAZILMIŞ bazı rotalar (özellikle /analiz, her istekte
+# varsayımıyla YAZILMIŞ bazı rotalar (özellikle /sirket-profili, her istekte
 # GERÇEK/ücretli bir LLM çağrısı tetikliyor - bkz. src/company_profile.py >
 # _generate_outlook_summary, HİÇBİR önbellek YOK) artık rastgele bir
 # internet ziyaretçisi tarafından tekrar tekrar çağrılıp API faturası
@@ -435,11 +434,11 @@ app.add_middleware(
 # erişim) fallback olarak kullanılıyor.
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_DEFAULT_MAX = 90
-# /analiz GERÇEK LLM maliyeti tetiklediğinden çok daha sıkı bir
+# /sirket-profili GERÇEK LLM maliyeti tetiklediğinden çok daha sıkı bir
 # tavana sahip - meşru kullanım (kendi aramalarınız) için fazlasıyla
 # yeterli, ama bir bot/kötüye kullanım denemesinin fatura etkisini ciddi
 # ölçüde sınırlar.
-_RATE_LIMIT_STRICT_PATHS: dict[str, int] = {"/analiz": 5}
+_RATE_LIMIT_STRICT_PATHS: dict[str, int] = {"/sirket-profili": 5}
 _rate_limit_buckets: dict[tuple[str, str], tuple[float, int]] = {}
 _rate_limit_lock = threading.Lock()
 # İnternete açık bir sunucu, rastgele path'ler deneyen zafiyet tarayıcı
@@ -645,7 +644,7 @@ def _record_to_view(record: NewsRecord, threshold: int) -> dict[str, Any]:
         # "Detaylı Tabloyu Gör" linki için (2026-08-26, kullanıcı isteği) -
         # SADECE finansal rapor haberlerinde VE bir BIST ticker'ı
         # çözümlenebildiğinde dolu (bkz. src/fintables_financials.py >
-        # first_bist_ticker) - dashboard bu link'i /analiz?q=TICKER'a
+        # first_bist_ticker) - dashboard bu link'i /sirket-profili?q=TICKER'a
         # yönlendirir, o sayfa AppState önbelleğinden okur (hiçbir zaman
         # canlı bir Fintables/MCP çağrısı YAPMAZ).
         "financial_table_ticker": (
@@ -911,6 +910,7 @@ def dashboard(
 
         sources, sectors = _get_cached_filter_options(session)
         latest_published_at = _get_cached_latest_published_at(session)
+        company_ticker_suggestions = _get_cached_company_ticker_suggestions(session)
 
     # "KAP" dropdown'dan çıkarılır - genel filtre formu onu artık hiç
     # göstermediğinden (yukarıdaki exclude_source_filter), seçilebilir
@@ -1028,6 +1028,7 @@ def dashboard(
             "upcoming_calendar_events": upcoming_calendar_views,
             "calendar_days": calendar_days,
             "breaking_strip_json": breaking_strip_json,
+            "company_ticker_suggestions": company_ticker_suggestions,
             "sources": sources,
             "selected_source": source or "",
             "sectors": sectors,
@@ -1202,16 +1203,7 @@ def detayli_inceleme_page(
     )
 
 
-from fastapi.responses import RedirectResponse
-
-@app.get("/sirket-profili", include_in_schema=False)
-def redirect_sirket_profili(request: Request, q: str | None = None) -> RedirectResponse:
-    url = "/analiz"
-    if q:
-        url += f"?q={q}"
-    return RedirectResponse(url=url, status_code=301)
-
-@app.get("/analiz", response_class=HTMLResponse)
+@app.get("/sirket-profili", response_class=HTMLResponse)
 def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse:
     """Şirket/hisse bazlı otomatik profil sayfası (bkz. src/company_profile.py):
     kullanıcı bir şirket adı girer, son 30 günün ilgili haberleri + LLM
@@ -1245,14 +1237,6 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
 
     financials = load_financial_snapshot(financials_ticker) if financials_ticker else None
 
-    # "BIST Hisseler" nav sekmesinin (2026-08-26, kullanıcı isteği) giriş
-    # noktası bu sayfa - arama kutusunun otomatik tamamlaması da (ANA
-    # SAYFA'daki arama çubuğu KALDIRILDIĞINDAN, bkz. kullanıcı isteği)
-    # buraya taşındı, `_get_cached_company_ticker_suggestions` DEĞİŞMEDEN
-    # (bkz. dashboard() ile AYNI 60sn TTL önbellek deseni).
-    with get_session() as session:
-        company_ticker_suggestions = _get_cached_company_ticker_suggestions(session)
-
     return templates.TemplateResponse(
         request,
         "company_profile.html",
@@ -1260,28 +1244,6 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
             "query": q or "",
             "profile": profile,
             "records": views,
-            "financials_ticker": financials_ticker,
-            "financials": financials,
-            "company_ticker_suggestions": company_ticker_suggestions,
-            "tv_symbol": profile.get("trading_view_symbol") if profile else None,
-            "tv_symbol_valid": profile.get("trading_view_symbol_valid") if profile else None,
-        },
-    )
-
-
-@app.get("/analiz/{ticker}/finansal", response_class=HTMLResponse)
-def financial_details_page(request: Request, ticker: str) -> HTMLResponse:
-    """Tekil bir BIST hissesi için Fintables'tan çekilip önbelleğe alınan
-    detaylı finansal tablolar (Bilanço, Gelir Tablosu, Nakit Akım, Oranlar).
-    Eğer henüz önbelleğe alınmamışsa (veya hatalıysa) kısmi veri / boş veri
-    mesajı gösterilir."""
-    financials_ticker = ticker.strip().upper()
-    financials = load_financial_snapshot(financials_ticker)
-    
-    return templates.TemplateResponse(
-        request,
-        "financial_details.html",
-        {
             "financials_ticker": financials_ticker,
             "financials": financials,
         },
@@ -1332,7 +1294,7 @@ def _check_admin_secret(credentials: HTTPBasicCredentials = Depends(_admin_basic
 
     AYRICA BİLEREK sadece BURADA (src/web/app.py) tanımlıdır, api/index.py'ye
     (Render, herkese açık salt-okunur dashboard) KAYITLI DEĞİLDİR - abone
-    listesi kişisel veri (chat_id, kullanıcı adı) içerdiğinden, /analiz'in
+    listesi kişisel veri (chat_id, kullanıcı adı) içerdiğinden, /sirket-profili'nin
     dışarıda bırakılmasıyla AYNI desen (bkz. api/index.py modül docstring'i)
     kullanılarak bu sayfa hiçbir zaman herkese açık deploy'a taşınmaz."""
     expected = os.environ.get("WEBHOOK_INGEST_SECRET", "").strip()
@@ -1431,7 +1393,7 @@ async def company_detail_endpoint(ticker: str = "", name: str = "") -> dict[str,
     ticker'a (company_ticker alanı TAM eşleşen) etiketlenmiş son 30 günün
     haberleri (bkz. src/db.py > get_records_by_company_ticker).
 
-    BİLİNÇLİ olarak `/analiz` sayfasının (src/company_profile.py)
+    BİLİNÇLİ olarak `/sirket-profili` sayfasının (src/company_profile.py)
     AKSİNE hiçbir LLM çağrısı YAPMAZ - modal her açıldığında ek maliyet/
     gecikme olmadan anlık açılabilsin diye (gereksinim: emtia raporu zaten
     haftada bir LLM analizi üretiyor, modal AYRICA bir LLM çağrısı
