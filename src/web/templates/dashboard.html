@@ -1872,65 +1872,6 @@
       padding: 0.4rem 1rem;
     }
 
-    /* "Şirket İncele" arama çubuğu (2026-08-26, kullanıcı isteği: nav
-       menüsünün HEMEN ALTINDA, Sektör Isı Haritası'ndan ÖNCE, header'ın
-       en görünür yerinde) - header sticky/ayrı bir bileşen olduğundan
-       (bkz. yukarıdaki `header` kuralı) bu şerit BİLEREK header'ın
-       DIŞINDA, kendi (sticky OLMAYAN) bloğu olarak tanımlandı - tıpkı
-       hemen altındaki .sector-heatmap-wrap gibi. Her view'da (Ana Sayfa/
-       KAP/Haberler/Emtia/Kripto) görünür çünkü dashboard.html şablonu
-       TÜM view'lar için ORTAK, bu şerit view'a özel bir koşula
-       BAĞLANMADI (kullanıcı isteği: "en görünür yer" - sadece Ana
-       Sayfa'ya kısıtlamak bu amacı zayıflatırdı). */
-    .company-search-bar-wrap {
-      background: var(--accent);
-      padding: 0.6rem 2rem;
-    }
-
-    .company-search-form {
-      display: flex;
-      gap: 0.6rem;
-      max-width: 720px;
-      margin: 0 auto;
-    }
-
-    .company-search-form input[type="search"] {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--surface);
-      padding: 0.55rem 0.9rem;
-      font-size: 0.92rem;
-      border-radius: 6px;
-    }
-
-    .company-search-form input[type="search"]:focus {
-      outline: none;
-      border-color: var(--text-primary);
-    }
-
-    .company-search-form button {
-      background: var(--surface);
-      color: var(--accent);
-      border: 1px solid var(--surface);
-      font-weight: 700;
-      white-space: nowrap;
-      padding: 0.55rem 1.1rem;
-    }
-
-    .company-search-form button:hover {
-      opacity: 0.9;
-    }
-
-    @media (max-width: 640px) {
-      .company-search-bar-wrap {
-        padding: 0.5rem 1rem;
-      }
-
-      .company-search-form button {
-        padding: 0.55rem 0.8rem;
-      }
-    }
-
     /* --- Sektör ısı haritası --- */
     .sector-heatmap-wrap {
       display: flex;
@@ -2591,31 +2532,6 @@
     </div>
     {% endif %}
   </header>
-
-  <!-- "Şirket İncele" arama çubuğu (2026-08-26, kullanıcı isteği) - nav'ın
-       hemen altında, Sektör Isı Haritası'ndan ÖNCE. /sirket-profili?q=...
-       sayfasına yönlendirir (bkz. src/web/app.py > company_profile_page,
-       mevcut ticker/serbest-metin arama mantığını DEĞİŞTİRMEDEN kullanır).
-       `list="company-ticker-suggestions"` (bkz. altındaki <datalist>) -
-       tarayıcının YERLEŞİK otomatik tamamlama mekanizması, ek bir AJAX/JS
-       kütüphanesi GEREKMEZ (kullanıcı isteği: "riskli görünüyorsa atla" -
-       native <datalist> düşük riskli/basit bir çözüm). Öneriler
-       news_records.company_ticker alanından türetilir (bkz.
-       src/db.py > get_distinct_company_tickers, src/web/app.py >
-       _get_cached_company_ticker_suggestions - diğer filtre dropdown'larıyla
-       (sources/sectors) AYNI 60sn'lik TTL önbellek deseni). -->
-  <div class="company-search-bar-wrap">
-    <form class="company-search-form" method="get" action="/sirket-profili">
-      <input type="search" name="q" list="company-ticker-suggestions" autocomplete="off" required
-        placeholder="Şirket adı veya hisse kodu ara (örn. THYAO, Türk Hava Yolları)...">
-      <datalist id="company-ticker-suggestions">
-        {% for t in company_ticker_suggestions %}
-        <option value="{{ t }}"></option>
-        {% endfor %}
-      </datalist>
-      <button type="submit">🔍 İncele</button>
-    </form>
-  </div>
 
   <div class="sector-heatmap-wrap">
     <span class="heatmap-title">Sektör Isı Haritası (24s)</span>

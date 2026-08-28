@@ -153,50 +153,6 @@
       font-style: italic;
     }
 
-    /* Grafik CTA paneli (2026-08-26, kullanıcı isteği) - card ile AYNI
-       görsel dilde, mavi vurgu (--accent ile tutarlı) çerçeveyle. */
-    .chart-cta-panel {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(37, 99, 235, 0.3);
-      border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .chart-cta-title {
-      font-weight: 700;
-      font-size: 1.05rem;
-      color: #93c5fd;
-      margin-bottom: 0.3rem;
-    }
-
-    .chart-cta-sub {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-      max-width: 480px;
-    }
-
-    .chart-cta-button {
-      background: var(--accent);
-      color: white;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.88rem;
-      padding: 0.65rem 1.2rem;
-      border-radius: 8px;
-      white-space: nowrap;
-      box-shadow: 0 0 15px var(--accent-glow);
-    }
-
-    .chart-cta-button:hover {
-      background: #3b82f6;
-    }
-
     /* Finansal Tablolar paneli (2026-08-26, kullanıcı isteği, bkz.
        src/fintables_financials.py) - outlook-panel ile AYNI görsel dilde
        ama ayrı bir vurgu rengiyle (yeşilimsi) ayırt edilir. */
@@ -221,15 +177,11 @@
       margin-bottom: 1rem;
     }
 
-    .financials-table-scroll {
-      overflow-x: auto;
-      margin-bottom: 1.25rem;
-    }
-
     .financials-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 0.85rem;
+      margin-bottom: 1.25rem;
     }
 
     .financials-table th,
@@ -451,54 +403,31 @@
 
   <main>
     {% if financials_ticker %}
-    <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - Ana
-         Sayfa'daki GÖMÜLÜ TradingView widget'ı İLE AYNI teknik BURADA
-         KULLANILMADI: TradingView'in ücretsiz embed widget'ı hiçbir BIST
-         sembolünü desteklemiyor (gerçek testle doğrulanmış, bkz.
-         dashboard.html > _homeTvWidgetSymbol yorumu - "This symbol is
-         only available on TradingView" hatası veriyor). Bunun yerine
-         mevcut "Teknik Görünüm" dış-link deseni (bkz. src/web/app.py >
-         _build_tradingview_url, KAP kartları/emtia panelinde de kullanılan
-         AYNI URL formülü) kullanıldı - tradingview.com/chart'ta BIST
-         sembolleri GERÇEKTEN çalışıyor, sadece gömülebilir widget'ta
-         lisanslı değil. -->
-    <div class="chart-cta-panel">
-      <div class="chart-cta-text">
-        <div class="chart-cta-title">📈 {{ financials_ticker }} — Gerçek Zamanlı Grafik</div>
-        <div class="chart-cta-sub">TradingView'in ücretsiz gömülü widget'ı BIST sembollerini desteklemiyor -
-          grafik TradingView'in kendi sitesinde yeni sekmede açılır.</div>
-      </div>
-      <a href="https://www.tradingview.com/chart/?symbol=BIST:{{ financials_ticker }}" target="_blank"
-        rel="noopener" class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
-    </div>
-
     <div class="financials-panel">
       <div class="financials-title">📊 Finansal Tablolar — {{ financials_ticker }}</div>
       {% if financials %}
       <div class="financials-updated">Kaynak: Fintables · Son güncelleme: {{ financials.fetched_at[:10] }}</div>
 
-      <div class="financials-table-scroll">
-        <table class="financials-table">
-          <thead>
-            <tr>
-              <th>Dönem</th>
-              <th>Satış Geliri (çeyreklik)</th>
-              <th>FAVÖK (çeyreklik)</th>
-              <th>Net Kar (çeyreklik)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for d in financials.donemler %}
-            <tr>
-              <td>{{ d.yil }}/{{ "%02d"|format(d.ay) }}</td>
-              <td>{{ "{:,.0f}".format(d.satis_geliri_ceyreklik).replace(",", ".") if d.satis_geliri_ceyreklik is not none else "—" }} TL</td>
-              <td>{{ "{:,.0f}".format(d.favok_ceyreklik).replace(",", ".") if d.favok_ceyreklik is not none else "—" }} TL</td>
-              <td>{{ "{:,.0f}".format(d.net_kar_ceyreklik).replace(",", ".") if d.net_kar_ceyreklik is not none else "—" }} TL</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <table class="financials-table">
+        <thead>
+          <tr>
+            <th>Dönem</th>
+            <th>Satış Geliri (çeyreklik)</th>
+            <th>FAVÖK (çeyreklik)</th>
+            <th>Net Kar (çeyreklik)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in financials.donemler %}
+          <tr>
+            <td>{{ d.yil }}/{{ "%02d"|format(d.ay) }}</td>
+            <td>{{ "{:,.0f}".format(d.satis_geliri_ceyreklik).replace(",", ".") if d.satis_geliri_ceyreklik is not none else "—" }} TL</td>
+            <td>{{ "{:,.0f}".format(d.favok_ceyreklik).replace(",", ".") if d.favok_ceyreklik is not none else "—" }} TL</td>
+            <td>{{ "{:,.0f}".format(d.net_kar_ceyreklik).replace(",", ".") if d.net_kar_ceyreklik is not none else "—" }} TL</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
 
       <div class="ratio-grid">
         {% for kategori, oranlar in financials.oranlar.items() %}

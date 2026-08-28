@@ -1795,29 +1795,6 @@ def get_distinct_sectors(session: Session) -> list[str]:
     return sorted(slugs)
 
 
-# `company_ticker` alanı "BORSA: SEMBOL" (ör. "BIST: THYAO") ya da (KAP'ın
-# stockCodes'u birden fazla kod verdiğinde) "BIST: YKB, BIST: YKBNK"
-# formatında olabilir (bkz. src/summarizer.py). Arama çubuğu otomatik
-# tamamlaması (bkz. get_distinct_company_tickers) SADECE çıplak sembolü
-# ister - borsa öneki atılır, çünkü arama kutusu da metni borsasız kabul
-# ediyor (bkz. src/web/app.py > company_profile_page).
-_TICKER_IN_FIELD_RE = re.compile(r":\s*([A-Z0-9]{1,10})")
-
-
-def get_distinct_company_tickers(session: Session, limit: int = 500) -> list[str]:
-    """Ana sayfadaki "Şirket İncele" arama çubuğunun otomatik tamamlama
-    listesi (2026-08-26, kullanıcı isteği, bkz. src/web/app.py >
-    _get_cached_company_ticker_suggestions) için news_records.company_ticker
-    alanından tekilleştirilmiş çıplak ticker listesini döner (borsa öneki
-    YOK - bkz. yukarıdaki not). `get_distinct_sectors` ile AYNI desen:
-    ilgili kolonu tarayıp Python tarafında ayrıştırır."""
-    tickers: set[str] = set()
-    for (raw,) in session.query(NewsRecord.company_ticker).filter(NewsRecord.company_ticker.isnot(None)).all():
-        if raw:
-            tickers.update(_TICKER_IN_FIELD_RE.findall(raw))
-    return sorted(tickers)[:limit]
-
-
 # --------------------------------------------------------------------------
 # Genel/dış API anahtarları (bkz. src/web/api_v1.py) - dashboard'un iç
 # kullandığı hiçbir mekanizmayla İLİŞKİLİ DEĞİL.

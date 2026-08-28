@@ -43,7 +43,6 @@ from src.db import (
     PushSubscription,
     get_all_subscribers_overview,
     get_app_state,
-    get_distinct_company_tickers,
     get_distinct_sectors,
     get_distinct_sources,
     get_latest_published_at,
@@ -320,28 +319,6 @@ def _get_cached_filter_options(session) -> tuple[list[str], list[dict[str, str]]
     _filter_options_cache["sectors"] = sectors
     _filter_options_cache["fetched_at"] = now
     return sources, sectors
-
-
-# "Şirket İncele" arama çubuğu otomatik tamamlama önbelleği (2026-08-26,
-# kullanıcı isteği) - `_filter_options_cache` ile AYNI 60sn'lik TTL deseni,
-# AYRI bir dict/fonksiyon: ticker listesi HER view'da (bkz. dashboard() ->
-# şablon TÜM view'lar için ortak) gerekiyor, sources/sectors ise sadece
-# "Haberler" sekmesinin filtre formunda anlamlı - ikisini AYNI cache'e
-# karıştırmak gereksiz bağımlılık yaratırdı.
-_ticker_suggestions_cache: dict[str, Any] = {"tickers": None, "fetched_at": 0.0}
-
-
-def _get_cached_company_ticker_suggestions(session) -> list[str]:
-    now = time.monotonic()
-    if _ticker_suggestions_cache["tickers"] is not None and (
-        now - _ticker_suggestions_cache["fetched_at"]
-    ) < _FILTER_OPTIONS_CACHE_TTL_SECONDS:
-        return _ticker_suggestions_cache["tickers"]
-
-    tickers = get_distinct_company_tickers(session)
-    _ticker_suggestions_cache["tickers"] = tickers
-    _ticker_suggestions_cache["fetched_at"] = now
-    return tickers
 
 
 # --- Veri tazeliği uyarısı (2026-08-17, bkz. kullanıcı isteği - Render'ın
@@ -910,7 +887,6 @@ def dashboard(
 
         sources, sectors = _get_cached_filter_options(session)
         latest_published_at = _get_cached_latest_published_at(session)
-        company_ticker_suggestions = _get_cached_company_ticker_suggestions(session)
 
     # "KAP" dropdown'dan çıkarılır - genel filtre formu onu artık hiç
     # göstermediğinden (yukarıdaki exclude_source_filter), seçilebilir
@@ -1028,7 +1004,6 @@ def dashboard(
             "upcoming_calendar_events": upcoming_calendar_views,
             "calendar_days": calendar_days,
             "breaking_strip_json": breaking_strip_json,
-            "company_ticker_suggestions": company_ticker_suggestions,
             "sources": sources,
             "selected_source": source or "",
             "sectors": sectors,
