@@ -1213,13 +1213,9 @@ def redirect_sirket_profili(request: Request, q: str | None = None) -> RedirectR
 
 @app.get("/analiz", response_class=HTMLResponse)
 def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse:
-    """Analiz sayfası (2026-08-26, kullanıcı isteği: "Şirket Profili"nin
-    "Analiz"e dönüşümü, bkz. src/company_profile.py > get_company_profile):
-    kullanıcı bir şirket adı/ticker VEYA genel bir finansal enstrüman (altın,
-    tahvil, endeks vb.) girer - şirket/enstrüman/sonuç-yok ayrımı VE grafik
-    sembolü çözümlemesi ARTIK TAMAMEN get_company_profile() içinde yapılıyor,
-    bu route sadece sonucu şablona aktarır (BİLEREK ince/"dumb" tutuldu -
-    iş mantığı tek yerde, test edilebilir)."""
+    """Şirket/hisse bazlı otomatik profil sayfası (bkz. src/company_profile.py):
+    kullanıcı bir şirket adı girer, son 30 günün ilgili haberleri + LLM
+    tarafından üretilmiş kısa bir genel görünüm özeti gösterilir."""
     config = load_config()
     threshold = config.get("importance", {}).get("threshold", 4)
 
@@ -1229,26 +1225,31 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
 
     views = [_record_to_view(r, threshold) for r in profile["records"]] if profile else []
 
-    mode = profile["mode"] if profile else None
-    financials_ticker = profile.get("financials_ticker") if profile else None
+    # Finansal Tablolar paneli (2026-08-26, kullanıcı isteği): ticker'ı önce
+    # bulunan haberlerin `company_ticker` alanından (bkz. NewsRecord) çözmeye
+    # çalışır - kullanıcı "Türk Hava Yolları" gibi bir isim aramış olsa bile
+    # KAP haberlerinden THYAO çözümlenebilir. Hiçbir haber yoksa (ör. link
+    # doğrudan bir ticker koduyla geldi, bkz. _record_to_view >
+    # financial_table_ticker), arama kutusuna yazılan metnin kendisi (BÜYÜK
+    # harfe çevrilmiş) bir ticker olabileceği varsayımıyla son çare olarak
+    # denenir - `load_financial_snapshot` önbellekte yoksa zaten None döner,
+    # yanlış bir tahmin sessizce hiçbir şey göstermemekle sonuçlanır.
+    financials_ticker: str | None = None
+    if profile and profile.get("records"):
+        for r in profile["records"]:
+            financials_ticker = first_bist_ticker(r.company_ticker)
+            if financials_ticker:
+                break
+    if not financials_ticker and q and q.strip().isalpha() and q.strip().isupper():
+        financials_ticker = q.strip().upper()
+
     financials = load_financial_snapshot(financials_ticker) if financials_ticker else None
 
-    # Grafik gösterim kararı (2026-08-26, kullanıcı isteği: "GERÇEKTEN test
-    # et, varsayma") - GERÇEK bir Playwright testiyle bugün doğrulandı:
-    # TradingView'in ücretsiz embed widget'ı hiçbir BIST sembolünü (ne
-    # endeks ne THYAO/GMTAS gibi tekil hisseler) desteklemiyor ("Sembol
-    # sadece TradingView'de bulunabilir" hatası veriyor), NASDAQ:AAPL gibi
-    # yabancı semboller sorunsuz yükleniyor (kontrol testiyle doğrulandı).
-    # Bu yüzden mode="company" (sembol HER ZAMAN "BIST:...") ASLA gömülü
-    # widget DENEMEZ, doğrudan dış-link moduna düşer - mode="instrument"
-    # (LLM+validate_symbol ile bulunan, BIST-DIŞI olması muhtemel bir
-    # sembol) ise embed'i dener.
-    tv_symbol = profile.get("trading_view_symbol") if profile else None
-    chart_mode = None  # "embed" | "link" | None (grafik yok)
-    if tv_symbol:
-        chart_mode = "link" if tv_symbol.startswith("BIST:") else "embed"
-
-    # "/analiz" arama kutusu otomatik tamamlaması (bkz. _get_cached_company_ticker_suggestions).
+    # "BIST Hisseler" nav sekmesinin (2026-08-26, kullanıcı isteği) giriş
+    # noktası bu sayfa - arama kutusunun otomatik tamamlaması da (ANA
+    # SAYFA'daki arama çubuğu KALDIRILDIĞINDAN, bkz. kullanıcı isteği)
+    # buraya taşındı, `_get_cached_company_ticker_suggestions` DEĞİŞMEDEN
+    # (bkz. dashboard() ile AYNI 60sn TTL önbellek deseni).
     with get_session() as session:
         company_ticker_suggestions = _get_cached_company_ticker_suggestions(session)
 
@@ -1259,12 +1260,11 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
             "query": q or "",
             "profile": profile,
             "records": views,
-            "mode": mode,
             "financials_ticker": financials_ticker,
             "financials": financials,
             "company_ticker_suggestions": company_ticker_suggestions,
-            "tv_symbol": tv_symbol,
-            "chart_mode": chart_mode,
+            "tv_symbol": profile.get("trading_view_symbol") if profile else None,
+            "tv_symbol_valid": profile.get("trading_view_symbol_valid") if profile else None,
         },
     )
 

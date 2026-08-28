@@ -507,45 +507,6 @@
       border: 1px dashed var(--card-border);
       border-radius: 12px;
     }
-
-    /* Kısa Finansal Özet (2026-08-26, kullanıcı isteği: "Analiz" sayfası
-       SADE kalsın - Fintables'ın kendi sitesi gibi kalabalık bir dashboard
-       YAPMA, sadece 4-6 en önemli rakam) - TAM tablolar artık AYRI
-       /analiz/{ticker}/finansal sayfasında (bkz. financial_details.html). */
-    .quick-metrics-panel {
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(74, 222, 128, 0.25);
-      border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-    }
-
-    .quick-metrics-title {
-      font-weight: 700;
-      font-size: 0.95rem;
-      color: #86efac;
-      margin-bottom: 0.9rem;
-    }
-
-    .quick-metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 1rem;
-    }
-
-    .quick-metric-label {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      margin-bottom: 0.25rem;
-    }
-
-    .quick-metric-value {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-main);
-    }
   </style>
 </head>
 
@@ -574,126 +535,86 @@
   </header>
 
   <main>
-    {% if not query %}
-    <div class="empty">
-      <div style="font-size: 2rem; margin-bottom: 1rem;">🔎</div>
-      Bir şirket/hisse kodu veya genel bir finansal enstrüman (ör. "altın", "ABD 10 yıllık
-      tahvil") yazıp arayın. Grafiği, son 30 günün ilgili haberlerini ve otomatik bir genel
-      görünüm özetini burada bulabilirsiniz.
-    </div>
-    {% elif mode == "none" %}
-    <div class="empty">
-      <div style="font-size: 2rem; margin-bottom: 1rem;">🤷</div>
-      "{{ query }}" için sonuç bulunamadı.
-    </div>
-    {% else %}
-
-    <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - karar
-         src/web/app.py > company_profile_page'de VERİLMİŞ halde gelir
-         (`chart_mode`): "link" = BIST (embed widget'ta ÇALIŞMADIĞI GERÇEK
-         bir Playwright testiyle bugün doğrulandı - bkz. o dosyadaki not),
-         "embed" = BIST-dışı, `validate_symbol` ile DOĞRULANMIŞ sembol -
-         Ana Sayfa'daki (dashboard.html > loadHomeTvWidget) AYNI resmi
-         embed-widget-advanced-chart.js script'i kullanılır (tutarlılık,
-         GERÇEK testle çalıştığı zaten kanıtlanmış). -->
-    {% if chart_mode == "link" %}
+    {% if financials_ticker or (tv_symbol and tv_symbol_valid) %}
+    <!-- Gerçek zamanlı grafik (2026-08-26, kullanıcı isteği) - BIST için dış 
+         link, yabancı/genel enstrümanlar için gömülü widget kullanıyoruz. -->
+    {% if financials_ticker or (tv_symbol and tv_symbol.startswith('BIST:')) %}
     <div class="chart-cta-panel">
       <div class="chart-cta-text">
-        <div class="chart-cta-title">📈 {{ financials_ticker }} — Gerçek Zamanlı Grafik</div>
+        <div class="chart-cta-title">📈 {{ financials_ticker or tv_symbol }} — Gerçek Zamanlı Grafik</div>
         <div class="chart-cta-sub">TradingView'in ücretsiz gömülü widget'ı BIST sembollerini desteklemiyor -
           grafik TradingView'in kendi sitesinde yeni sekmede açılır.</div>
       </div>
-      <a href="https://www.tradingview.com/chart/?symbol={{ tv_symbol }}" target="_blank" rel="noopener"
-        class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
+      <a href="https://www.tradingview.com/chart/?symbol={% if financials_ticker %}BIST:{{ financials_ticker }}{% else %}{{ tv_symbol }}{% endif %}"
+        target="_blank" rel="noopener" class="chart-cta-button">Grafiği TradingView'de Aç ↗</a>
     </div>
-    {% elif chart_mode == "embed" %}
+    {% else %}
     <div class="card" style="padding:0; overflow:hidden; border: 1px solid rgba(37, 99, 235, 0.3);">
-      <div class="tradingview-widget-container" style="height:420px;width:100%">
-        <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
-        <div class="tradingview-widget-copyright"></div>
-        <script type="text/javascript" async
-          src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js">
-          {
-          "autosize": true,
-          "symbol": "{{ tv_symbol }}",
-          "interval": "D",
-          "timezone": "Etc/UTC",
-          "theme": "dark",
-          "style": "1",
-          "locale": "tr",
-          "backgroundColor": "rgba(24, 24, 27, 1)",
-          "gridColor": "rgba(255, 255, 255, 0.06)",
-          "hide_top_toolbar": false,
-          "hide_legend": false,
-          "allow_symbol_change": false,
-          "save_image": false
-          }
+      <!-- TradingView Widget BEGIN -->
+      <div class="tradingview-widget-container" style="height:400px;width:100%">
+        <div id="tv_chart_{{ tv_symbol|replace(':', '_') }}" style="height:calc(100% - 32px);width:100%"></div>
+        <div class="tradingview-widget-copyright"><a href="https://tr.tradingview.com/" rel="noopener nofollow"
+            target="_blank"><span class="blue-text">TradingView'de tüm piyasalardaki işlemleri takip edin</span></a>
+        </div>
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+          new TradingView.widget(
+            {
+              "autosize": true,
+              "symbol": "{{ tv_symbol }}",
+              "interval": "D",
+              "timezone": "Etc/UTC",
+              "theme": "dark",
+              "style": "1",
+              "locale": "tr",
+              "enable_publishing": false,
+              "backgroundColor": "rgba(24, 24, 27, 1)",
+              "gridColor": "rgba(255, 255, 255, 0.06)",
+              "hide_top_toolbar": true,
+              "hide_legend": true,
+              "save_image": false,
+              "container_id": "tv_chart_{{ tv_symbol|replace(':', '_') }}"
+            }
+          );
         </script>
       </div>
+      <!-- TradingView Widget END -->
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if financials_ticker %}
+    <div style="margin-bottom: 2rem; display: flex; justify-content: flex-end;">
+      <a href="/analiz/{{ financials_ticker }}/finansal" class="chart-cta-button"
+        style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; background: var(--card-bg); border: 1px solid rgba(22, 163, 74, 0.4); border-radius: 8px; padding: 0.75rem 1.25rem; font-weight: 500; font-size: 0.95rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-top: 1rem;">
+        <span style="font-size: 1.1rem;">📊</span> Detaylı Finansal Verileri Gör ({{ financials_ticker }})
+      </a>
     </div>
     {% endif %}
 
-    {% if mode == "company" and financials %}
-    <!-- Kısa Finansal Özet (2026-08-26, kullanıcı isteği: SADE kalsın, en
-         fazla 4-6 rakam) - TAM tablolar için "Detaylı Finansal Verileri
-         Gör" butonu, bkz. altındaki blok. -->
-    {% set d0 = financials.donemler[0] if financials.donemler else None %}
-    <div class="quick-metrics-panel">
-      <div class="quick-metrics-title">📌 Kısa Finansal Özet — {{ financials.fetched_at[:10] }}</div>
-      <div class="quick-metrics-grid">
-        {% if d0 %}
-        <div>
-          <div class="quick-metric-label">Satış Geliri ({{ d0.yil }}/{{ "%02d"|format(d0.ay) }})</div>
-          <div class="quick-metric-value">{{ "{:,.0f}".format(d0.satis_geliri_ceyreklik).replace(",", ".") if
-            d0.satis_geliri_ceyreklik is not none else "—" }} TL</div>
-        </div>
-        <div>
-          <div class="quick-metric-label">FAVÖK</div>
-          <div class="quick-metric-value">{{ "{:,.0f}".format(d0.favok_ceyreklik).replace(",", ".") if
-            d0.favok_ceyreklik is not none else "—" }} TL</div>
-        </div>
-        <div>
-          <div class="quick-metric-label">Net Kar</div>
-          <div class="quick-metric-value">{{ "{:,.0f}".format(d0.net_kar_ceyreklik).replace(",", ".") if
-            d0.net_kar_ceyreklik is not none else "—" }} TL</div>
-        </div>
-        {% endif %}
-        {% if financials.carpanlar %}
-        <div>
-          <div class="quick-metric-label">F/K</div>
-          <div class="quick-metric-value">{{ "%.2f"|format(financials.carpanlar.fk) if financials.carpanlar.fk is
-            not none else "—" }}</div>
-        </div>
-        <div>
-          <div class="quick-metric-label">PD/DD</div>
-          <div class="quick-metric-value">{{ "%.2f"|format(financials.carpanlar.pd_dd) if
-            financials.carpanlar.pd_dd is not none else "—" }}</div>
-        </div>
-        {% endif %}
-      </div>
-      <div style="margin-top: 1.1rem; text-align: right;">
-        <a href="/analiz/{{ financials_ticker }}/finansal" class="chart-cta-button"
-          style="text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem;">
-          📊 Detaylı Finansal Verileri Gör ↗
-        </a>
-      </div>
+    {% if not query %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">🔎</div>
+      Bir şirket/varlık adı yazıp arayın (ör. "Tesla", "Turkcell"). Son 30 günün
+      ilgili haberleri ve otomatik bir genel görünüm özeti burada listelenir.
     </div>
-    {% elif mode == "company" %}
-    <div class="outlook-note">{{ financials_ticker }} için finansal veri henüz hazırlanmadı.</div>
-    {% endif %}
+    {% elif not records %}
+    <div class="empty">
+      <div style="font-size: 2rem; margin-bottom: 1rem;">📭</div>
+      "{{ query }}" için son 30 günde haber bulunamadı.
+    </div>
+    {% else %}
 
     <div class="outlook-panel">
-      <div class="outlook-title">😊 Son 30 Günün Genel Görünümü — {{ query }}</div>
+      <div class="outlook-title">🤖 Son 30 Günün Genel Görünümü — {{ query }}</div>
       {% if profile.summary %}
       <div class="outlook-text">{{ profile.summary }}</div>
-      {% elif records %}
+      {% else %}
       <div class="outlook-note">
         Otomatik özet şu an üretilemedi (LLM API anahtarı tanımlı değil veya
         geçici bir hata oluştu) - aşağıda yine de ilgili {{ records|length }}
         haberi bulabilirsiniz.
       </div>
-      {% else %}
-      <div class="outlook-note">Son 30 günde ilgili haber bulunamadı, özetlenecek bir şey yok.</div>
       {% endif %}
     </div>
 
@@ -732,6 +653,20 @@
 
     {% endif %}
   </main>
+
+  <script>
+    // Sekmeli finansal tablolar (2026-08-26, kullanıcı isteği) - sayfa
+    // yenilenmeden geçiş, dashboard.html > selectCalendarDay ile AYNI
+    // basit show/hide deseni (AJAX/harici kütüphane YOK).
+    function selectFinancialsTab(tabName) {
+      document.querySelectorAll('.financials-tab').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+      });
+      document.querySelectorAll('.financials-tab-panel').forEach(function (panel) {
+        panel.classList.toggle('active', panel.id === 'financials-tab-' + tabName);
+      });
+    }
+  </script>
 </body>
 
 </html>
