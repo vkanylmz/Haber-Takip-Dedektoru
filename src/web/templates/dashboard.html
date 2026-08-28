@@ -2599,19 +2599,6 @@
               <span class="meta-divider">|</span>
               <span class="sector-tag">{{ r.kap_category_label }}</span>
               {% endif %}
-              {% if r.financial_table_ticker %}
-              <span class="meta-divider">|</span>
-              {# "Detaylı Tabloyu Gör" (2026-08-26, kullanıcı isteği, bkz.
-                 src/fintables_financials.py) - SADECE finansal_rapor
-                 kategorili KAP haberlerinde VE bir BIST ticker'ı
-                 çözümlenebildiğinde görünür. /sirket-profili sayfası
-                 AppState önbelleğinden okur, veri yoksa "henüz hazırlanmadı"
-                 mesajı gösterir - bu link o durumda da güvenle tıklanabilir. #}
-              <a href="/sirket-profili?q={{ r.financial_table_ticker }}" class="sector-tag" style="text-decoration:none;"
-                onclick="event.stopPropagation()" title="{{ r.financial_table_ticker }} finansal tablolarını gör">
-                📊 Detaylı Tabloyu Gör
-              </a>
-              {% endif %}
               {% if r.sentiment_label %}
               <span class="meta-divider">|</span>
               <span class="sentiment {{ r.sentiment_class }}">{{ r.sentiment_label }}</span>
@@ -3496,17 +3483,7 @@
           const up = item.change_pct >= 0;
           const arrow = up ? '▲' : '▼';
           const cls = up ? 'ticker-up' : 'ticker-down';
-          // minimumFractionDigits: 2 KASITLI (2026-08-26, kullanıcı geri
-          // bildirimi) - ONCEDEN sadece maximumFractionDigits vardı, bu da
-          // TAM SAYI gelen fiyatlarda (ör. Ons Altın bir anlık "4683.0"
-          // döndürdüğünde) tr-TR'nin ondalık ayıracı olan "," hiç
-          // gösterilmiyordu ve "4.683" (SADECE binlik ayıracı ".") ekranda
-          // kalıyordu - bu, İngilizce ondalık noktasıyla KARIŞTIRILIP "4,683
-          // dolar" yerine "4.683 dolar (~4.68$)" gibi yanlış okunabiliyordu.
-          // GERÇEK veriyle doğrulandı: /api/market-data GC=F için ham değeri
-          // ZATEN doğru (4683.0 USD, gerçek ons altın fiyatı) döndürüyordu -
-          // sorun veri kaynağında değil, SADECE bu ekran formatındaydı.
-          const priceStr = item.price.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
           // Flash-on-update: bir önceki polldaki fiyattan FARKLIYSA (ve ilk
           // yükleme DEĞİLSE, yani daha önce bir değer görülmüşse) kısa bir
           // yeşil/kırmızı flash class'ı eklenir - bkz. yukarıdaki
@@ -4310,20 +4287,7 @@
     const _MARKET_SUMMARY_TV_SYMBOLS = {
       'TRY=X': 'FX:USDTRY',
       'EURTRY=X': 'FX:EURTRY',
-      // "TVC:GOLD" ONCEDEN kullanılıyordu (2026-08-19) - TVC'nin kendi CFD
-      // sağlayıcısından geliyor. Kullanıcı geri bildirimiyle (2026-08-26)
-      // ons altının daha standart/otoriter kaynağı OANDA:XAUUSD'ye
-      // değiştirildi (bkz. src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS
-      // AYNI değişiklik, AYNI gerekçe) - scanner.tradingview.com/symbol ile
-      // GERÇEK doğrulandı (200, fiyat Yahoo GC=F ile aynı aralıkta).
-      'GC=F': 'OANDA:XAUUSD',
-      // Gümüş (2026-08-26, kullanıcı isteği: Piyasa Özeti'ne YENİ satır) -
-      // Yahoo'da gerçek spot "XAGUSD=X" YOK (404, GERÇEK testle doğrulandı),
-      // TradingView'de de OANDA:XAGUSD YOK (404) - "TVC:SILVER" (Altın'ın
-      // ESKİ TVC:GOLD'uyla AYNI CFD-sağlayıcı kategorisi) mevcut en iyi/tek
-      // seçenek, src/commodities.py > COMMODITY_TRADINGVIEW_SYMBOLS'taki
-      // "SI=F" ile AYNI (o zaten oradaydı, DEĞİŞTİRİLMEDİ).
-      'SI=F': 'TVC:SILVER',
+      'GC=F': 'TVC:GOLD',
       'BZ=F': 'TVC:UKOIL',
       '^VIX': 'CAPITALCOM:VIX',
       'XU100.IS': 'BIST:XU100',
@@ -4363,10 +4327,7 @@
         body.innerHTML = data.map(function (item) {
           var up = item.change_pct >= 0;
           var cls = up ? 'ticker-up' : 'ticker-down';
-          // minimumFractionDigits: 2 (bkz. yukarıdaki ticker'daki AYNI
-          // düzeltme notu, 2026-08-26) - tam sayı fiyatlarda ondalık
-          // ayıracının kaybolup binlik ayıracıyla karıştırılmasını önler.
-          var priceStr = item.price.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          var priceStr = item.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
           // 2026-08-19 (kullanıcı isteği): ÖNCEDEN tıklayınca yeni sekmede
           // TradingView.com açılıyordu - artık YERİNE gömülü widget'ın
           // (bkz. .tv-widget-card > setHomeTvWidgetSymbol) sembolü değişiyor
