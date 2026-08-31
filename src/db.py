@@ -33,7 +33,7 @@ from typing import Any, Iterator
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint, create_engine, func, or_
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, aliased, declarative_base, sessionmaker
 
 from src.models import NewsGroup
 from src.timezone_utils import TURKEY_TZ
@@ -471,6 +471,51 @@ class ApiKey(Base):
     # - bu sadece TOPLAM kullanım istatistiği, kalıcı/DB tarafında.
     total_request_count = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
+
+
+class NewsLink(Base):
+    """"Haber-KAP Bağlantı Haritası" özelliği (bkz. src/news_links.py):
+    iki `news_records` kaydı arasında ("KAP bildirimi" ile genel basındaki
+    haber) tespit edilmiş bir bağlantı denemesi.
+
+    İki aşamalı akış: önce ucuz bir filtre (aynı `company_ticker` + ±72
+    saatlik zaman penceresi, bkz. find_same_ticker_candidates) adayları
+    bulur, sonra HER aday için TEK bir küçük LLM çağrısıyla "bu ikisi
+    GERÇEKTEN aynı olayı mı anlatıyor?" sorulur (bkz.
+    Summarizer.check_same_event). BİLİNÇLİ OLARAK sadece "evet" (True)
+    verdictler DEĞİL, HER değerlendirilen çift (True veya False) burada bir
+    satır olarak saklanır - bunun iki nedeni var: (1) aynı çiftin
+    tekrarlanan tarama turlarında (worker bir haberi ilk gördükten sonraki
+    turlarda da `_persist_and_notify_single`'ı tekrar çağırır, bkz.
+    src/main.py) HER SEFERİNDE yeniden LLM'e sorulmasını önlemek (bkz.
+    link_already_evaluated) - aksi halde "hayır" çıkan bir çift, adaylık
+    penceresi (72 saat) boyunca onlarca kez gereksiz LLM çağrısına yol
+    açardı; (2) LLM maliyetinin gerçekten ihmal edilebilir kaldığını
+    denetleyebilmek (toplam satır sayısı = toplam LLM çağrısı sayısı).
+    Gösterim tarafı (bkz. src/web/app.py > /sirket-profili,
+    get_confirmed_news_links_for_tickers) SADECE `llm_verdict = True`
+    satırlarını kullanır.
+
+    (`record_id_a`, `record_id_b`) HER ZAMAN küçük id önce gelecek şekilde
+    (kanonik sırada) yazılır (bkz. record_news_link_evaluation) - aynı
+    çiftin (A,B) ve (B,A) olarak iki kez değerlendirilip iki satır
+    oluşturmasını `UniqueConstraint` ile engeller."""
+
+    __tablename__ = "news_links"
+
+    id = Column(Integer, primary_key=True)
+    record_id_a = Column(Integer, nullable=False, index=True)
+    record_id_b = Column(Integer, nullable=False, index=True)
+    llm_verdict = Column(Boolean, nullable=False)
+    # LLM'in kararının 1 kısa cümlelik (Türkçe) gerekçesi - hem "evet" hem
+    # "hayır" verdictlerinde doldurulur (denetim/hata ayıklama için, bkz.
+    # sınıf docstring'i).
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("record_id_a", "record_id_b", name="uq_news_link_pair"),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1061,6 +1106,117 @@ def get_records_by_company_ticker(company_ticker: str, limit: int = 10, since: d
         if since is not None:
             query = query.filter(NewsRecord.first_seen_at >= since)
         return query.order_by(NewsRecord.first_seen_at.desc()).limit(limit).all()
+
+
+# --------------------------------------------------------------------------
+# "Haber-KAP Bağlantı Haritası" (bkz. src/news_links.py, NewsLink modeli)
+# --------------------------------------------------------------------------
+
+
+def find_same_ticker_candidates(record: NewsRecord, window_hours: int = 72) -> list[NewsRecord]:
+    """Verilen kayıtla AYNI `company_ticker`'a (tam eşleşme, "BORSA: SEMBOL"
+    formatında) sahip VE `first_seen_at`'i ±`window_hours` içinde olan
+    DİĞER kayıtları döner - Haber-KAP Bağlantı Haritası'nın ucuz/filtre
+    adımı (bkz. src/news_links.py > check_and_link_related_news).
+    `company_ticker` boşsa hemen boş liste döner (sorgu bile atılmaz).
+
+    KASITLI OLARAK burada KAP/genel haber ayrımı YAPILMAZ (sadece ticker +
+    zaman) - "adayın gerçekten KARŞI taraftan olması" (biri KAP diğeri
+    değil) filtresi çağıran tarafta (src/news_links.py, projedeki diğer
+    modüllerle AYNI desen - bkz. src/notifier.py > _is_kap_record) uygulanır;
+    bu fonksiyon salt genel bir "aynı ticker + yakın zaman" sorgusu olarak
+    kalır."""
+    if not record.company_ticker:
+        return []
+    lower = record.first_seen_at - timedelta(hours=window_hours)
+    upper = record.first_seen_at + timedelta(hours=window_hours)
+    with get_session() as session:
+        return (
+            session.query(NewsRecord)
+            .filter(NewsRecord.company_ticker == record.company_ticker)
+            .filter(NewsRecord.id != record.id)
+            .filter(NewsRecord.first_seen_at >= lower, NewsRecord.first_seen_at <= upper)
+            .all()
+        )
+
+
+def link_already_evaluated(record_a_id: int, record_b_id: int) -> bool:
+    """Verilen çiftin (sıradan BAĞIMSIZ, bkz. altta kanonikleştirme) daha
+    önce değerlendirilip değerlendirilmediğini (verdict "evet" veya "hayır"
+    OLSUN, bkz. NewsLink docstring'i) döner - `check_and_link_related_news`
+    bunu HER LLM çağrısından ÖNCE kontrol eder, aynı çift tekrarlanan tarama
+    turlarında tekrar tekrar LLM'e sorulmasın diye."""
+    record_id_a, record_id_b = sorted((record_a_id, record_b_id))
+    with get_session() as session:
+        return (
+            session.query(NewsLink.id)
+            .filter_by(record_id_a=record_id_a, record_id_b=record_id_b)
+            .first()
+            is not None
+        )
+
+
+def record_news_link_evaluation(
+    record_a_id: int, record_b_id: int, llm_verdict: bool, reason: str | None
+) -> bool:
+    """Bir (record_a, record_b) çiftinin LLM değerlendirme sonucunu
+    `news_links`'e yazar - `llm_verdict` True VEYA False olabilir (bkz.
+    NewsLink docstring'i). `record_id_a`/`record_id_b` HER ZAMAN küçük id
+    önce gelecek şekilde (kanonik sırada) saklanır, bu yüzden aynı çift
+    hangi sırayla çağrılırsa çağrılsın (A,B) veya (B,A) AYNI satıra düşer.
+
+    Döner: yeni bir satır eklendiyse True, çift zaten değerlendirilmişse
+    (bkz. link_already_evaluated - normalde çağıran taraf bunu ÖNCEDEN
+    kontrol eder, burada AYRICA `UniqueConstraint` ile de garanti altına
+    alınır) False."""
+    record_id_a, record_id_b = sorted((record_a_id, record_b_id))
+    with get_session() as session:
+        existing = (
+            session.query(NewsLink)
+            .filter_by(record_id_a=record_id_a, record_id_b=record_id_b)
+            .one_or_none()
+        )
+        if existing is not None:
+            return False
+        session.add(
+            NewsLink(
+                record_id_a=record_id_a,
+                record_id_b=record_id_b,
+                llm_verdict=llm_verdict,
+                reason=reason,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        return True
+
+
+def get_confirmed_news_links_for_tickers(tickers: list[str]) -> list[dict[str, Any]]:
+    """Verilen `company_ticker` listesindeki ("BORSA: SEMBOL") şirketlere
+    ait, LLM'in "evet, aynı olay" (`llm_verdict = True`) dediği TÜM
+    bağlantıları döner - `/sirket-profili` sayfasındaki (bkz.
+    src/web/app.py) timeline bölümü için. Her eleman
+    `{"link": NewsLink, "record_a": NewsRecord, "record_b": NewsRecord}`
+    şeklinde - hangisinin KAP, hangisinin genel haber olduğuna çağıran
+    taraf `sources` alanına bakarak karar verir (iki tarafın da AYNI ticker
+    ile eşleştiği - kuruluş anındaki filtre gereği - garanti olduğundan tek
+    bir `IN` filtresi yeterli). Hiç bağlantı yoksa boş liste döner - çağıran
+    taraf bu durumda ilgili bölümü SESSİZCE gizler ("bağlantı yok" kutusu
+    GÖSTERMEZ, kullanıcı isteği)."""
+    if not tickers:
+        return []
+    record_a = aliased(NewsRecord)
+    record_b = aliased(NewsRecord)
+    with get_session() as session:
+        rows = (
+            session.query(NewsLink, record_a, record_b)
+            .join(record_a, record_a.id == NewsLink.record_id_a)
+            .join(record_b, record_b.id == NewsLink.record_id_b)
+            .filter(NewsLink.llm_verdict.is_(True))
+            .filter(record_a.company_ticker.in_(tickers))
+            .order_by(NewsLink.created_at.desc())
+            .all()
+        )
+        return [{"link": link, "record_a": a, "record_b": b} for link, a, b in rows]
 
 
 def get_latest_published_at(session: Session | None = None) -> datetime | None:

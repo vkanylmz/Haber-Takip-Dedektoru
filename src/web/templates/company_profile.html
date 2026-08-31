@@ -307,6 +307,72 @@
       border: 1px dashed var(--card-border);
       border-radius: 12px;
     }
+
+    /* Haber-KAP Bağlantı Haritası (bkz. src/news_links.py) - basit dikey
+       timeline: KAP kartı üstte, "↳ İlişkili haber" bağlayıcı satırı, altında
+       genel haber kartı. Mevcut .card bileşeni yeniden kullanılır, yeni bir
+       CSS/JS kütüphanesi EKLENMEZ. */
+    .link-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #93c5fd;
+      margin-bottom: 0.25rem;
+    }
+
+    .link-hint {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+    }
+
+    .link-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .link-pair {
+      border-left: 2px solid var(--accent);
+      padding-left: 1rem;
+    }
+
+    .link-pair .card {
+      margin-bottom: 0;
+    }
+
+    .link-pair .kap-card {
+      border-color: rgba(96, 165, 250, 0.3);
+    }
+
+    .link-connector {
+      color: #93c5fd;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.6rem 0 0.6rem 0.25rem;
+    }
+
+    .link-connector .reason {
+      color: var(--text-muted);
+      font-weight: 400;
+      font-style: italic;
+    }
+
+    .link-pair .news-card {
+      margin-left: 1.25rem;
+    }
+
+    .source-tag {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(96, 165, 250, 0.12);
+      color: #93c5fd;
+      border: 1px solid rgba(96, 165, 250, 0.25);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.5rem;
+    }
   </style>
 </head>
 
@@ -348,6 +414,58 @@
       </div>
       {% endif %}
     </div>
+
+    {% if news_link_pairs %}
+    <div class="outlook-panel">
+      <div class="link-title">🔗 Haber-KAP Bağlantıları</div>
+      <div class="link-hint">Sistemin, aynı olayı anlattığını tespit ettiği KAP bildirimi + genel haber çiftleri.</div>
+      <div class="link-section">
+        {% for pair in news_link_pairs %}
+        <div class="link-pair">
+          <div class="card kap-card">
+            <div class="card-top">
+              <div>
+                <span class="source-tag">📋 KAP</span>
+                <h2 class="card-title">{{ pair.kap.short_summary or pair.kap.title }}</h2>
+                <div class="card-meta">
+                  <span>{{ pair.kap.published_at }}</span>
+                  {% if pair.kap.kap_category_label %}
+                  <span class="meta-divider">|</span>
+                  <span class="sector-tag">{{ pair.kap.kap_category_label }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="summary">{{ pair.kap.summary }}</div>
+          </div>
+
+          <div class="link-connector">
+            ↳ İlişkili haber{% if pair.reason %} — <span class="reason">{{ pair.reason }}</span>{% endif %}
+          </div>
+
+          <div class="card news-card">
+            <div class="card-top">
+              <div>
+                <h2 class="card-title">{{ pair.haber.title }}{% if pair.haber.title_tr %} <span class="title-tr">({{ pair.haber.title_tr }})</span>{% endif %}</h2>
+                <div class="card-meta">
+                  <span>{{ pair.haber.published_at }}</span>
+                  <span class="meta-divider">|</span>
+                  <span>Kaynak: {{ pair.haber.sources }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="summary">{{ pair.haber.summary }}</div>
+            <div class="links">
+              {% for link in pair.haber.links %}
+              <a href="{{ link.link }}" target="_blank" rel="noopener">{{ link.source }} ↗</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
 
     {% for r in records %}
     <div class="card {% if r.is_highlighted %}highlighted{% endif %}">

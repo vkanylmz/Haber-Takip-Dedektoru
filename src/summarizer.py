@@ -607,6 +607,30 @@ olmadan döndür:
 {"analysis": "...", "companies": [{"name": "Freeport-McMoRan", "ticker": "FCX", "exchange": "NYSE"}]}
 """
 
+# "Haber-KAP Bağlantı Haritası" özelliği için (bkz. src/news_links.py):
+# aynı company_ticker + yakın zaman penceresiyle bulunmuş bir (KAP bildirimi,
+# genel haber) aday çiftinin GERÇEKTEN aynı olayı anlatıp anlatmadığını
+# doğrulamak üzere ayrı, küçük bir sistem promptu.
+NEWS_LINK_SYSTEM_PROMPT = """\
+Sen bir finans haber editörüsün. Sana AYNI şirketle ilgili, yakın zamanda \
+yayınlanmış iki ayrı kayıt verilecek: biri KAP (Kamuyu Aydınlatma Platformu) \
+resmi bildirimi, diğeri genel basında çıkmış bir haber.
+
+Görevin: bu ikisinin GERÇEKTEN aynı olayı/gelişmeyi anlatıp anlatmadığına \
+karar vermek. Örnek "EVET" durumu: KAP'a "büyük sözleşme imzalandı" \
+bildirimi yapılmış VE haber de AYNI sözleşmeden bahsediyor. Örnek "HAYIR" \
+durumu: ikisi şirketle ilgili ama FARKLI/alakasız konular (ör. biri sermaye \
+artırımı, diğeri ayrı bir iş ortaklığı duyurusu). Sadece aynı şirketten \
+bahsetmeleri YETERLİ DEĞİL - aynı SOMUT olayı anlatmaları gerekir.
+
+Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
+olmadan döndür:
+
+{"same_event": true, "reason": "..."}
+
+`reason`: kararının 1 kısa cümlelik (Türkçe) gerekçesi.
+"""
+
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 _RETRY_DELAY_RE = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
 
@@ -1342,6 +1366,45 @@ class Summarizer:
             return ""
 
         return parsed["summary"].strip()
+
+    def check_same_event(self, record_a: Any, record_b: Any) -> tuple[bool, str]:
+        """"Haber-KAP Bağlantı Haritası" özelliği için (bkz.
+        src/news_links.py): verilen iki `NewsRecord`'un (biri KAP, biri
+        genel haber - aynı company_ticker + yakın zaman penceresiyle
+        bulunmuş bir aday çift) GERÇEKTEN aynı olayı anlatıp anlatmadığını
+        TEK bir küçük LLM çağrısıyla sorar (bkz. NEWS_LINK_SYSTEM_PROMPT).
+
+        `summarize_company_profile` İLE AYNI desen: hata/ayrıştırma
+        sorununda (False, "") döner (exception fırlatmaz) - temkinli
+        varsayılan (bağlantı YOK) - çağıran taraf bu durumda bir bağlantı
+        KURMAZ."""
+        summary_a = (record_a.summary or "").strip()[:400]
+        summary_b = (record_b.summary or "").strip()[:400]
+        user_prompt = (
+            f"Kayıt 1 ({record_a.sources}):\nBaşlık: {record_a.title}\nÖzet: {summary_a or '(özet yok)'}\n\n"
+            f"Kayıt 2 ({record_b.sources}):\nBaşlık: {record_b.title}\nÖzet: {summary_b or '(özet yok)'}"
+        )
+
+        try:
+            raw_text = self._call_model_with_retry(user_prompt, system_prompt=NEWS_LINK_SYSTEM_PROMPT)
+        except Exception:  # noqa: BLE001 - bir çiftin doğrulaması başarısız olursa hook'un geri kalanını durdurmasın
+            logger.exception(
+                "Bağlantı doğrulama (LLM çağrısı) başarısız oldu: '%s' <-> '%s'", record_a.title, record_b.title
+            )
+            return False, ""
+
+        parsed = _extract_json(raw_text)
+        if not parsed or "same_event" not in parsed:
+            logger.warning(
+                "Bağlantı doğrulama yanıtı beklenen JSON formatında değildi: '%s' <-> '%s'",
+                record_a.title,
+                record_b.title,
+            )
+            return False, ""
+
+        same_event = bool(parsed.get("same_event"))
+        reason = str(parsed.get("reason") or "").strip()[:300]
+        return same_event, reason
 
     def analyze_commodity_weekly(
         self, label: str, pct_change: float, abs_change: float, unit: str

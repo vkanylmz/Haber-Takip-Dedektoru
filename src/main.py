@@ -33,6 +33,7 @@ from src.fetchers.scrape_fetcher import fetch_scrape
 from src.keyword_alerts import check_keyword_matches_and_notify
 from src.logging_setup import setup_logging
 from src.models import NewsGroup, NewsItem
+from src.news_links import check_and_link_related_news
 from src.notifier import send_telegram_notification
 from src.output.cli_output import print_report
 from src.output.markdown_output import write_markdown
@@ -230,6 +231,17 @@ def _persist_and_notify_single(group: NewsGroup, group_key: str, config: dict[st
 
     with get_session() as session:
         record = upsert_group(session, group, group_key)
+
+    # Haber-KAP Bağlantı Haritası (bkz. src/news_links.py) - BİLİNÇLİ olarak
+    # `notify` bayrağından BAĞIMSIZ/ÖNCE çalışır: bu bir bildirim değil, bir
+    # veri zenginleştirme adımı (`notify=False` sadece Telegram/Web
+    # Push/anahtar kelime bildirimlerini bastırır - ör. geriye dönük
+    # backfill script'lerinde kullanılır, bkz. scripts/ - bağlantı tespiti o
+    # senaryolarda da çalışmalı).
+    try:
+        check_and_link_related_news(record, config)
+    except Exception:  # noqa: BLE001 - bağlantı tespiti hiçbir zaman ana akışı durdurmasın
+        logger.exception("Haber-KAP bağlantı tespiti sırasında beklenmeyen hata: %s", record.title)
 
     if not notify:
         return

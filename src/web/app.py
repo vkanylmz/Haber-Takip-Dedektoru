@@ -42,6 +42,7 @@ from src.db import (
     PushSubscription,
     get_all_subscribers_overview,
     get_app_state,
+    get_confirmed_news_links_for_tickers,
     get_distinct_sectors,
     get_distinct_sources,
     get_latest_published_at,
@@ -1182,6 +1183,29 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
 
     views = [_record_to_view(r, threshold) for r in profile["records"]] if profile else []
 
+    # Haber-KAP Bağlantı Haritası (bkz. src/news_links.py): isim/LIKE
+    # aramasıyla BULUNAN kayıtların (yukarıdaki `views`) TAŞIDIĞI
+    # `company_ticker` değerleri üzerinden - bu, isim aramasından TAMAMEN
+    # BAĞIMSIZ, ticker bazlı bir eşleştirmedir (ör. "Şişecam" arattığınızda,
+    # onun ticker'ı "BIST: SISE" için bulunan bağlantılar gösterilir - basit
+    # isim arama gürültüsünden etkilenmez). Hiç bağlantı yoksa (mevcut veri
+    # hacminde ÇOĞUNLUKLA böyle olacaktır, bkz. fizibilite notu)
+    # `news_link_pairs` boş kalır - şablon bu durumda bölümü SESSİZCE gizler.
+    news_link_pairs: list[dict[str, Any]] = []
+    tickers = sorted({v["company_ticker"] for v in views if v["company_ticker"]})
+    if tickers:
+        for pair in get_confirmed_news_links_for_tickers(tickers):
+            record_a, record_b = pair["record_a"], pair["record_b"]
+            a_is_kap = KAP_SOURCE_NAME in (s.strip() for s in (record_a.sources or "").split(","))
+            kap_record, haber_record = (record_a, record_b) if a_is_kap else (record_b, record_a)
+            news_link_pairs.append(
+                {
+                    "kap": _record_to_view(kap_record, threshold),
+                    "haber": _record_to_view(haber_record, threshold),
+                    "reason": pair["link"].reason,
+                }
+            )
+
     return templates.TemplateResponse(
         request,
         "company_profile.html",
@@ -1189,6 +1213,7 @@ def company_profile_page(request: Request, q: str | None = None) -> HTMLResponse
             "query": q or "",
             "profile": profile,
             "records": views,
+            "news_link_pairs": news_link_pairs,
         },
     )
 
