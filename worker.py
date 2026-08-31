@@ -40,6 +40,7 @@ from src.logging_setup import setup_logging
 from src.main import fetch_source, run_once, summarize_and_persist_groups
 from src.telegram_bot import start_bot_listener_thread, stop_bot_listener_thread
 from src.trend_report import send_monthly_trend_report, send_weekly_trend_report
+from src.voice_digest import send_voice_digest
 from src.web.market_data import (
     MARKET_SYMBOLS as _MARKET_DATA_SYMBOLS,
     fetch_market_snapshot_from_yahoo,
@@ -54,6 +55,14 @@ DAILY_DIGEST_DAY_OF_WEEK = "mon-fri"
 DAILY_DIGEST_HOUR = 9
 DAILY_DIGEST_MINUTE = 0
 DAILY_DIGEST_TIMEZONE = "Europe/Istanbul"
+
+# Sesli Günlük Özet (bkz. src/voice_digest.py): HER GÜN (hafta sonu dahil -
+# gece haberleri her gün birikir, yazılı günlük özetten farklı olarak hafta
+# sonuna özel bir kısıtlama yok), yazılı günlük özetten (09:00) hemen sonra
+# 09:05'te - aynı anda iki Telegram mesaj patlaması + iki LLM çağrısı
+# olmasın diye kasıtlı olarak farklı bir dakika seçildi.
+VOICE_DIGEST_HOUR = 9
+VOICE_DIGEST_MINUTE = 5
 
 # Haftalık trend raporu: her Pazartesi, günlük özetten (09:00) sonra 09:30'da.
 WEEKLY_TREND_HOUR = 9
@@ -337,6 +346,17 @@ def _daily_digest_job() -> None:
         logger.exception("Günlük özet raporu gönderilirken beklenmeyen bir hata oluştu.")
 
 
+def _voice_digest_job() -> None:
+    """Sesli Günlük Özet (bkz. src/voice_digest.py) - yazılı günlük özetten
+    VE anlık bildirim akışından TAMAMEN bağımsız, ayrı bir zamanlanmış görev.
+    Kendi hatası diğer görevleri etkilemesin diye izole edilir."""
+    try:
+        config = load_config()
+        send_voice_digest(config)
+    except Exception:  # noqa: BLE001
+        logger.exception("Sesli Günlük Özet gönderilirken beklenmeyen bir hata oluştu.")
+
+
 def _weekly_trend_job() -> None:
     """Haftalık trend raporu (bkz. src/trend_report.py) - günlük özetten VE
     anlık bildirim akışından TAMAMEN bağımsız, ayrı bir zamanlanmış görev."""
@@ -394,6 +414,18 @@ def _add_daily_digest_job(scheduler) -> None:
             timezone=DAILY_DIGEST_TIMEZONE,
         ),
         id="gunluk_ozet",
+    )
+
+
+def _add_voice_digest_job(scheduler) -> None:
+    scheduler.add_job(
+        _voice_digest_job,
+        CronTrigger(
+            hour=VOICE_DIGEST_HOUR,
+            minute=VOICE_DIGEST_MINUTE,
+            timezone=DAILY_DIGEST_TIMEZONE,
+        ),
+        id="gunluk_sesli_ozet",
     )
 
 
@@ -463,6 +495,7 @@ def start_background_scheduler(config: dict | None = None) -> BackgroundSchedule
     _add_market_snapshot_job(scheduler)
     _add_economic_calendar_jobs(scheduler)
     _add_daily_digest_job(scheduler)
+    _add_voice_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)
     scheduler.start()
@@ -492,6 +525,7 @@ def main() -> None:
     _add_market_snapshot_job(scheduler)
     _add_economic_calendar_jobs(scheduler)
     _add_daily_digest_job(scheduler)
+    _add_voice_digest_job(scheduler)
     _add_trend_report_jobs(scheduler)
     _add_db_backup_job(scheduler)
 

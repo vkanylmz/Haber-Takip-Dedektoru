@@ -31,6 +31,13 @@ psycopg2-binary>=2.9
 # Telegram bildirimleri - src/notifier.py
 python-telegram-bot>=21.0
 
+# Sesli Günlük Özet (bkz. src/tts.py, src/voice_digest.py): Gemini TTS
+# (google-genai, yukarıda zaten kurulu) ham PCM ses döndürür - bunu
+# Telegram'ın sendAudio ile oynatılabilir bir ses balonu olarak kabul ettiği
+# MP3'e çevirmek için. Saf Python bağlaması (LAME encoder'a), sistemde ffmpeg
+# kurulumu GEREKTİRMEZ - Windows/Linux/macOS için hazır wheel'ler mevcut.
+lameenc>=1.8
+
 # Web dashboard - src/web/app.py
 fastapi>=0.110
 uvicorn[standard]>=0.29

@@ -126,6 +126,31 @@ importance:
   # normal çıktıda (CLI/Markdown/web dashboard) görünür, bildirim gitmez.
   threshold: 4
 
+# Sesli Günlük Özet (bkz. src/voice_digest.py, src/tts.py): her sabah 09:05
+# (Europe/Istanbul, bkz. worker.py > gunluk_sesli_ozet) bir önceki gece
+# (18:00-09:00) toplanan haberlerin akıcı bir Türkçe sesli özetini üretip
+# SADECE opt-in olmuş abonelere (Telegram /sesli_ozet_ac komutu, bkz.
+# src/db.py > Subscriber.voice_digest_enabled) gönderir. Tek bir ses dosyası
+# üretilir, TÜM opt-in abonelere AYNI dosya gönderilir (kişiye özel üretim
+# yok) - maliyet ve süre açısından gereksiz olurdu.
+tts:
+  enabled: true
+  # GEMINI_API_KEY zaten summarizer için tanımlı olduğundan ek bir anahtar
+  # GEREKMEZ (bkz. src/tts.py, ai.google.dev/gemini-api/docs/speech-generation).
+  gemini_model: gemini-2.5-flash-preview-tts
+  # 30 hazır sesten biri (ör. Kore, Puck, Zephyr) - Türkçe dahil tüm diller
+  # için model otomatik doğru aksanı/telaffuzu uygular.
+  voice_name: Kore
+  # Gece penceresi (Europe/Istanbul saatiyle) - bu aralıkta toplanan haberler
+  # değerlendirilir.
+  window_start_hour: 18
+  window_end_hour: 9
+  # Sadece bu skor ve üzeri haberler sesli özete dahil edilir (günlük yazılı
+  # özetten farklı olarak burada LLM'e "en önemli 5-10'u seç" YAPTIRILMAZ -
+  # basit bir eşik filtresi yeterli, çünkü zaten sadece önemli haberler
+  # konuşma metnine giriyor).
+  min_importance_score: 4
+
 telegram:
   # false yaparsanız TELEGRAM_BOT_TOKEN/CHAT_ID tanımlı olsa bile hiçbir
   # bildirim gönderilmez (örn. test/geliştirme sırasında).

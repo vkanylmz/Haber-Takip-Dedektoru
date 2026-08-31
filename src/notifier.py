@@ -99,6 +99,82 @@ def _format_message(record: "NewsRecord") -> str:
     )
 
 
+async def _send_audio_to_all(
+    bot_token: str, chat_ids: list[str], audio_bytes: bytes, filename: str, caption: str | None, title: str | None
+) -> int:
+    from telegram import Bot, InputFile
+    from telegram.constants import ParseMode
+    from telegram.error import Forbidden, TelegramError
+
+    from src.db import remove_subscriber
+
+    sent_count = 0
+    async with Bot(token=bot_token) as bot:
+        for i, chat_id in enumerate(chat_ids):
+            try:
+                # Her gönderim için TAZE bir InputFile - python-telegram-bot,
+                # önceki gönderimde "tüketilmiş" bir dosya nesnesini tekrar
+                # kullanmaya izin vermez.
+                audio_file = InputFile(audio_bytes, filename=filename)
+                await bot.send_audio(
+                    chat_id=chat_id,
+                    audio=audio_file,
+                    caption=caption,
+                    title=title,
+                    parse_mode=ParseMode.HTML if caption else None,
+                )
+                sent_count += 1
+            except Forbidden:
+                logger.warning("Chat ID %s botu engellemiş, abonelikten çıkarılıyor.", chat_id)
+                remove_subscriber(chat_id)
+            except TelegramError as e:
+                logger.error("Chat ID %s icin ses dosyası gönderimi başarısız: %s", chat_id, e)
+            except Exception:  # noqa: BLE001 - tek bir aboneye gönderim hatası diğerlerini etkilemesin
+                logger.exception("Chat ID %s icin beklenmeyen hata (ses dosyası)", chat_id)
+
+            if i < len(chat_ids) - 1:
+                await asyncio.sleep(_SEND_DELAY_SECONDS)
+
+    return sent_count
+
+
+def send_telegram_audio_to_chat_ids(
+    chat_ids: list[str],
+    audio_bytes: bytes,
+    filename: str = "ozet.mp3",
+    caption: str | None = None,
+    title: str | None = None,
+) -> int:
+    """Genel amaçlı yardımcı: hazırlanmış bir MP3 ses dosyasını verilen
+    chat_id listesine `sendAudio` ile gönderir - `send_telegram_message_to_chat_ids`
+    ile AYNI alt yapıyı (Forbidden hatasında otomatik abonelik iptali,
+    gönderimler arası bekleme) kullanır. Sesli Günlük Özet (bkz.
+    src/voice_digest.py) tarafından kullanılır - TEK bir ses dosyası
+    üretilip TÜM opt-in abonelere AYNI dosya gönderilir.
+
+    Döner: başarıyla gönderilen mesaj sayısı (0 = hiç gönderilemedi). Hiçbir
+    durumda exception fırlatmaz."""
+    if not chat_ids:
+        return 0
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not bot_token:
+        logger.warning("TELEGRAM_BOT_TOKEN tanımlı değil, ses dosyası gönderilemedi.")
+        return 0
+
+    try:
+        import telegram  # noqa: F401
+    except ImportError:
+        logger.warning("'python-telegram-bot' paketi kurulu değil, ses dosyası gönderilemedi.")
+        return 0
+
+    try:
+        return asyncio.run(_send_audio_to_all(bot_token, chat_ids, audio_bytes, filename, caption, title))
+    except Exception:  # noqa: BLE001 - ağ hatası, geçersiz token vb.
+        logger.exception("Toplu Telegram ses dosyası gönderilemedi.")
+        return 0
+
+
 async def _send_to_all(bot_token: str, chat_ids: list[str], message: str) -> int:
     from telegram import Bot
     from telegram.constants import ParseMode

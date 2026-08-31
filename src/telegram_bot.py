@@ -23,6 +23,9 @@ konuşan HERKESİN kendi kendine abone olabildiği çok-kullanıcılı bir model
     gitmez (bkz. src/db.py > Subscriber.kap_only_until, src/notifier.py >
     _is_kap_record). Süre dolunca AYRI bir işlem/job GEREKMEDEN otomatik
     olarak normal moda döner (lazy-expiry, bkz. o alanın docstring'i).
+  - /sesli_ozet_ac, /sesli_ozet_kapat, /sesli_ozet_durum: Sesli Günlük Özete
+    (bkz. src/voice_digest.py, src/db.py > Subscriber.voice_digest_enabled)
+    opt-in/opt-out - varsayılan KAPALI, sadece isteyen abone açar.
   - /yardim (veya /help): kullanılabilir komutları listeler. (Not: Telegram
     bot komutları yalnızca [a-z0-9_] içerebilir - "ı" gibi Türkçe karakterler
     içeremez, bu yüzden "/yardım" değil "/yardim" kullanılır.)
@@ -75,11 +78,13 @@ from src.db import (
     get_source_health_summary,
     get_subscriber_kap_only,
     get_subscriber_threshold,
+    get_subscriber_voice_digest,
     remove_keyword_subscription,
     remove_subscriber,
     search_records,
     set_subscriber_kap_only,
     set_subscriber_threshold,
+    set_subscriber_voice_digest,
     touch_subscriber_last_active,
 )
 from src.summarizer import SECTOR_LABELS
@@ -135,7 +140,10 @@ _GUIDE_TEXT = (
     "/takiplerim — Takip listeni göster\n"
     "/takipsil &lt;kelime&gt; — Bir kelimeyi takip listenden çıkar\n"
     "/esik &lt;1-5&gt; — Anlık flaş haber bildirimlerin için önem eşiğini kendine göre ayarla (ör. /esik 3 — bu skor ve üzerinde bildirim alırsın)\n"
-    "/esikgoster — Şu anki bildirim eşiğini gösterir\n\n"
+    "/esikgoster — Şu anki bildirim eşiğini gösterir\n"
+    "/sesli_ozet_ac — Her sabah gece boyunca toplanan önemli haberlerin sesli (+ yazılı) özetini almaya başla\n"
+    "/sesli_ozet_kapat — Sesli Günlük Özeti kapat\n"
+    "/sesli_ozet_durum — Sesli Günlük Özet açık mı kapalı mı, gösterir\n\n"
 
     "📋 <b>KAP Takibi:</b> Şirketlerin KAP (Kamuyu Aydınlatma Platformu) özel "
     "durum açıklamaları artık otomatik taranıyor, yapay zekâ ile önem "
@@ -729,6 +737,60 @@ async def _show_threshold(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def _voice_digest_enable(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sesli_ozet_ac: aboneyi Sesli Günlük Özete opt-in yapar (bkz.
+    src/db.py > Subscriber.voice_digest_enabled, src/voice_digest.py). Her
+    sabah ~09:05 (Europe/Istanbul) gece boyunca toplanan önemli haberlerin
+    sesli bir özeti gönderilir."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    updated = set_subscriber_voice_digest(chat.id, True)
+    logger.info("/sesli_ozet_ac alındı: chat_id=%s, guncellendi=%s", chat.id, updated)
+    if updated:
+        await update.message.reply_text(
+            "✅ Sesli Günlük Özet açıldı. Her sabah gece boyunca toplanan önemli "
+            "haberlerin kısa bir sesli özetini (+ yazılı hali) alacaksın. "
+            "Kapatmak için: /sesli_ozet_kapat"
+        )
+    else:
+        await update.message.reply_text("Önce /start yazıp abone olman gerekiyor.")
+
+
+async def _voice_digest_disable(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sesli_ozet_kapat: Sesli Günlük Özet opt-in'ini kaldırır."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    updated = set_subscriber_voice_digest(chat.id, False)
+    logger.info("/sesli_ozet_kapat alındı: chat_id=%s, guncellendi=%s", chat.id, updated)
+    if updated:
+        await update.message.reply_text(
+            "Sesli Günlük Özet kapatıldı, artık sesli özet almayacaksın. "
+            "Tekrar açmak için: /sesli_ozet_ac"
+        )
+    else:
+        await update.message.reply_text("Önce /start yazıp abone olman gerekiyor.")
+
+
+async def _voice_digest_status(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sesli_ozet_durum: Sesli Günlük Özet opt-in durumunu gösterir."""
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+
+    enabled = get_subscriber_voice_digest(chat.id)
+    logger.info("/sesli_ozet_durum alındı: chat_id=%s, aktif=%s", chat.id, enabled)
+    if enabled is None:
+        await update.message.reply_text("Henüz abone değilsin. Katılmak için /start yazabilirsin.")
+    elif enabled:
+        await update.message.reply_text("🔊 Sesli Günlük Özet AÇIK. Kapatmak için: /sesli_ozet_kapat")
+    else:
+        await update.message.reply_text("🔇 Sesli Günlük Özet KAPALI. Açmak için: /sesli_ozet_ac")
+
+
 def _kap_only_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(label, callback_data=f"kap_only:{code}") for code, label in _KAP_ONLY_PRESETS]]
@@ -883,6 +945,9 @@ def build_application(bot_token: str) -> Application:
     application.add_handler(CommandHandler("takipsil", _untrack_keyword))
     application.add_handler(CommandHandler("esik", _set_threshold))
     application.add_handler(CommandHandler("esikgoster", _show_threshold))
+    application.add_handler(CommandHandler("sesli_ozet_ac", _voice_digest_enable))
+    application.add_handler(CommandHandler("sesli_ozet_kapat", _voice_digest_disable))
+    application.add_handler(CommandHandler("sesli_ozet_durum", _voice_digest_status))
     application.add_handler(CommandHandler("kap_sadece", _kap_only_mode))
     application.add_handler(CommandHandler("kap_durum", _kap_only_status))
     application.add_handler(CommandHandler("kap_bitir", _kap_only_stop))

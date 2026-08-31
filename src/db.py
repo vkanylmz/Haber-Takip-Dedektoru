@@ -259,6 +259,12 @@ class Subscriber(Base):
     # DEĞİLDİR, güncellenemezse (ör. abone DB'de henüz yoksa) sessizce atlanır.
     last_active_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Sesli Günlük Özet (bkz. Telegram /sesli_ozet_ac, /sesli_ozet_kapat
+    # komutları, src/voice_digest.py) - opt-in: varsayılan False, TEK bir ses
+    # dosyası her gün sadece bunu True yapmış abonelere gönderilir (veri
+    # kullanımı nedeniyle herkese zorla gönderilmez).
+    voice_digest_enabled = Column(Boolean, nullable=False, default=False)
+
 
 class KeywordSubscription(Base):
     """Bir kullanıcının /takip <kelime> ile eklediği bir anahtar kelime/varlık
@@ -725,6 +731,14 @@ def _migrate_add_missing_columns(engine) -> None:
         if "last_active_at" not in existing_subscriber_columns:
             conn.exec_driver_sql("ALTER TABLE subscribers ADD COLUMN last_active_at TIMESTAMP")
             logger.info("Veritabanı migrasyonu: subscribers.last_active_at kolonu eklendi.")
+        if "voice_digest_enabled" not in existing_subscriber_columns:
+            # "DEFAULT FALSE" (0/1 YERİNE) bilinçli olarak ANSI/portable bir
+            # boolean literal - hem SQLite hem Postgres'te (bkz. DATABASE_URL)
+            # sorunsuz çalışır.
+            conn.exec_driver_sql(
+                "ALTER TABLE subscribers ADD COLUMN voice_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+            logger.info("Veritabanı migrasyonu: subscribers.voice_digest_enabled kolonu eklendi.")
 
         existing_calendar_columns = {col["name"] for col in inspector.get_columns("economic_calendar_events")}
         if "forecast_value" not in existing_calendar_columns:
@@ -1641,6 +1655,7 @@ def get_all_subscribers_overview() -> list[dict[str, Any]]:
                     "importance_threshold": sub.importance_threshold,
                     "kap_only_until": kap_until,
                     "kap_only_active": kap_until is not None and kap_until > now,
+                    "voice_digest_enabled": sub.voice_digest_enabled,
                     "subscribed_at": sub.subscribed_at,
                     "last_active_at": sub.last_active_at,
                     "keywords": sorted(keywords_by_chat.get(sub.chat_id, [])),
@@ -1669,6 +1684,38 @@ def get_subscriber_threshold(chat_id: str | int) -> int | None:
     with get_session() as session:
         existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
         return existing.importance_threshold if existing is not None else None
+
+
+def set_subscriber_voice_digest(chat_id: str | int, enabled: bool) -> bool:
+    """Bir abonenin Sesli Günlük Özet opt-in tercihini günceller (bkz.
+    Telegram /sesli_ozet_ac, /sesli_ozet_kapat komutları). Döner: abone
+    kayıtlıysa ve güncellendiyse True, abone değilse False (bkz.
+    set_subscriber_threshold ile AYNI desen)."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        if existing is None:
+            return False
+        existing.voice_digest_enabled = enabled
+        logger.info("Abone sesli özet tercihi güncellendi: chat_id=%s, aktif=%s", chat_id_str, enabled)
+        return True
+
+
+def get_subscriber_voice_digest(chat_id: str | int) -> bool | None:
+    """Bir abonenin Sesli Günlük Özet opt-in durumunu döner. Abone değilse
+    None döner (bkz. /sesli_ozet_durum komutu)."""
+    chat_id_str = str(chat_id)
+    with get_session() as session:
+        existing = session.query(Subscriber).filter_by(chat_id=chat_id_str).one_or_none()
+        return existing.voice_digest_enabled if existing is not None else None
+
+
+def get_voice_digest_subscriber_chat_ids() -> list[str]:
+    """Sesli Günlük Özet'e opt-in olmuş TÜM abonelerin chat_id'lerini döner
+    (bkz. src/voice_digest.py)."""
+    with get_session() as session:
+        query = session.query(Subscriber.chat_id).filter(Subscriber.voice_digest_enabled.is_(True))
+        return [chat_id for (chat_id,) in query.all()]
 
 
 # --------------------------------------------------------------------------

@@ -561,6 +561,38 @@ olmadan döndür:
 {"selections": [{"index": 3, "reason": "..."}, {"index": 7, "reason": "..."}]}
 """
 
+# Sesli Günlük Özet için (bkz. src/voice_digest.py, src/tts.py): gece
+# (18:00-09:00) penceresinde toplanmış, önem skoru eşiği geçen haberlerden
+# TEK bir akıcı, KONUŞMA DİLİNE uygun Türkçe metin ürettirmek üzere ayrı bir
+# sistem promptu. DAILY_DIGEST_SYSTEM_PROMPT'tan FARKI: burada "en önemliyi
+# seç" işi ZATEN yapılmış (basit skor eşiği ile, bkz. src/voice_digest.py) -
+# bu prompt sadece verilen haberleri TEK bir doğal anlatıya dönüştürür,
+# madde madde/liste formatı DEĞİL (TTS ile okunacağı için).
+NIGHT_DIGEST_SYSTEM_PROMPT = """\
+Sen bir finans radyosu spikerisin. Sana, gece boyunca (akşam 18:00'den sabah \
+09:00'a kadar) toplanmış ÖNEMLİ finans haberlerinin bir listesi verilecek; \
+her satırda önem skoru, başlık ve kısa özet bulunuyor.
+
+Görevin: bu haberlerden, SESLİ olarak okunacak, akıcı ve doğal konuşma \
+diline uygun TEK bir Türkçe anlatı yazmak - "gece boyunca şunlar oldu..." \
+tarzında, sanki dinleyiciye sabah haberlerini özetliyormuşsun gibi. MADDE \
+MADDE LİSTE YAZMA, numaralandırma yapma, başlık tekrarlama - doğal cümlelerle \
+bağla (ör. "Bu arada...", "Öte yandan...", "Gece saatlerinde de..."). \
+Kısaltmaları (ör. "%", "TL", ticker kodları) sesli okunduğunda anlaşılır \
+olacak şekilde yaz (ör. "yüzde beş" yerine "%5" yazman sorun değil, TTS bunu \
+zaten doğru okur - sadece garip/anlaşılmaz kısaltmalardan kaçın). En fazla \
+1-2 dakikalık bir konuşma uzunluğunda tut (yaklaşık 150-280 kelime) - ÇOK \
+UZUN OLMASIN. Verilen haberlerin TAMAMINI değil, gerçekten önemli olanları \
+öne çıkar, önemsiz/tekrar eden detayları kısaca geç veya atla. Kısa bir \
+karşılama cümlesiyle başla (ör. "Günaydın, gece boyunca piyasalarda şunlar \
+yaşandı:") ve kısa bir kapanış cümlesiyle bitir (ör. "İyi günler dilerim.").
+
+Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
+olmadan döndür:
+
+{"script": "..."}
+"""
+
 # Şirket/hisse profili sayfası için (bkz. src/company_profile.py, web
 # dashboard'daki "Şirket Profili" sayfası): kullanıcının aradığı şirketle
 # ilgili son 30 günün haberlerinden TEK bir genel görünüm (outlook) paragrafı
@@ -1366,6 +1398,36 @@ class Summarizer:
             return ""
 
         return parsed["summary"].strip()
+
+    def generate_night_digest_script(self, records: list[Any]) -> str:
+        """Verilen (gece penceresindeki, önem eşiğini geçen) `NewsRecord`
+        listesinden Sesli Günlük Özet için TEK bir akıcı Türkçe konuşma
+        metni ürettirir (bkz. NIGHT_DIGEST_SYSTEM_PROMPT, src/voice_digest.py).
+
+        Herhangi bir hata/ayrıştırma sorununda boş string döner (exception
+        fırlatmaz) - çağıran taraf bu durumda sesli özeti atlar."""
+        if not records:
+            return ""
+
+        lines = []
+        for r in records:
+            score = r.importance_score if r.importance_score is not None else "?"
+            summary = (r.summary or "").strip()[:300]
+            lines.append(f"[Önem: {score}/5] {r.title}\nÖzet: {summary or '(özet yok)'}")
+        user_prompt = "\n\n".join(lines)
+
+        try:
+            raw_text = self._call_model_with_retry(user_prompt, system_prompt=NIGHT_DIGEST_SYSTEM_PROMPT)
+        except Exception:  # noqa: BLE001 - sesli özet metni başarısız olursa çağıran taraf atlasın
+            logger.exception("Sesli özet metni (LLM çağrısı) başarısız oldu.")
+            return ""
+
+        parsed = _extract_json(raw_text)
+        if not parsed or not isinstance(parsed.get("script"), str):
+            logger.warning("Sesli özet metni yanıtı beklenen JSON formatında değildi.")
+            return ""
+
+        return parsed["script"].strip()
 
     def check_same_event(self, record_a: Any, record_b: Any) -> tuple[bool, str]:
         """"Haber-KAP Bağlantı Haritası" özelliği için (bkz.
