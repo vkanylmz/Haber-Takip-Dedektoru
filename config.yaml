@@ -128,11 +128,13 @@ importance:
 
 # Sesli Günlük Özet (bkz. src/voice_digest.py, src/tts.py): her sabah 09:05
 # (Europe/Istanbul, bkz. worker.py > gunluk_sesli_ozet) bir önceki gece
-# (18:00-09:00) toplanan haberlerin akıcı bir Türkçe sesli özetini üretip
-# SADECE opt-in olmuş abonelere (Telegram /sesli_ozet_ac komutu, bkz.
-# src/db.py > Subscriber.voice_digest_enabled) gönderir. Tek bir ses dosyası
-# üretilir, TÜM opt-in abonelere AYNI dosya gönderilir (kişiye özel üretim
-# yok) - maliyet ve süre açısından gereksiz olurdu.
+# (18:00-09:00) toplanan haberlerden İKİ AYRI akıcı Türkçe sesli özet
+# üretip (Genel Haberler + KAP Bildirimleri, kaynağa göre ayrılır) SADECE
+# opt-in olmuş abonelere (Telegram /sesli_ozet_ac komutu, bkz. src/db.py >
+# Subscriber.voice_digest_enabled) gönderir. Kategori başına TEK bir ses
+# dosyası üretilir, TÜM opt-in abonelere AYNI dosya gönderilir (kişiye özel
+# üretim yok - maliyet/süre açısından gereksiz olurdu); o gece bir kategoride
+# hiç kayıt yoksa o kategori için hiçbir şey gönderilmez.
 tts:
   enabled: true
   # GEMINI_API_KEY zaten summarizer için tanımlı olduğundan ek bir anahtar

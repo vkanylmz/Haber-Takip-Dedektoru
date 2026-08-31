@@ -1399,22 +1399,33 @@ class Summarizer:
 
         return parsed["summary"].strip()
 
-    def generate_night_digest_script(self, records: list[Any]) -> str:
+    def generate_night_digest_script(self, records: list[Any], category: str = "genel") -> str:
         """Verilen (gece penceresindeki, önem eşiğini geçen) `NewsRecord`
         listesinden Sesli Günlük Özet için TEK bir akıcı Türkçe konuşma
         metni ürettirir (bkz. NIGHT_DIGEST_SYSTEM_PROMPT, src/voice_digest.py).
+
+        `category`: "genel" (KAP dışı haberler) veya "kap" (SADECE KAP özel
+        durum açıklamaları, bkz. src/voice_digest.py > İKİ AYRI özet -
+        genel/KAP) - modelin doğru bağlamla açılış cümlesi kurabilmesi için
+        user prompt'a kısa bir ipucu eklenir, sistem promptu AYNI kalır.
 
         Herhangi bir hata/ayrıştırma sorununda boş string döner (exception
         fırlatmaz) - çağıran taraf bu durumda sesli özeti atlar."""
         if not records:
             return ""
 
+        category_hint = (
+            "Bu liste SADECE KAP (Kamuyu Aydınlatma Platformu) özel durum "
+            "açıklamalarından oluşuyor.\n\n"
+            if category == "kap"
+            else ""
+        )
         lines = []
         for r in records:
             score = r.importance_score if r.importance_score is not None else "?"
             summary = (r.summary or "").strip()[:300]
             lines.append(f"[Önem: {score}/5] {r.title}\nÖzet: {summary or '(özet yok)'}")
-        user_prompt = "\n\n".join(lines)
+        user_prompt = category_hint + "\n\n".join(lines)
 
         try:
             raw_text = self._call_model_with_retry(user_prompt, system_prompt=NIGHT_DIGEST_SYSTEM_PROMPT)
