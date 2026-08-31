@@ -40,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.config import get_gemini_api_key, get_summarizer_api_key
-from src.db import NewsRecord, get_records_since, get_voice_digest_subscriber_chat_ids
+from src.db import NewsRecord, get_records_between, get_voice_digest_subscriber_chat_ids
 from src.notifier import send_telegram_audio_to_chat_ids, send_telegram_message_to_chat_ids
 from src.summarizer import Summarizer
 from src.timezone_utils import TURKEY_TZ
@@ -71,16 +71,24 @@ def _is_kap_record(record: NewsRecord) -> bool:
     return _KAP_SOURCE_NAME in (s.strip() for s in (record.sources or "").split(","))
 
 
-def _night_window_start(tts_cfg: dict[str, Any]) -> datetime:
-    """Bir önceki günün (Europe/Istanbul saatiyle) `window_start_hour`'ını
-    (varsayılan 18:00) UTC olarak döner - `get_records_since` bunu bekler
-    (bkz. src/db.py > NewsRecord.first_seen_at, hep UTC)."""
+def _night_window(tts_cfg: dict[str, Any]) -> tuple[datetime, datetime]:
+    """Gece penceresinin (Europe/Istanbul saatiyle `window_start_hour`
+    (varsayılan 18:00, BİR ÖNCEKİ gün) - `window_end_hour` (varsayılan 08:00,
+    BUGÜN) arası) (start, end) sınırlarını UTC olarak döner - `get_records_between`
+    bunu bekler (bkz. src/db.py > NewsRecord.first_seen_at, hep UTC).
+
+    `end` SABİT bir saate (varsayılan 08:00) kesilir - job'ın tam ne zaman
+    çalıştığına (bkz. worker.py > VOICE_DIGEST_HOUR/MINUTE, varsayılan 08:05
+    - kasıtlı olarak 5 dk işlem payı bırakılır) BAĞLI DEĞİLDİR, yani job
+    birkaç dakika gecikmeli çalışsa bile pencere sınırı DEĞİŞMEZ."""
     window_start_hour = tts_cfg.get("window_start_hour", 18)
+    window_end_hour = tts_cfg.get("window_end_hour", 8)
     now_tr = datetime.now(TURKEY_TZ)
-    since_tr = (now_tr - timedelta(days=1)).replace(
+    start_tr = (now_tr - timedelta(days=1)).replace(
         hour=window_start_hour, minute=0, second=0, microsecond=0
     )
-    return since_tr.astimezone(timezone.utc)
+    end_tr = now_tr.replace(hour=window_end_hour, minute=0, second=0, microsecond=0)
+    return start_tr.astimezone(timezone.utc), end_tr.astimezone(timezone.utc)
 
 
 def _send_category_digest(
@@ -163,8 +171,8 @@ def send_voice_digest(config: dict[str, Any]) -> None:
         logger.info("Sesli özete opt-in olmuş hiç abone yok, sesli özet atlanıyor.")
         return
 
-    since = _night_window_start(tts_cfg)
-    records = get_records_since(since)
+    window_start, window_end = _night_window(tts_cfg)
+    records = get_records_between(window_start, window_end)
     min_score = tts_cfg.get("min_importance_score", 4)
     important: list[NewsRecord] = [r for r in records if (r.importance_score or 0) >= min_score]
     if not important:

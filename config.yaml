@@ -126,9 +126,9 @@ importance:
   # normal çıktıda (CLI/Markdown/web dashboard) görünür, bildirim gitmez.
   threshold: 4
 
-# Sesli Günlük Özet (bkz. src/voice_digest.py, src/tts.py): her sabah 09:05
+# Sesli Günlük Özet (bkz. src/voice_digest.py, src/tts.py): her sabah 08:05
 # (Europe/Istanbul, bkz. worker.py > gunluk_sesli_ozet) bir önceki gece
-# (18:00-09:00) toplanan haberlerden İKİ AYRI akıcı Türkçe sesli özet
+# (18:00-08:00) toplanan haberlerden İKİ AYRI akıcı Türkçe sesli özet
 # üretip (Genel Haberler + KAP Bildirimleri, kaynağa göre ayrılır) SADECE
 # opt-in olmuş abonelere (Telegram /sesli_ozet_ac komutu, bkz. src/db.py >
 # Subscriber.voice_digest_enabled) gönderir. Kategori başına TEK bir ses
@@ -144,9 +144,13 @@ tts:
   # için model otomatik doğru aksanı/telaffuzu uygular.
   voice_name: Kore
   # Gece penceresi (Europe/Istanbul saatiyle) - bu aralıkta toplanan haberler
-  # değerlendirilir.
+  # değerlendirilir. window_end_hour, gönderim saatinden (worker.py >
+  # VOICE_DIGEST_HOUR/MINUTE, varsayılan 08:05) KASITLI OLARAK 5 dk ÖNCEye
+  # ayarlanır - metin+ses üretimi/gönderimi için işlem payı bırakır, ayrıca
+  # pencere sınırı sabit olduğundan job'ın tam 08:05'te mi yoksa birkaç
+  # dakika gecikmeli mi çalıştığı sonucu ETKİLEMEZ.
   window_start_hour: 18
-  window_end_hour: 9
+  window_end_hour: 8
   # Sadece bu skor ve üzeri haberler sesli özete dahil edilir (günlük yazılı
   # özetten farklı olarak burada LLM'e "en önemli 5-10'u seç" YAPTIRILMAZ -
   # basit bir eşik filtresi yeterli, çünkü zaten sadece önemli haberler

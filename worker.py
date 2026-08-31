@@ -58,10 +58,12 @@ DAILY_DIGEST_TIMEZONE = "Europe/Istanbul"
 
 # Sesli Günlük Özet (bkz. src/voice_digest.py): HER GÜN (hafta sonu dahil -
 # gece haberleri her gün birikir, yazılı günlük özetten farklı olarak hafta
-# sonuna özel bir kısıtlama yok), yazılı günlük özetten (09:00) hemen sonra
-# 09:05'te - aynı anda iki Telegram mesaj patlaması + iki LLM çağrısı
-# olmasın diye kasıtlı olarak farklı bir dakika seçildi.
-VOICE_DIGEST_HOUR = 9
+# sonuna özel bir kısıtlama yok), yazılı günlük özetten (09:00) ÖNCE, 08:05'te
+# (kullanıcı isteği, 2026-08-31) - gece penceresi 08:00'da kesildiğinden
+# (bkz. config.yaml > tts.window_end_hour, src/voice_digest.py >
+# _night_window_end) pencere ile gönderim arasında kasıtlı olarak 5 dakikalık
+# bir işlem payı bırakılır.
+VOICE_DIGEST_HOUR = 8
 VOICE_DIGEST_MINUTE = 5
 
 # Haftalık trend raporu: her Pazartesi, günlük özetten (09:00) sonra 09:30'da.
