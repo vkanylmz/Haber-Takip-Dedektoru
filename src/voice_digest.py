@@ -21,6 +21,15 @@ Bir kategoride hiç kayıt yoksa (ör. o gece hiç KAP bildirimi gelmediyse) o
 kategori için HİÇBİR ŞEY gönderilmez - boş/anlamsız bir ses dosyası
 üretilmez.
 
+GENEL HABERLER segmentinin metninin SONUNA ayrıca, bugün (Türkiye günü)
+için planlanmış Ekonomik Takvim olayları (bkz. _today_calendar_lines,
+src/db.py > get_calendar_events_filtered - dashboard'daki "Yaklaşan Ekonomik
+Takvim" kutusuyla AYNI filtre: importance>=2) varsa kısa bir ek paragraf
+olarak eklenir - AYRI bir üçüncü ses dosyası/mesaj DEĞİL (2026-08-31,
+kullanıcı kararı: önce ayrı bir üçüncü segment istendi, sonra TEK segmente
+ek yapılması TERCİH EDİLDİ - iki segment/iki mesaj olarak KALDI). Bugün hiç
+takvim olayı yoksa bu ek paragraf hiç eklenmez.
+
 TEK bir ses dosyası (kategori başına) üretilir, TÜM opt-in abonelere AYNI
 dosya gönderilir - kişiye özel üretim maliyeti/süresi gereksiz olurdu (bkz.
 görev tanımı).
@@ -40,10 +49,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.config import get_gemini_api_key, get_summarizer_api_key
-from src.db import NewsRecord, get_records_between, get_voice_digest_subscriber_chat_ids
+from src.db import (
+    NewsRecord,
+    get_calendar_events_filtered,
+    get_records_between,
+    get_voice_digest_subscriber_chat_ids,
+)
 from src.notifier import send_telegram_audio_to_chat_ids, send_telegram_message_to_chat_ids
 from src.summarizer import Summarizer
-from src.timezone_utils import TURKEY_TZ
+from src.timezone_utils import TURKEY_TZ, format_turkey_time
 from src.tts import synthesize_turkish_speech
 
 logger = logging.getLogger(__name__)
@@ -91,6 +105,30 @@ def _night_window(tts_cfg: dict[str, Any]) -> tuple[datetime, datetime]:
     return start_tr.astimezone(timezone.utc), end_tr.astimezone(timezone.utc)
 
 
+def _today_calendar_lines() -> list[str]:
+    """Bugün (gönderim gününün Türkiye takvim günü) için planlanmış Ekonomik
+    Takvim olaylarını (bkz. src/db.py > get_calendar_events_filtered -
+    dashboard'daki "Yaklaşan Ekonomik Takvim" kutusuyla AYNI varsayılan
+    filtre: importance>=2, TÜM 7 ülke/bölge) LLM'e verilecek şekilde
+    önceden formatlanmış satırlar olarak döner. Hiç olay yoksa boş liste
+    döner (bkz. generate_night_digest_script > calendar_lines - boşsa hiç
+    eklenmez). Herhangi bir DB hatasında exception fırlatmaz, boş liste
+    döner - takvim eki başarısız olsa BİLE genel haber özeti etkilenmesin."""
+    try:
+        today_str = datetime.now(TURKEY_TZ).strftime("%Y-%m-%d")
+        events = get_calendar_events_filtered(start_date=today_str)
+    except Exception:  # noqa: BLE001 - takvim eki opsiyonel, ana özeti etkilemesin
+        logger.exception("Bugünün ekonomik takvimi çekilirken beklenmeyen bir hata oluştu.")
+        return []
+
+    lines = []
+    for event in events:
+        time_str = format_turkey_time(event.event_time, "%H:%M")
+        previous = f" (önceki: {event.previous_value})" if event.previous_value else ""
+        lines.append(f"{time_str} - {event.country_name}: {event.event_name}{previous}")
+    return lines
+
+
 def _send_category_digest(
     tts_cfg: dict[str, Any],
     chat_ids: list[str],
@@ -102,18 +140,22 @@ def _send_category_digest(
     audio_caption: str,
     audio_title: str,
     text_header: str,
+    calendar_lines: list[str] | None = None,
 ) -> None:
     """Tek bir kategori (genel VEYA kap) için metin+ses üretip opt-in
     abonelere gönderir. Kayıt yoksa veya herhangi bir adımda hata/boş sonuç
     alınırsa SESSİZCE atlar (exception fırlatmaz) - diğer kategori bundan
     ETKİLENMEZ (bkz. send_voice_digest, bu fonksiyon iki kez ayrı ayrı
-    çağrılır)."""
+    çağrılır).
+
+    `calendar_lines` SADECE "genel" çağrısında dolu geçilir (bkz.
+    send_voice_digest) - "kap" çağrısı için hep None/boş kalır."""
     if not records:
         logger.info("Gece penceresinde '%s' kategorisinde haber yok, bu kategori atlanıyor.", category)
         return
 
     try:
-        script = summarizer.generate_night_digest_script(records, category=category)
+        script = summarizer.generate_night_digest_script(records, category=category, calendar_lines=calendar_lines)
     except Exception:  # noqa: BLE001 - bir kategorinin hatası diğerini etkilemesin
         logger.exception("Sesli özet metni ('%s') üretilirken beklenmeyen bir hata oluştu.", category)
         return
@@ -200,6 +242,7 @@ def send_voice_digest(config: dict[str, Any]) -> None:
     output_dir = config.get("app", {}).get("output_dir", "data")
     summarizer = Summarizer(config["summarizer"], api_key=api_key, provider=provider, output_dir=output_dir)
 
+    calendar_lines = _today_calendar_lines()
     _send_category_digest(
         tts_cfg,
         chat_ids,
@@ -211,6 +254,7 @@ def send_voice_digest(config: dict[str, Any]) -> None:
         audio_caption=_GENERAL_AUDIO_CAPTION,
         audio_title="Genel Haberler — Gece Özeti",
         text_header=_GENERAL_TEXT_HEADER,
+        calendar_lines=calendar_lines,
     )
     _send_category_digest(
         tts_cfg,

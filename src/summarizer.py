@@ -562,16 +562,24 @@ olmadan döndür:
 """
 
 # Sesli Günlük Özet için (bkz. src/voice_digest.py, src/tts.py): gece
-# (18:00-09:00) penceresinde toplanmış, önem skoru eşiği geçen haberlerden
+# (18:00-08:00) penceresinde toplanmış, önem skoru eşiği geçen haberlerden
 # TEK bir akıcı, KONUŞMA DİLİNE uygun Türkçe metin ürettirmek üzere ayrı bir
 # sistem promptu. DAILY_DIGEST_SYSTEM_PROMPT'tan FARKI: burada "en önemliyi
 # seç" işi ZATEN yapılmış (basit skor eşiği ile, bkz. src/voice_digest.py) -
 # bu prompt sadece verilen haberleri TEK bir doğal anlatıya dönüştürür,
 # madde madde/liste formatı DEĞİL (TTS ile okunacağı için).
+#
+# `generate_night_digest_script`, haber listesinden ÖNCE isteğe bağlı bir
+# YÖNERGE bloğu (kategoriye göre değişen uzunluk/detay talimatı, bkz. o
+# metod) ve/veya bir EKONOMİK TAKVİM bloğu (SADECE "genel" kategoride,
+# bugün için planlanmış olaylar - bkz. src/voice_digest.py > _today_calendar_lines)
+# ekleyebilir; bu prompt aşağıda o iki bloğun VARSA nasıl ele alınacağını
+# tarif eder.
 NIGHT_DIGEST_SYSTEM_PROMPT = """\
-Sen bir finans radyosu spikerisin. Sana, gece boyunca (akşam 18:00'den sabah \
-09:00'a kadar) toplanmış ÖNEMLİ finans haberlerinin bir listesi verilecek; \
-her satırda önem skoru, başlık ve kısa özet bulunuyor.
+Sen bir finans radyosu spikerisin. Sana, gece boyunca toplanmış ÖNEMLİ \
+finans haberlerinin bir listesi verilecek; her satırda önem skoru, başlık \
+ve kısa özet bulunuyor. Bu listeden ÖNCE, uyulması GEREKEN bir YÖNERGE \
+bloğu ve/veya bir EKONOMİK TAKVİM bloğu da verilebilir.
 
 Görevin: bu haberlerden, SESLİ olarak okunacak, akıcı ve doğal konuşma \
 diline uygun TEK bir Türkçe anlatı yazmak - "gece boyunca şunlar oldu..." \
@@ -580,12 +588,26 @@ MADDE LİSTE YAZMA, numaralandırma yapma, başlık tekrarlama - doğal cümlele
 bağla (ör. "Bu arada...", "Öte yandan...", "Gece saatlerinde de..."). \
 Kısaltmaları (ör. "%", "TL", ticker kodları) sesli okunduğunda anlaşılır \
 olacak şekilde yaz (ör. "yüzde beş" yerine "%5" yazman sorun değil, TTS bunu \
-zaten doğru okur - sadece garip/anlaşılmaz kısaltmalardan kaçın). En fazla \
-1-2 dakikalık bir konuşma uzunluğunda tut (yaklaşık 150-280 kelime) - ÇOK \
-UZUN OLMASIN. Verilen haberlerin TAMAMINI değil, gerçekten önemli olanları \
-öne çıkar, önemsiz/tekrar eden detayları kısaca geç veya atla. Kısa bir \
-karşılama cümlesiyle başla (ör. "Günaydın, gece boyunca piyasalarda şunlar \
-yaşandı:") ve kısa bir kapanış cümlesiyle bitir (ör. "İyi günler dilerim.").
+zaten doğru okur - sadece garip/anlaşılmaz kısaltmalardan kaçın).
+
+Uzunluk/detay seviyesi: YÖNERGE bloğu bunu AÇIKÇA belirtmediği sürece, en \
+fazla 1-2 dakikalık bir konuşma uzunluğunda tut (yaklaşık 150-280 kelime) - \
+ÇOK UZUN OLMASIN - ve haberleri kısaca, başlık düzeyinde geç. YÖNERGE bloğu \
+"daha detaylı" isterse, ORADAKİ talimata uy (kelime sayısı/detay seviyesi \
+dahil) - bu durumda varsayılan 150-280 kelime sınırını YOK SAY. Her durumda: \
+verilen haberlerin TAMAMINI değil, gerçekten önemli olanları öne çıkar, \
+önemsiz/tekrar eden detayları kısaca geç veya atla.
+
+Eğer sana bir EKONOMİK TAKVİM bloğu verildiyse: ana haber anlatısını \
+bitirdikten SONRA, "Bugün ayrıca şu ekonomik veriler açıklanacak:" gibi \
+doğal bir geçiş cümlesiyle başlayan KISA bir ek paragraf ekle ve o bloktaki \
+olayları (saat, ülke, olay adı, varsa önceki değer) doğal cümlelerle say - \
+madde madde listeleme. EKONOMİK TAKVİM bloğu verilMEDİYSE bu paragrafı HİÇ \
+EKLEME.
+
+Kısa bir karşılama cümlesiyle başla (ör. "Günaydın, gece boyunca piyasalarda \
+şunlar yaşandı:") ve kısa bir kapanış cümlesiyle bitir (ör. "İyi günler \
+dilerim.").
 
 Yanıtını SADECE aşağıdaki JSON şemasına uygun, başka hiçbir açıklama \
 olmadan döndür:
@@ -690,7 +712,14 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     match = _JSON_BLOCK_RE.search(text)
     candidate = match.group(0) if match else text
     try:
-        return json.loads(candidate)
+        # strict=False: Gemini'nin `response_mime_type="application/json"`
+        # çıktısı, çok paragraflı/uzun bir metin alanında (bkz.
+        # NIGHT_DIGEST_SYSTEM_PROMPT) ARA SIRA kaçışsız (escape edilmemiş) ham
+        # newline karakteri bırakıyor - katı JSON'a göre geçersiz bir kontrol
+        # karakteri (gerçek bir denemede doğrulandı: "Invalid control
+        # character" hatası), ama strict=False bunu (RFC'ye aykırı olsa da,
+        # Python json modülünün desteklediği bir esneme) sorunsuz kabul eder.
+        return json.loads(candidate, strict=False)
     except json.JSONDecodeError:
         return None
 
@@ -1098,7 +1127,9 @@ class Summarizer:
             return True, retry_after
         return False, None
 
-    def _call_model_with_retry(self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+    def _call_model_with_retry(
+        self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT, max_output_tokens: int | None = None
+    ) -> str:
         """`_call_model`'i rate-limit koruması (istekler arası bekleme) ve
         429 (RESOURCE_EXHAUSTED) hatasında otomatik tekrar deneme ile sarar.
 
@@ -1112,12 +1143,19 @@ class Summarizer:
         (SYSTEM_PROMPT); günlük özet seçimi gibi farklı görevler için
         (bkz. `select_daily_highlights`) DAILY_DIGEST_SYSTEM_PROMPT geçilir -
         rate-limit/retry altyapısı aynı kalır, sadece görev talimatı değişir.
-        """
+
+        `max_output_tokens`: verilmezse `self.max_output_tokens` (config.yaml >
+        summarizer.max_output_tokens, TÜM görevlerin varsayılanı) kullanılır.
+        Sesli özet gibi normalden UZUN bir yanıt beklenen görevler (bkz.
+        `generate_night_digest_script`) daha yüksek bir değer geçebilir -
+        aksi halde model iç "düşünme" (thinking_budget) + uzun JSON yanıtı
+        birlikte varsayılan bütçeyi aşıp yanıtı MAX_TOKENS'ta yarıda kesebilir
+        (gerçek bir denemede doğrulandı, bkz. NIGHT_DIGEST_SYSTEM_PROMPT notu)."""
         attempt = 0
         while True:
             self._throttle()
             try:
-                return self._call_model(user_prompt, system_prompt)
+                return self._call_model(user_prompt, system_prompt, max_output_tokens)
             except Exception as exc:  # noqa: BLE001
                 is_rate_limit, retry_delay = self._classify_rate_limit_error(exc)
                 attempt += 1
@@ -1157,19 +1195,23 @@ class Summarizer:
                 # aralığı bir kez daha uygulamaması için sayacı şimdi güncelle.
                 self._last_call_started_at = time.monotonic()
 
-    def _call_model(self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+    def _call_model(
+        self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT, max_output_tokens: int | None = None
+    ) -> str:
         """Seçili sağlayıcıya tek bir çağrı yapar ve modelin ham metin
         yanıtını döner. Herhangi bir hata olduğunda exception'ı olduğu gibi
         yukarı fırlatır - `_call_model_with_retry` / `summarize_group` bunu
         yakalayıp sırasıyla tekrar dener ya da fallback'e düşer."""
         if self.provider == "anthropic":
-            return self._call_anthropic(user_prompt, system_prompt)
-        return self._call_gemini(user_prompt, system_prompt)
+            return self._call_anthropic(user_prompt, system_prompt, max_output_tokens)
+        return self._call_gemini(user_prompt, system_prompt, max_output_tokens)
 
-    def _call_anthropic(self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+    def _call_anthropic(
+        self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT, max_output_tokens: int | None = None
+    ) -> str:
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=self.max_output_tokens,
+            max_tokens=max_output_tokens or self.max_output_tokens,
             thinking={"type": "disabled"},
             output_config={"effort": self.effort},
             system=system_prompt,
@@ -1178,7 +1220,9 @@ class Summarizer:
         text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
         return "\n".join(text_blocks).strip()
 
-    def _call_gemini(self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+    def _call_gemini(
+        self, user_prompt: str, system_prompt: str = SYSTEM_PROMPT, max_output_tokens: int | None = None
+    ) -> str:
         # Not: `thinking_config=ThinkingConfig(thinking_budget=0)` (tam kapatma)
         # gemini-3.6-flash'ta 400 INVALID_ARGUMENT ile reddediliyor - bu model
         # düşünmeyi tamamen sıfıra çekmeyi kabul etmiyor (test edilerek
@@ -1195,7 +1239,7 @@ class Summarizer:
             contents=user_prompt,
             config=genai_types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                max_output_tokens=self.max_output_tokens,
+                max_output_tokens=max_output_tokens or self.max_output_tokens,
                 thinking_config=genai_types.ThinkingConfig(thinking_budget=400),
                 # Model zaten SYSTEM_PROMPT'ta salt JSON döndürmesi için
                 # talimatlandırılıyor; bunu ayrıca zorunlu kılmak ayrıştırmayı
@@ -1399,36 +1443,76 @@ class Summarizer:
 
         return parsed["summary"].strip()
 
-    def generate_night_digest_script(self, records: list[Any], category: str = "genel") -> str:
+    def generate_night_digest_script(
+        self, records: list[Any], category: str = "genel", calendar_lines: list[str] | None = None
+    ) -> str:
         """Verilen (gece penceresindeki, önem eşiğini geçen) `NewsRecord`
         listesinden Sesli Günlük Özet için TEK bir akıcı Türkçe konuşma
         metni ürettirir (bkz. NIGHT_DIGEST_SYSTEM_PROMPT, src/voice_digest.py).
 
         `category`: "genel" (KAP dışı haberler) veya "kap" (SADECE KAP özel
         durum açıklamaları, bkz. src/voice_digest.py > İKİ AYRI özet -
-        genel/KAP) - modelin doğru bağlamla açılış cümlesi kurabilmesi için
-        user prompt'a kısa bir ipucu eklenir, sistem promptu AYNI kalır.
+        genel/KAP). İkisi de user prompt'a bir YÖNERGE bloğu ekler:
+        - "kap": sadece bağlam ipucu (KAP'a özgü açılış kurabilsin diye).
+        - "genel": DAHA DETAYLI/UZUN bir konuşma iste (kullanıcı isteği,
+          2026-08-31 - varsayılan 150-280 kelime/başlık-düzeyi yerine
+          250-450 kelime/"ne oldu, neden önemli" bağlamı).
+
+        `calendar_lines`: SADECE "genel" kategoride kullanılır - bugün için
+        planlanmış ekonomik takvim olaylarının (bkz.
+        src/voice_digest.py > _today_calendar_lines) önceden formatlanmış
+        satırları. Verilirse, üretilen anlatının SONUNA kısa bir ek paragraf
+        olarak eklenir (bkz. NIGHT_DIGEST_SYSTEM_PROMPT). Boş/None ise hiç
+        eklenmez - ayrı bir ses dosyası/mesaj DEĞİL, TEK metnin bir parçası.
 
         Herhangi bir hata/ayrıştırma sorununda boş string döner (exception
         fırlatmaz) - çağıran taraf bu durumda sesli özeti atlar."""
         if not records:
             return ""
 
-        category_hint = (
-            "Bu liste SADECE KAP (Kamuyu Aydınlatma Platformu) özel durum "
-            "açıklamalarından oluşuyor.\n\n"
-            if category == "kap"
-            else ""
-        )
+        prompt_blocks: list[str] = []
+        if category == "kap":
+            prompt_blocks.append(
+                "YÖNERGE: Bu liste SADECE KAP (Kamuyu Aydınlatma Platformu) özel "
+                "durum açıklamalarından oluşuyor."
+            )
+        else:
+            prompt_blocks.append(
+                "YÖNERGE: Bu segment DAHA DETAYLI olsun - varsayılan 150-280 "
+                "kelime/başlık-düzeyi sınırını YOK SAY, bunun yerine yaklaşık "
+                "250-450 kelimelik bir konuşma yaz. Her önemli haber için "
+                "sadece başlığı tekrar etme; 'ne oldu, neden önemli/piyasayı "
+                "nasıl etkileyebilir' şeklinde en az bir-iki cümlelik somut "
+                "bağlam ver."
+            )
+
+        if calendar_lines:
+            prompt_blocks.append(
+                "EKONOMİK TAKVİM (bugün için planlanmış, anlatının SONUNA "
+                "kısaca eklenecek):\n" + "\n".join(calendar_lines)
+            )
+
         lines = []
         for r in records:
             score = r.importance_score if r.importance_score is not None else "?"
             summary = (r.summary or "").strip()[:300]
             lines.append(f"[Önem: {score}/5] {r.title}\nÖzet: {summary or '(özet yok)'}")
-        user_prompt = category_hint + "\n\n".join(lines)
+        prompt_blocks.append("\n\n".join(lines))
 
+        user_prompt = "\n\n".join(prompt_blocks)
+
+        # "genel" kategori artık DAHA UZUN/detaylı bir anlatı istiyor (+ olası
+        # Ekonomik Takvim eki) - varsayılan max_output_tokens (config.yaml >
+        # summarizer.max_output_tokens, TÜM diğer görevler için ayarlı) model
+        # iç "düşünme" bütçesiyle (thinking_budget=400, bkz. _call_gemini)
+        # birlikte bunu YARIDA KESEBİLİR (gerçek bir denemede doğrulandı -
+        # finish_reason=MAX_TOKENS, bozuk/eksik JSON). Bu yüzden burada özel
+        # olarak daha yüksek bir bütçe istenir - "kap" için de zararsız,
+        # sadece bir TAVAN, hedef uzunluğu ETKİLEMEZ.
         try:
-            raw_text = self._call_model_with_retry(user_prompt, system_prompt=NIGHT_DIGEST_SYSTEM_PROMPT)
+            raw_text = self._call_model_with_retry(
+                user_prompt, system_prompt=NIGHT_DIGEST_SYSTEM_PROMPT, max_output_tokens=3000
+            )
         except Exception:  # noqa: BLE001 - sesli özet metni başarısız olursa çağıran taraf atlasın
             logger.exception("Sesli özet metni (LLM çağrısı) başarısız oldu.")
             return ""
